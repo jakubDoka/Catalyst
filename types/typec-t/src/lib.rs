@@ -70,6 +70,7 @@ mod typec;
 
 pub use {
     func::{Func, FuncFlags, FuncSlices, FuncVisibility, Funcs, Signature},
+    graphs::ProjectedCycleDetector,
     scope::{
         ModuleItem, ModuleItemPtr, Scope, ScopeError, ScopeFrame, ScopeItem, ScopePosition,
         ScopeRecord,
@@ -77,13 +78,13 @@ pub use {
     tir::{
         AssignTir, BreakTir, CallTir, CallableTir, CastCheck, FieldTir, IfBranchTir, IfTir,
         Inference, LetTir, LoopHeaderTir, LoopTir, MacroCompileRequest, MatchArmTir, MatchTir,
-        PatKindTir, PatTir, TirBuilder, TirBuilderCtx, TirFlags, TirFunc, TirKind, TirNode,
-        TypecOutput, UnitPatKindTir, VarHeaderTir,
+        PatKindTir, PatTir, TirFlags, TirFunc, TirKind, TirNode, TypecOutput, UnitPatKindTir,
+        VarHeaderTir,
     },
     ty::{
-        Builtin, ComputedTypecItem, Const, Enum, Field, FieldFlags, GenericTy, Generics, Humid,
-        Impl, ImplKey, Instance, Mutability, Pointer, RawMutability, Spec, SpecBase, SpecFunc,
-        SpecInstance, SpecSet, Struct, Ty, TyFlags, Variant,
+        Array, ArraySize, Builtin, ComputedTypecItem, Const, Enum, Field, FieldFlags, GenericTy,
+        Generics, Humid, Impl, ImplKey, Instance, Mutability, Pointer, RawMutability, Spec,
+        SpecBase, SpecFunc, SpecInstance, SpecSet, Struct, Ty, TyFlags, Variant,
     },
     typec::{
         lookup_water_drop, sorted_water_drops, ImplList, ImplLookup, Implemented, Loc, MacroImpl,
@@ -91,5 +92,3 @@ pub use {
         TypecCache, TypecCacheBase, TypecCtxSlice, TypecLookup,
     },
 };
-
-pub type TyGraph = graphs::ProjectedCycleDetector<Ty>;

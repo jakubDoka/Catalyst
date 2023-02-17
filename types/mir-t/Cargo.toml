@@ -11,3 +11,4 @@ storage = { version = "0.1.0", path = "../../utils/storage" }
 typec-t = { version = "0.1.0", path = "../typec-t" }
 
 rkyv = { version = "0.7.39", features = ["copy"] }
+typec-u = { version = "0.1.0", path = "../../utils/typec-u" }

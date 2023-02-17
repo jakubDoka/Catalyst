@@ -7,6 +7,7 @@ use mir_t::*;
 use packaging_t::Resources;
 use storage::*;
 use typec_t::*;
+use typec_u::TypeDisplay;
 
 pub fn display_function(
     funcs: impl IntoIterator<Item = FragRef<Func>>,
@@ -50,7 +51,7 @@ impl MirDisplayCtx<'_> {
         func: FragRef<Func>,
         buffer: &mut String,
     ) -> fmt::Result {
-        self.typec.display_sig(func, self.interner, buffer)?;
+        self.typec[func].display(self.typec, self.interner, buffer)?;
         writeln!(
             buffer,
             " {{ ({}) ret var{}",
@@ -59,7 +60,7 @@ impl MirDisplayCtx<'_> {
                 .map(|&arg| format!(
                     "var{}: {}",
                     arg.index(),
-                    self.typec.display_ty(mir.value_ty(arg), self.interner)
+                    typec_u::display(self.typec, self.interner, mir.value_ty(arg))
                 ))
                 .collect::<Vec<_>>()
                 .join(", "),
@@ -176,7 +177,8 @@ impl MirDisplayCtx<'_> {
                     }
                     CallableMir::SpecFunc(bound_func) => {
                         let SpecFunc { name, parent, .. } = self.typec[bound_func];
-                        let bound_id = self.typec.display_spec(Spec::Base(parent), self.interner);
+                        let bound_id =
+                            typec_u::display(self.typec, self.interner, Spec::Base(parent));
                         write!(buffer, "{}\\{}", bound_id, name.get(self.interner))?;
                     }
                     CallableMir::Pointer(ptr) => write!(buffer, "val{}", ptr.index())?,
@@ -187,7 +189,7 @@ impl MirDisplayCtx<'_> {
                     let iter = mir.ty_params[params]
                         .iter()
                         .map(|&ty| mir.types[ty].ty)
-                        .map(|ty| self.typec.display_ty(ty, self.interner))
+                        .map(|ty| typec_u::display(self.typec, self.interner, ty))
                         .intersperse(", ".into())
                         .collect::<String>();
                     buffer.push_str(&iter);

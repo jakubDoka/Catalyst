@@ -1,7 +1,6 @@
 use std::{
     default::default,
     fmt::{self, Display},
-    mem::size_of,
 };
 
 use crate::*;
@@ -328,6 +327,21 @@ impl GenericTy {
     }
 }
 
+pub type ArraySize = u32;
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Archive, Serialize,
+)]
+#[archive_attr(derive(PartialEq, Eq, Hash))]
+pub struct Array {
+    pub item: Ty,
+    pub len: ArraySize,
+}
+
+derive_relocated!(
+    struct Array {}
+);
+
 wrapper_enum! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Archive)]
     enum ComputedTypecItem: relocated {
@@ -335,6 +349,7 @@ wrapper_enum! {
         Instance: FragRef<Instance>,
         SpecInstance: FragRef<SpecInstance>,
         SpecSum: FragSlice<Spec>,
+        Array: FragRef<Array>,
     }
 }
 
@@ -348,6 +363,7 @@ wrapper_enum! {
         Enum: FragRef<Enum>,
         Instance: FragRef<Instance>,
         Pointer: Pointer,
+        Array: FragRef<Array>,
         Param: u8,
         Builtin: Builtin,
     }
@@ -358,7 +374,8 @@ derive_relocated! {
         Struct(s) => s,
         Enum(e) => e,
         Instance(i) => i,
-        Pointer(p, ..) => p,
+        Pointer(p) => p,
+        Array(a) => a,
         Param(..) =>,
         Builtin(..) =>,
     }
@@ -375,57 +392,14 @@ impl Display for Ty {
             }
             Ty::Param(i) => write!(f, "param{i}"),
             Ty::Builtin(b) => write!(f, "{}", b.name()),
+            Ty::Array(a) => write!(f, "array{:x}", a.bits()),
         }
     }
 }
 
 impl Ty {
-    pub fn component_ty(
-        self,
-        index: usize,
-        typec: &mut Typec,
-        interner: &mut Interner,
-    ) -> Option<Ty> {
-        Some(match self {
-            Ty::Struct(s) => typec[typec[s].fields][index].ty,
-            Ty::Enum(e) => typec[typec[e].variants][index].ty,
-            Ty::Instance(i) => {
-                let Instance { base, args } = typec[i];
-                let ty = match base {
-                    GenericTy::Struct(s) => typec[typec[s].fields][index].ty,
-                    GenericTy::Enum(e) => typec[typec[e].variants][index].ty,
-                };
-                typec.instantiate(ty, args, interner)
-            }
-            _ => return None,
-        })
-    }
-
     pub fn is_aggregate(self) -> bool {
         matches!(self, Self::Struct(..) | Self::Enum(..) | Self::Instance(..))
-    }
-
-    pub fn find_component(
-        self,
-        name: Ident,
-        typec: &mut Typec,
-        interner: &mut Interner,
-    ) -> Option<(usize, Ty)> {
-        match self {
-            Ty::Struct(s) => Struct::find_field(s, name, typec).map(|(i, f)| (i, f.ty)),
-            Ty::Enum(e) => Enum::find_variant(e, name, typec),
-            Ty::Instance(i) => {
-                let Instance { base, args } = typec[i];
-                let (index, ty) = match base {
-                    GenericTy::Struct(s) => {
-                        Struct::find_field(s, name, typec).map(|(i, f)| (i, f.ty))
-                    }
-                    GenericTy::Enum(e) => Enum::find_variant(e, name, typec),
-                }?;
-                Some((index, typec.instantiate(ty, args, interner)))
-            }
-            _ => None,
-        }
     }
 
     pub fn int_eq(self) -> Option<FragRef<Func>> {
@@ -528,61 +502,11 @@ impl Ty {
             Self::Enum(e) => {
                 Some(typec.module_items[typec[e].loc?.module].items[typec[e].loc?.item].span)
             }
-            Self::Instance(..) | Self::Pointer(..) | Self::Param(..) | Self::Builtin(..) => None,
-        }
-    }
-
-    /// None - don't know
-    /// Some(None) - not drop
-    /// Some(Some(..)) - drop
-    pub fn is_drop(
-        self,
-        params: &[FragSlice<Spec>],
-        typec: &mut Typec,
-        interner: &mut Interner,
-    ) -> Option<Option<(FragRef<Impl>, FragSlice<Ty>)>> {
-        match self {
-            Ty::Pointer(..) | Ty::Builtin(..) => Some(None),
-            Ty::Param(..) => typec
-                .find_implementation(
-                    self,
-                    Spec::Base(SpecBase::COPY),
-                    params,
-                    &mut None,
-                    interner,
-                )
-                .map(|_| None),
-            Ty::Struct(..) | Ty::Enum(..) | Ty::Instance(..) => Some(
-                typec
-                    .find_implementation(
-                        self,
-                        Spec::Base(SpecBase::DROP),
-                        params,
-                        &mut None,
-                        interner,
-                    )
-                    .flatten(),
-            ),
-        }
-    }
-
-    pub fn is_copy(
-        self,
-        params: &[FragSlice<Spec>],
-        typec: &mut Typec,
-        interner: &mut Interner,
-    ) -> bool {
-        match self {
-            Ty::Pointer(..) | Ty::Builtin(..) => true,
-            Ty::Struct(_) | Ty::Enum(_) | Ty::Instance(_) | Ty::Param(_) => typec
-                .find_implementation(
-                    self,
-                    Spec::Base(SpecBase::COPY),
-                    params,
-                    &mut None,
-                    interner,
-                )
-                .is_some(),
+            Self::Instance(..)
+            | Self::Pointer(..)
+            | Self::Param(..)
+            | Self::Builtin(..)
+            | Self::Array(..) => None,
         }
     }
 }

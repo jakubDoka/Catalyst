@@ -16,7 +16,7 @@ pub type ImplFrames<'a> = Vec<(ImplAst<'a>, Option<FragRef<Impl>>, usize)>;
 #[derive(Default)]
 pub struct TyCheckerCtx {
     pub extern_funcs: Vec<FragRef<Func>>,
-    pub ty_graph: TyGraph,
+    pub ty_graph: ProjectedCycleDetector<Ty>,
 }
 
 impl TyCheckerCtx {
@@ -241,48 +241,4 @@ pub fn build_scope(
 
 use crate::TyChecker;
 
-impl TyChecker<'_> {
-    pub fn insert_scope_item(&mut self, item: ModuleItem) -> Option<Loc> {
-        if let Err(record) = self.scope.insert_current(item) {
-            match record.span() {
-                Some(span) => self.workspace.push(DuplicateDefinition {
-                    duplicate: item.span,
-                    existing: span,
-                    source: self.source,
-                }),
-                None => self.workspace.push(ShadowedBuiltin {
-                    item: item.id.get(self.interner).to_string(),
-                    span: item.span,
-                    source: self.source,
-                }),
-            }?;
-        }
-
-        let item = self.typec[self.module].items.push(item);
-        Some(Loc {
-            module: self.module,
-            item,
-        })
-    }
-}
-
-ctl_errors! {
-    #[err => "duplicate definition"]
-    #[info => "this happens when two exportable items have the same name"]
-    error DuplicateDefinition: fatal {
-        #[info source, duplicate, "this name"]
-        #[info source, existing, "matches this already existing item"]
-        duplicate: Span,
-        existing: Span,
-        source: VRef<Source>,
-    }
-
-    #[err => "shadowing of builtin item"]
-    #[info => "shadowing {item} is disallowed"]
-    error ShadowedBuiltin: fatal {
-        #[info source, span, "this name"]
-        span: Span,
-        source: VRef<Source>,
-        item ref: String,
-    }
-}
+impl TyChecker<'_> {}

@@ -210,10 +210,11 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
                 .map(|seq| patterns::display_pat(&seq, self.func.value_ty(mir_value), &self.ext))
                 .intersperse(", ".into())
                 .collect::<String>();
-            self.ext.workspace.push(NonExhaustive {
+            NonExhaustive {
                 loc: self.meta.source_loc(span),
                 gaps,
-            });
+            }
+            .add(self.ext.workspace);
         }
 
         self.start_branching();

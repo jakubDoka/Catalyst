@@ -8,15 +8,6 @@ use rkyv::{Archive, Deserialize, Serialize};
 
 pub type TypecOutput<A, T> = Vec<(A, FragRef<T>)>;
 
-#[derive(Default)]
-pub struct TirBuilderCtx {
-    pub vars: Vec<VarHeaderTir>,
-    pub generics: Vec<FragSlice<Spec>>,
-    pub cast_checks: Vec<CastCheck>,
-    pub macros: Vec<MacroCompileRequest>,
-    pub loops: PushMap<LoopHeaderTir>,
-}
-
 pub struct LoopHeaderTir {
     pub return_type: Ty,
     pub inference: Inference,
@@ -35,57 +26,6 @@ pub struct CastCheck {
     pub loc: Span,
     pub from: Ty,
     pub to: Ty,
-}
-
-pub struct TirBuilder<'arena, 'ctx> {
-    pub arena: &'arena Arena,
-    pub ret: Ty,
-    pub ret_span: Option<Span>,
-    pub ctx: &'ctx mut TirBuilderCtx,
-}
-
-impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
-    pub fn new(
-        arena: &'arena Arena,
-        ret: Ty,
-        ret_span: Option<Span>,
-        ctx: &'ctx mut TirBuilderCtx,
-    ) -> Self {
-        Self {
-            arena,
-            ret,
-            ret_span,
-            ctx,
-        }
-    }
-
-    pub fn create_var(&mut self, mutable: bool, ty: Ty, span: Span) -> VRef<VarHeaderTir> {
-        let index = self.ctx.vars.len();
-        self.ctx.vars.push(VarHeaderTir { ty, span, mutable });
-        VRef::new(index)
-    }
-
-    pub fn get_var(&self, var: VRef<VarHeaderTir>) -> VarHeaderTir {
-        self.ctx.vars[var.index()]
-    }
-
-    pub fn start_frame(&self, scope: &Scope) -> TirFrame {
-        TirFrame {
-            scope_frame: scope.start_frame(),
-            base: self.ctx.vars.len(),
-        }
-    }
-
-    pub fn end_frame(&mut self, scope: &mut Scope, frame: TirFrame) {
-        self.ctx.vars.truncate(frame.base);
-        scope.end_frame(frame.scope_frame);
-    }
-}
-
-#[must_use]
-pub struct TirFrame {
-    scope_frame: ScopeFrame,
-    base: usize,
 }
 
 #[derive(Clone, Copy, Debug)]

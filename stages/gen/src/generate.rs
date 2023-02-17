@@ -10,6 +10,7 @@ use mir_t::*;
 use storage::*;
 
 use typec_t::*;
+use typec_u::type_creator;
 
 use crate::{
     context::{ComputedConst, ComputedValue},
@@ -247,12 +248,12 @@ impl Generator<'_> {
                 }
             };
 
-            if !self.typec.may_need_drop(ty, self.interner) {
+            if !type_creator!(self).may_need_drop(ty) {
                 continue;
             }
 
             // we can pass empty generics since all types are concrete
-            if let Some(Some(..)) = ty.is_drop(&[], self.typec, self.interner) {
+            if let Some(Some(..)) = type_creator!(self).is_drop(ty, &[]) {
                 let CompileRequestChild { id, params, .. } =
                     self.gen_resources.calls[funcs.next().unwrap()];
                 let params = self.compile_requests.ty_slices[params].iter().copied();
@@ -276,8 +277,9 @@ impl Generator<'_> {
                 let mut current = Some(dest);
                 let mut flag_value = None;
                 for (i, variant) in variants.keys().enumerate().rev() {
-                    let ty = s.typec.instantiate(s.typec[variant].ty, params, s.interner);
-                    if !s.typec.may_need_drop(ty, s.interner) {
+                    let ty = s.typec[variant].ty;
+                    let ty = type_creator!(s).instantiate(ty, params);
+                    if !type_creator!(s).may_need_drop(ty) {
                         continue;
                     }
 
@@ -320,7 +322,7 @@ impl Generator<'_> {
                                 .iter()
                                 .map(|&of| of + offset)
                                 .rev()
-                                .zip(self.typec.instantiate_fields(s, args, self.interner))
+                                .zip(type_creator!(self).instantiate_fields(s, args))
                                 .map(DropFrame::Drop)
                                 .collect_into(&mut *frontier);
                         }
@@ -328,6 +330,7 @@ impl Generator<'_> {
                     }
                 }
                 Ty::Pointer(..) | Ty::Param(..) | Ty::Builtin(..) => (),
+                Ty::Array(_) => todo!(),
             }
         }
     }

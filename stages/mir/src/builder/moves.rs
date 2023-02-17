@@ -38,9 +38,9 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
         }
 
         if self
-            .func
-            .value_ty(dest)
-            .is_copy(&self.func.generics, self.ext.typec, self.ext.interner)
+            .ext
+            .creator()
+            .is_copy(self.func.value_ty(dest), &self.func.generics)
         {
             return;
         }
@@ -79,9 +79,9 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
         }
 
         if self
-            .func
-            .value_ty(value)
-            .is_copy(&self.func.generics, self.ext.typec, self.ext.interner)
+            .ext
+            .creator()
+            .is_copy(self.func.value_ty(value), &self.func.generics)
         {
             return;
         }
@@ -94,18 +94,18 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
                 IntegrityError::InvalidMove(owner) => {
                     self.ext.workspace.push(InvalidMove { owner, loc })
                 }
-                IntegrityError::Moved(r#move) => self.ext.workspace.push(MoveOfMoved {
+                IntegrityError::Moved(r#move) => MoveOfMoved {
                     something: msg,
                     r#move,
                     loc,
-                }),
-                IntegrityError::PartiallyMoved(moves) => {
-                    self.ext.workspace.push(MoveOfPartiallyMoved {
-                        something: msg,
-                        moves,
-                        loc,
-                    })
                 }
+                .add(self.ext.workspace),
+                IntegrityError::PartiallyMoved(moves) => MoveOfPartiallyMoved {
+                    something: msg,
+                    moves,
+                    loc,
+                }
+                .add(self.ext.workspace),
             };
             return;
         }
@@ -161,18 +161,18 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
             match err {
                 IntegrityError::InvalidMove(owner) if owner.behind_pointer => return,
                 IntegrityError::InvalidMove(..) => None,
-                IntegrityError::Moved(r#move) => self.ext.workspace.push(MoveOfMoved {
+                IntegrityError::Moved(r#move) => MoveOfMoved {
                     something,
                     r#move,
                     loc,
-                }),
-                IntegrityError::PartiallyMoved(moves) => {
-                    self.ext.workspace.push(MoveOfPartiallyMoved {
-                        something,
-                        moves,
-                        loc,
-                    })
                 }
+                .add(self.ext.workspace),
+                IntegrityError::PartiallyMoved(moves) => MoveOfPartiallyMoved {
+                    something,
+                    moves,
+                    loc,
+                }
+                .add(self.ext.workspace),
             };
         };
 
@@ -210,10 +210,12 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
 
         match self.func.value_ty(value) {
             Ty::Pointer(..) | Ty::Builtin(..) => (),
-            t if !self.ext.typec.may_need_drop(t, self.ext.interner) => (),
-            t if t.is_copy(self.func.generics, self.ext.typec, self.ext.interner) => (),
-            t if t
-                .is_drop(self.func.generics, self.ext.typec, self.ext.interner)
+            t if !self.ext.creator().may_need_drop(t) => (),
+            t if self.ext.creator().is_copy(t, self.func.generics) => (),
+            t if self
+                .ext
+                .creator()
+                .is_drop(t, self.func.generics)
                 .transpose()
                 .is_some() =>
             {
@@ -233,6 +235,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
                     GenericTy::Enum(..) => dropper(self),
                 }
             }
+            Ty::Array(_) => todo!(),
         }
 
         false
@@ -251,11 +254,8 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
             .into_iter()
             .enumerate()
         {
-            let ty = self
-                .ext
-                .typec
-                .instantiate(field.ty, params, self.ext.interner);
-            if !self.ext.typec.may_need_drop(ty, self.ext.interner) {
+            let ty = self.ext.creator().instantiate(field.ty, params);
+            if !self.ext.creator().may_need_drop(ty) {
                 continue;
             }
             let field_value = self.create_value(ty);
@@ -444,9 +444,9 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
                 }
 
                 let ty = self
-                    .func
-                    .value_ty(value)
-                    .component_ty(segment.as_index(), self.ext.typec, self.ext.interner)
+                    .ext
+                    .creator()
+                    .component_ty(self.func.value_ty(value), segment.as_index())
                     .unwrap();
                 let next_value = self.create_value(ty);
                 self.inst(
@@ -648,10 +648,10 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
         for record in history.iter() {
             if let MoveDirection::Out = record.direction
                 && self.reused.moves.value_depths[record.key.root] < loop_depth {
-                self.ext.workspace.push(MovedInLoop {
+                MovedInLoop {
                     loc: self.meta.source_loc(record.r#move.span),
                     loop_span,
-                });
+                }.add(self.ext.workspace);
             }
         }
     }

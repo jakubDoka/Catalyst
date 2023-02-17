@@ -1,35 +1,36 @@
-use super::{spec::ArgCountMismatch, *};
+use crate::context::ArgCountMismatch;
 
-impl TyChecker<'_> {
-    pub fn call<'a>(
+use super::*;
+
+impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
+    pub fn call(
         &mut self,
         call @ CallAst { callable, .. }: CallAst,
         inference: Inference,
-        builder: &mut TirBuilder<'a, '_>,
-    ) -> ExprRes<'a> {
+    ) -> ExprRes<'arena> {
         match callable {
             UnitExprAst::Path(path) => {
-                let (func, caller, params) = self.func_path(path, builder)?;
+                let (func, caller, params) = self.func_path(path)?;
                 match func {
                     FuncLookupResult::Func(func) => {
                         let caller = caller.map(Ok);
-                        self.direct_call(func, params, caller, call, inference, builder)
+                        self.direct_call(func, params, caller, call, inference)
                     }
                     FuncLookupResult::Var(..) => todo!(),
                     FuncLookupResult::SpecFunc(func, caller) => {
-                        self.direct_spec_call(func, params, Ok(caller), call, inference, builder)
+                        self.direct_spec_call(func, params, Ok(caller), call, inference)
                     }
                 }
             }
             UnitExprAst::DotExpr(&DotExprAst { lhs, rhs, .. }) => {
-                let lhs = self.unit_expr(lhs, Inference::None, builder)?;
-                let (func, _, params) = self.method_path(lhs.ty, rhs, builder)?;
+                let lhs = self.unit_expr(lhs, Inference::None)?;
+                let (func, _, params) = self.method_path(lhs.ty, rhs)?;
                 match func {
                     FuncLookupResult::Func(func) => {
-                        self.direct_call(func, params, Some(Err(lhs)), call, inference, builder)
+                        self.direct_call(func, params, Some(Err(lhs)), call, inference)
                     }
                     FuncLookupResult::SpecFunc(func, ..) => {
-                        self.direct_spec_call(func, params, Err(lhs), call, inference, builder)
+                        self.direct_spec_call(func, params, Err(lhs), call, inference)
                     }
                     FuncLookupResult::Var(..) => todo!(),
                 }
@@ -40,23 +41,23 @@ impl TyChecker<'_> {
         }
     }
 
-    pub fn direct_call<'a>(
+    pub fn direct_call(
         &mut self,
         func: FragRef<Func>,
         params: Option<ListAst<TyAst>>,
-        caller: Option<Result<Ty, TirNode<'a>>>,
+        caller: Option<Result<Ty, TirNode<'arena>>>,
         call @ CallAst { args, .. }: CallAst,
         inference: Inference,
-        builder: &mut TirBuilder<'a, '_>,
-    ) -> ExprRes<'a> {
+    ) -> ExprRes<'arena> {
         let Func {
             signature,
             upper_generics,
             owner,
             loc,
             ..
-        } = self.typec[func];
+        } = self.ext.typec[func];
         let param_specs = self
+            .ext
             .typec
             .pack_func_param_specs(func)
             .collect::<BumpVec<_>>();
@@ -67,7 +68,7 @@ impl TyChecker<'_> {
             .iter_mut()
             .skip(generic_start)
             .zip(params.iter().flat_map(|params| params.iter()))
-            .for_each(|(param_slot, &param)| *param_slot = self.ty(param));
+            .for_each(|(param_slot, &param)| *param_slot = self.parser().ty(param));
 
         let (args, params, ty) = self.call_internals(
             param_specs.as_slice(),
@@ -77,12 +78,11 @@ impl TyChecker<'_> {
             args,
             signature,
             inference,
-            builder,
-            &|s| loc.map(|loc| loc.source_loc(s.typec, s.resources)),
+            &|s| loc.map(|loc| loc.source_loc(s.ext.typec, s.ext.resources)),
         )?;
 
         if func == Func::CAST && let &[to, from] = params {
-            builder.ctx.cast_checks.push(CastCheck { loc: call.span(), from, to });
+            self.ctx.cast_check(call.span(), from, to);
         }
 
         let call_tir = CallTir {
@@ -93,27 +93,27 @@ impl TyChecker<'_> {
 
         Some(TirNode::new(
             ty,
-            TirKind::Call(builder.arena.alloc(call_tir)),
+            TirKind::Call(self.arena.alloc(call_tir)),
             call.span(),
         ))
     }
 
-    pub fn direct_spec_call<'a>(
+    pub fn direct_spec_call(
         &mut self,
         func: FragRef<SpecFunc>,
         params: Option<ListAst<TyAst>>,
-        caller: Result<Ty, TirNode<'a>>,
+        caller: Result<Ty, TirNode<'arena>>,
         call @ CallAst { args, .. }: CallAst,
         inference: Inference,
-        builder: &mut TirBuilder<'a, '_>,
-    ) -> ExprRes<'a> {
+    ) -> ExprRes<'arena> {
         let func_ent @ SpecFunc {
             generics,
             signature,
             ..
-        } = self.typec[func];
+        } = self.ext.typec[func];
 
         let param_specs = self
+            .ext
             .typec
             .pack_spec_func_param_specs(func_ent)
             .collect::<BumpVec<_>>();
@@ -123,7 +123,7 @@ impl TyChecker<'_> {
             .iter_mut()
             .skip(generic_start)
             .zip(params.iter().flat_map(|params| params.iter()))
-            .for_each(|(param_slot, &param)| *param_slot = self.ty(param));
+            .for_each(|(param_slot, &param)| *param_slot = self.parser().ty(param));
         param_slots[generic_start - 1] = Some(caller.map_or_else(|e| e.ty, |ty| ty));
 
         let (args, params, ty) = self.call_internals(
@@ -134,11 +134,10 @@ impl TyChecker<'_> {
             args,
             signature,
             inference,
-            builder,
             &|s| {
-                s.typec[func_ent.parent]
+                s.ext.typec[func_ent.parent]
                     .loc
-                    .map(|loc| loc.source_loc(s.typec, s.resources))
+                    .map(|loc| loc.source_loc(s.ext.typec, s.ext.resources))
             },
         )?;
 
@@ -150,22 +149,22 @@ impl TyChecker<'_> {
 
         Some(TirNode::new(
             ty,
-            TirKind::Call(builder.arena.alloc(call_tir)),
+            TirKind::Call(self.arena.alloc(call_tir)),
             call.span(),
         ))
     }
 
     #[inline]
-    pub fn unpack_param_slots<'a>(
+    pub fn unpack_param_slots(
         &mut self,
         params: impl Iterator<Item = Option<Ty>> + Clone + ExactSizeIterator,
         span: Span,
-        builder: &mut TirBuilder<'a, '_>,
+
         something: &'static str,
         syntax: &'static str,
-    ) -> Option<&'a [Ty]> {
+    ) -> Option<&'arena [Ty]> {
         if let Some(params) = params.clone().collect::<Option<BumpVec<_>>>() {
-            return Some(builder.arena.alloc_iter(params));
+            return Some(self.arena.alloc_iter(params));
         }
 
         let missing = params
@@ -175,47 +174,48 @@ impl TyChecker<'_> {
             .intersperse_with(|| ", ".into())
             .collect::<String>();
 
-        self.workspace.push(UnknownTypeParameters {
-            loc: SourceLoc {
-                span,
-                origin: self.source,
-            },
+        UnknownTypeParameters {
+            loc: self.meta.loc(span),
             missing,
             something,
             syntax,
-        })?
+        }
+        .add(self.ext.workspace)?
     }
 
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
-    pub fn call_internals<'a>(
+    pub fn call_internals(
         &mut self,
         generics: &[FragSlice<Spec>],
         param_slots: &mut [Option<Ty>],
-        mut caller: Option<Result<Ty, TirNode<'a>>>,
+        mut caller: Option<Result<Ty, TirNode<'arena>>>,
         owner: Option<Ty>,
         args: ListAst<ExprAst>,
         signature: Signature,
         inference: Inference,
-        builder: &mut TirBuilder<'a, '_>,
+
         func: &dyn Fn(&mut Self) -> Option<SourceLoc>,
-    ) -> Option<(&'a [TirNode<'a>], &'a [Ty], Ty)> {
-        let arg_types = self.typec[signature.args].to_bumpvec();
+    ) -> Option<(&'arena [TirNode<'arena>], &'arena [Ty], Ty)> {
+        let arg_types = self.ext.typec[signature.args].to_bumpvec();
 
         if let Some(inference) = inference.ty() {
             // we don't want to report error twice so this one is ignored
-            _ = self.typec.compatible(param_slots, inference, signature.ret);
+            _ = self
+                .ext
+                .typec
+                .compatible(param_slots, inference, signature.ret);
         }
 
         if let Some(ref mut caller) = caller {
             if let Some(&first) = arg_types.first() && let Err(caller) = caller {
-                self.balance_pointers(caller, first, builder);
+                self.balance_pointers(caller, first);
             }
 
             if let Some(owner) = owner {
                 let ty = caller.map_or_else(|expr| expr.ty, |ty| ty);
-                let owner = self.typec.balance_pointers(owner, ty, self.interner);
-                _ = self.typec.compatible(param_slots, ty, owner);
+                let owner = self.ext.creator().balance_pointers(owner, ty);
+                _ = self.ext.typec.compatible(param_slots, ty, owner);
             }
         }
 
@@ -223,15 +223,13 @@ impl TyChecker<'_> {
         let actual_arg_count = caller.and_then(|c| c.err()).is_some() as usize + args.len();
         if expected_arg_count != actual_arg_count {
             let func_loc = func(self);
-            self.workspace.push(ArgCountMismatch {
+            ArgCountMismatch {
                 expected: expected_arg_count,
                 actual: actual_arg_count,
-                loc: SourceLoc {
-                    origin: self.source,
-                    span: args.span(),
-                },
+                loc: self.meta.loc(args.span()),
                 func_loc,
-            })?;
+            }
+            .add(self.ext.workspace)?;
         }
 
         let parsed_args = args
@@ -243,8 +241,8 @@ impl TyChecker<'_> {
                     .skip(caller.and_then(|c| c.err()).is_some() as usize),
             )
             .map(|(arg, ty)| {
-                let instantiated = self.typec.try_instantiate(ty, param_slots, self.interner);
-                let parsed_arg = self.expr(arg, instantiated.into(), builder);
+                let instantiated = self.ext.creator().try_instantiate(ty, param_slots);
+                let parsed_arg = self.expr(arg, instantiated.into());
                 if let Some(parsed_arg) = parsed_arg && instantiated.is_none() {
                     self.infer_params(param_slots, parsed_arg.ty, ty, arg.span());
                 }
@@ -252,25 +250,23 @@ impl TyChecker<'_> {
             })
             .nsc_collect::<Option<BumpVec<_>>>()
             .map(|args| caller.and_then(|c| c.err()).into_iter().chain(args))
-            .map(|args| builder.arena.alloc_iter(args.collect::<BumpVec<_>>()))?;
+            .map(|args| self.arena.alloc_iter(args.collect::<BumpVec<_>>()))?;
 
         let params = self.unpack_param_slots(
             param_slots.iter().copied(),
             args.span(),
-            builder,
             "call",
             "(works on methods too) (<func_path>\\[<ty_param>, ...](<expr_arg>, ...))",
         )?;
 
         let mut missing_keys = bumpvec![];
         for (&param, &specs) in params.iter().zip(generics) {
-            self.typec.implements_sum(
+            self.ext.creator().implements_sum(
                 param,
                 specs,
                 generics,
                 params,
                 &mut Some(&mut missing_keys),
-                self.interner,
             );
         }
 
@@ -280,22 +276,20 @@ impl TyChecker<'_> {
                 .map(|ImplKey { ty, spec }| {
                     format!(
                         "{}: {}",
-                        self.typec.display_ty(ty, self.interner),
-                        self.typec.display_spec(spec, self.interner)
+                        self.ext.creator().display(ty),
+                        self.ext.creator().display(spec)
                     )
                 })
                 .intersperse_with(|| "\n".into())
                 .collect::<String>();
-            self.workspace.push(ParamImplMissing {
-                loc: SourceLoc {
-                    span: args.span(),
-                    origin: self.source,
-                },
+            ParamImplMissing {
+                loc: self.meta.loc(args.span()),
                 missing_impls,
-            })?;
+            }
+            .add(self.ext.workspace)?;
         }
 
-        let ret = self.typec.instantiate(signature.ret, params, self.interner);
+        let ret = self.ext.creator().instantiate(signature.ret, params);
 
         Some((parsed_args, params, ret))
     }

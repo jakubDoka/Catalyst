@@ -24,15 +24,11 @@ macro_rules! lookup {
 
 mod context;
 mod func_builder;
-mod item_collector;
-mod state_gen;
 mod tir_display;
-mod ty_builder;
 mod ty_parser;
-mod util;
 
 pub use {
-    item_collector::CollectGroup,
-    state_gen::TyChecker,
-    util::{build_scope, AstTransfer, TyCheckerCtx},
+    context::{TypecCtx, TypecExternalCtx, TypecMeta},
+    func_builder::TirBuilder,
+    ty_parser::TypecParser,
 };

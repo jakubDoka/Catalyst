@@ -131,8 +131,8 @@ macro_rules! ctl_errors {
 mod items;
 
 pub use items::{
-    CtlAnnotation, CtlAnnotationType, CtlError, CtlSnippet, CtlSourceAnnotation, ErrorCount,
-    SnippetDisplay, SourceLoc, Workspace,
+    AddCtlError, CtlAnnotation, CtlAnnotationType, CtlError, CtlSnippet, CtlSourceAnnotation,
+    ErrorCount, SnippetDisplay, SourceLoc, Workspace,
 };
 
 ctl_errors! {

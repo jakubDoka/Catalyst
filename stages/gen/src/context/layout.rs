@@ -1,3 +1,5 @@
+use typec_u::{type_creator, TypeCreator};
+
 use super::*;
 
 #[derive(Default)]
@@ -10,27 +12,23 @@ pub struct GenLayouts {
 }
 
 impl GenLayouts {
-    pub fn ty_layout(
-        &mut self,
-        ty: Ty,
-        params: &[Ty],
-        typec: &mut Typec,
-        interner: &mut Interner,
-    ) -> Layout {
+    pub fn ty_layout(&mut self, ty: Ty, params: &[Ty], mut creator: TypeCreator) -> Layout {
         if let Some(&layout) = self.mapping.get(&ty) {
             return layout;
         }
 
+        let cr = type_creator!(creator);
         let res = match ty {
-            Ty::Struct(s) => self.struct_layout(s, params, typec, interner),
+            Ty::Struct(s) => self.struct_layout(s, params, cr),
             Ty::Pointer(..) => Layout::from_type(self.ptr_ty),
             Ty::Builtin(bt) => self.builtin_layout(bt),
-            Ty::Param(index) => self.ty_layout(params[index as usize], &[], typec, interner),
-            Ty::Instance(inst) => self.instance_layout(inst, params, typec, interner),
-            Ty::Enum(ty) => self.enum_layout(ty, params, typec, interner),
+            Ty::Param(index) => self.ty_layout(params[index as usize], &[], cr),
+            Ty::Instance(inst) => self.instance_layout(inst, params, cr),
+            Ty::Enum(ty) => self.enum_layout(ty, params, cr),
+            Ty::Array(_) => todo!(),
         };
 
-        if typec.contains_params(ty) {
+        if creator.typec.contains_params(ty) {
             self.subclear_items.push(ty);
         }
 
@@ -43,14 +41,13 @@ impl GenLayouts {
         &mut self,
         r#enum: FragRef<Enum>,
         params: &[Ty],
-        typec: &mut Typec,
-        interner: &mut Interner,
+        mut creator: TypeCreator,
     ) -> Layout {
-        let tag_size = self.builtin_layout(typec.enum_flag_ty(r#enum)).size;
-        let (base_size, base_align) = typec[typec[r#enum].variants]
+        let tag_size = self.builtin_layout(creator.typec.enum_flag_ty(r#enum)).size;
+        let (base_size, base_align) = creator.typec[creator.typec[r#enum].variants]
             .to_bumpvec()
             .into_iter()
-            .map(|variant| self.ty_layout(variant.ty, params, typec, interner))
+            .map(|variant| self.ty_layout(variant.ty, params, type_creator!(creator)))
             .map(|layout| (layout.size, layout.align.get()))
             .max()
             .unwrap_or((0, 1));
@@ -73,15 +70,14 @@ impl GenLayouts {
         &mut self,
         inst: FragRef<Instance>,
         params: &[Ty],
-        typec: &mut Typec,
-        interner: &mut Interner,
+        mut creator: TypeCreator,
     ) -> Layout {
-        let Instance { base, args } = typec[inst];
+        let Instance { base, args } = creator.typec[inst];
         // remap the instance parameters so we can compute the layout correctly
-        let params = typec.instantiate_slice(args, params, interner);
+        let params = creator.instantiate_slice(args, params);
         match base {
-            GenericTy::Struct(s) => self.struct_layout(s, &params, typec, interner),
-            GenericTy::Enum(e) => self.enum_layout(e, &params, typec, interner),
+            GenericTy::Struct(s) => self.struct_layout(s, &params, creator),
+            GenericTy::Enum(e) => self.enum_layout(e, &params, creator),
         }
     }
 
@@ -89,16 +85,15 @@ impl GenLayouts {
         &mut self,
         r#struct: FragRef<Struct>,
         params: &[Ty],
-        typec: &mut Typec,
-        interner: &mut Interner,
+        mut creator: TypeCreator,
     ) -> Layout {
-        let Struct { fields, .. } = typec[r#struct];
+        let Struct { fields, .. } = creator.typec[r#struct];
         let mut offsets = bumpvec![cap fields.len()];
 
-        let layouts = typec[fields]
+        let layouts = creator.typec[fields]
             .to_bumpvec()
             .into_iter()
-            .map(|field| self.ty_layout(field.ty, params, typec, interner));
+            .map(|field| self.ty_layout(field.ty, params, type_creator!(creator)));
 
         let mut align = 1;
         let mut size = 0;

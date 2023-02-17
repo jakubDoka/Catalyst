@@ -352,6 +352,7 @@ fn display_pat_low(
                 display_pat_low(variant.ty, params, res, frontier, ext)?;
             }
         }
+        Ty::Array(_) => todo!(),
     }
 
     Ok(())

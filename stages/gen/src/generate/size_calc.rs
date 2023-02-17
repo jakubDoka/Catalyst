@@ -10,8 +10,7 @@ impl Generator<'_> {
     }
 
     fn ty_layout_low(&mut self, ty: Ty, params: &[Ty]) -> Layout {
-        self.gen_layouts
-            .ty_layout(ty, params, self.typec, self.interner)
+        self.gen_layouts.ty_layout(ty, params, type_creator!(self))
     }
 
     pub fn is_representable(&mut self, value: VRef<ValueMir>, builder: &mut GenBuilder) -> bool {

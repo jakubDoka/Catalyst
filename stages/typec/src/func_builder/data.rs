@@ -4,15 +4,14 @@ use super::{
     *,
 };
 
-impl TyChecker<'_> {
-    pub fn struct_ctor<'a>(
+impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
+    pub fn struct_ctor(
         &mut self,
         ctor @ StructCtorAst { path, body, .. }: StructCtorAst,
         inference: Inference,
-        builder: &mut TirBuilder<'a, '_>,
-    ) -> ExprRes<'a> {
+    ) -> ExprRes<'arena> {
         let (ty, params) = if let Some(path @ PathAst { slash: None, .. }) = path {
-            let (ty, params) = self.ty_path(path)?;
+            let (ty, params) = self.parser().ty_path(path)?;
             (
                 match ty {
                     TyPathResult::Ty(ty) => ty,
@@ -23,44 +22,42 @@ impl TyChecker<'_> {
                         params.span(),
                         params
                             .iter()
-                            .map(|&param| self.ty(param))
+                            .map(|&param| self.parser().ty(param))
                             .nsc_collect::<Option<BumpVec<_>>>()?,
                     ))
                 }),
             )
         } else {
             let Some(ty) = inference.ty() else {
-                self.workspace.push(CannotInferExpression {
+                CannotInferExpression {
                     help: "add struct path before the slash",
-                    loc: SourceLoc { origin: self.source, span: ctor.span() },
-                })?;
+                    loc: self.meta.loc(ctor.span()),
+                }.add(self.ext.workspace)?;
             };
-            let (ty, params) = ty.base_with_params(self.typec);
-            (ty, Some((default(), self.typec[params].to_bumpvec())))
+            let (ty, params) = ty.base_with_params(self.ext.typec);
+            (ty, Some((default(), self.ext.typec[params].to_bumpvec())))
         };
 
         let Ty::Struct(struct_ty) = ty else {
-            self.workspace.push(UnexpectedType {
+            UnexpectedType {
                 expected: "struct",
-                found: self.typec.display_ty(ty, self.interner),
-                loc: SourceLoc { origin: self.source, span: ctor.span() },
-            })?;
+                found: self.ext.creator().display(ty),
+                loc: self.meta.loc(ctor.span()),
+            }.add(self.ext.workspace)?;
         };
 
-        let struct_meta = self.typec[struct_ty];
+        let struct_meta = self.ext.typec[struct_ty];
 
         let mut param_slots = bumpvec![None; struct_meta.generics.len()];
 
         if let Some((span, ref params)) = params {
             if params.len() > param_slots.len() {
-                self.workspace.push(WrongGenericParamCount {
+                WrongGenericParamCount {
                     expected: param_slots.len(),
                     found: params.len(),
-                    loc: SourceLoc {
-                        origin: self.source,
-                        span,
-                    },
-                });
+                    loc: self.meta.loc(span),
+                }
+                .add(self.ext.workspace);
             }
 
             param_slots
@@ -78,9 +75,9 @@ impl TyChecker<'_> {
                 continue;
             };
 
-            let inference = self.typec.try_instantiate(ty, &param_slots, self.interner);
+            let inference = self.ext.creator().try_instantiate(ty, &param_slots);
             let expr = if let Some((.., expr)) = value {
-                self.expr(expr, inference.into(), builder)
+                self.expr(expr, inference.into())
             } else {
                 self.value_path(
                     PathAst {
@@ -89,7 +86,6 @@ impl TyChecker<'_> {
                         slash: None,
                     },
                     inference.into(),
-                    builder,
                 )
             };
             let Some(value) = expr else {
@@ -99,55 +95,51 @@ impl TyChecker<'_> {
             self.infer_params(&mut param_slots, value.ty, ty, field_ast.span());
 
             if let Some(prev) = fields[index].replace(value) {
-                self.workspace.push(DuplicateCtorField {
+                DuplicateCtorField {
                     prev: prev.span,
-                    loc: SourceLoc {
-                        origin: self.source,
-                        span: name.span,
-                    },
-                });
+                    loc: self.meta.loc(name.span),
+                }
+                .add(self.ext.workspace);
             }
         }
 
         let params = self.unpack_param_slots(
             param_slots.iter().copied(),
             ctor.span(),
-            builder,
             "struct constructor",
             "(<struct_path>\\[<param_ty>, ...]\\{...})",
         )?;
 
-        let missing_fields = self.typec[struct_meta.fields]
+        let missing_fields = self.ext.typec[struct_meta.fields]
             .iter()
             .zip(fields.iter())
             .filter_map(|(field, value)| value.is_none().then_some(&field.name))
-            .map(|name| name.get(self.interner))
+            .map(|name| name.get(self.ext.interner))
             .intersperse(", ")
             .collect::<String>();
 
         if !missing_fields.is_empty() {
-            self.workspace.push(MissingCtorFields {
+            MissingCtorFields {
                 missing_fields,
-                loc: SourceLoc {
-                    origin: self.source,
-                    span: ctor.span(),
-                },
-            })?;
+                loc: self.meta.loc(ctor.span()),
+            }
+            .add(self.ext.workspace)?;
         }
 
         let final_ty = if params.is_empty() {
             Ty::Struct(struct_ty)
         } else {
             Ty::Instance(
-                self.typec
-                    .instance(GenericTy::Struct(struct_ty), params, self.interner),
+                self.ext
+                    .creator()
+                    .instance(GenericTy::Struct(struct_ty), params),
             )
         };
 
         Some(TirNode::new(
             final_ty,
             TirKind::Ctor(
-                builder.arena.alloc_iter(
+                self.arena.alloc_iter(
                     fields
                         .into_iter()
                         .map(|f| f.expect("since missing fields are empty, all fields are some")),
@@ -157,12 +149,7 @@ impl TyChecker<'_> {
         ))
     }
 
-    pub fn balance_pointers<'a>(
-        &mut self,
-        node: &mut TirNode<'a>,
-        ty: Ty,
-        builder: &mut TirBuilder<'a, '_>,
-    ) -> Option<()> {
+    pub fn balance_pointers(&mut self, node: &mut TirNode<'arena>, ty: Ty) -> Option<()> {
         let (desired_pointer_depth, mutability) = match ty {
             Ty::Pointer(ptr) => (ptr.depth, ptr.mutability),
             _ => (0, RawMutability::IMMUTABLE),
@@ -172,13 +159,13 @@ impl TyChecker<'_> {
             let current_pointed_depth = node.ty.ptr_depth();
             match desired_pointer_depth.cmp(&current_pointed_depth) {
                 Ordering::Less => {
-                    let ty = self.typec.deref(node.ty);
+                    let ty = self.ext.typec.dereference(node.ty);
                     let mutability = node.ty.mutability();
                     let mutable = mutability == RawMutability::MUTABLE && total_mutability;
                     total_mutability = mutable;
                     *node = TirNode::with_flags(
                         ty,
-                        TirKind::Deref(builder.arena.alloc(*node)),
+                        TirKind::Deref(self.arena.alloc(*node)),
                         TirFlags::IMMUTABLE & !mutable,
                         node.span,
                     );
@@ -187,17 +174,15 @@ impl TyChecker<'_> {
                     if mutability == RawMutability::MUTABLE
                         && node.flags.contains(TirFlags::IMMUTABLE)
                     {
-                        self.workspace.push(NotMutable {
-                            loc: SourceLoc {
-                                origin: self.source,
-                                span: node.span,
-                            },
-                        });
+                        NotMutable {
+                            loc: self.meta.loc(node.span),
+                        }
+                        .add(self.ext.workspace);
                     }
-                    let ty = self.typec.pointer_to(mutability, node.ty, self.interner);
+                    let ty = self.ext.creator().pointer_to(mutability, node.ty);
                     *node = TirNode::new(
                         Ty::Pointer(ty),
-                        TirKind::Ref(builder.arena.alloc(*node)),
+                        TirKind::Ref(self.arena.alloc(*node)),
                         node.span,
                     );
                 }
@@ -206,18 +191,16 @@ impl TyChecker<'_> {
         }
 
         if node.ty.mutability() != RawMutability::MUTABLE && mutability == RawMutability::MUTABLE {
-            self.workspace.push(NotMutable {
-                loc: SourceLoc {
-                    origin: self.source,
-                    span: node.span,
-                },
-            });
+            NotMutable {
+                loc: self.meta.loc(node.span),
+            }
+            .add(self.ext.workspace);
         }
 
         Some(())
     }
 
-    pub fn int<'a>(&mut self, span: Span, inference: Inference) -> ExprRes<'a> {
+    pub fn int(&mut self, span: Span, inference: Inference) -> ExprRes<'arena> {
         let span_str = self.span_str(span);
         let (ty, postfix_len) =
             Self::infer_constant_type(span_str, inference, &Ty::INTEGERS, Ty::UINT);
@@ -228,7 +211,7 @@ impl TyChecker<'_> {
         ))
     }
 
-    pub fn float<'a>(&mut self, span: Span, inference: Inference) -> ExprRes<'a> {
+    pub fn float(&mut self, span: Span, inference: Inference) -> ExprRes<'arena> {
         let span_str = self.span_str(span);
         let (ty, postfix_len) =
             Self::infer_constant_type(span_str, inference, &Ty::FLOATS, Ty::F32);
@@ -237,6 +220,10 @@ impl TyChecker<'_> {
             TirKind::Float(None),
             span.sliced(..span_str.len() - postfix_len),
         ))
+    }
+
+    fn span_str(&self, span: Span) -> &'ctx str {
+        self.meta.span_str(span, self.ext.resources)
     }
 
     fn infer_constant_type(
@@ -266,7 +253,7 @@ impl TyChecker<'_> {
             .unwrap_or((default, 0))
     }
 
-    pub fn char<'a>(&mut self, span: Span) -> ExprRes<'a> {
+    pub fn char(&mut self, span: Span) -> ExprRes<'arena> {
         Some(TirNode::new(Ty::CHAR, TirKind::Char, span))
     }
 
@@ -278,25 +265,20 @@ impl TyChecker<'_> {
         ))
     }
 
-    pub fn deref<'a>(
-        &mut self,
-        expr: UnitExprAst,
-        _inference: Inference,
-        builder: &mut TirBuilder<'a, '_>,
-    ) -> ExprRes<'a> {
-        let expr = self.unit_expr(expr, Inference::None, builder)?;
+    pub fn deref(&mut self, expr: UnitExprAst, _inference: Inference) -> ExprRes<'arena> {
+        let expr = self.unit_expr(expr, Inference::None)?;
         let Ty::Pointer(ptr) = expr.ty else {
-            self.workspace.push(NonPointerDereference {
-                ty: self.typec.display_ty(expr.ty, self.interner),
-                loc: SourceLoc { origin: self.source, span: expr.span },
-            })?;
+            NonPointerDereference {
+                ty: self.ext.creator().display(expr.ty),
+                loc: self.meta.loc(expr.span),
+            }.add(self.ext.workspace)?;
         };
 
-        let base = self.typec[ptr.ty()];
+        let base = self.ext.typec[ptr.ty()];
 
         Some(TirNode::with_flags(
             base,
-            TirKind::Deref(builder.arena.alloc(expr)),
+            TirKind::Deref(self.arena.alloc(expr)),
             TirFlags::IMMUTABLE
                 & (ptr.mutability == RawMutability::IMMUTABLE
                     || (expr.flags.contains(TirFlags::IMMUTABLE)
@@ -305,50 +287,45 @@ impl TyChecker<'_> {
         ))
     }
 
-    pub fn r#ref<'a>(
+    pub fn r#ref(
         &mut self,
         mutability: Option<MutabilityAst>,
         expr: UnitExprAst,
         _inference: Inference,
-        builder: &mut TirBuilder<'a, '_>,
-    ) -> ExprRes<'a> {
-        let expr = self.unit_expr(expr, Inference::None, builder)?;
-        let mutability = self.mutability(mutability)?;
-        let ptr = self.typec.pointer_to(
-            RawMutability::new(mutability).expect("todo"),
-            expr.ty,
-            self.interner,
-        );
+    ) -> ExprRes<'arena> {
+        let expr = self.unit_expr(expr, Inference::None)?;
+        let mutability = self.parser().mutability(mutability)?;
+        let ptr = self
+            .ext
+            .creator()
+            .pointer_to(RawMutability::new(mutability).expect("todo"), expr.ty);
 
         if mutability == Mutability::Mutable && expr.flags.contains(TirFlags::IMMUTABLE) {
-            self.workspace.push(NotMutable {
-                loc: SourceLoc {
-                    origin: self.source,
-                    span: expr.span,
-                },
-            })?;
+            NotMutable {
+                loc: self.meta.loc(expr.span),
+            }
+            .add(self.ext.workspace)?;
         }
 
         Some(TirNode::new(
             Ty::Pointer(ptr),
-            TirKind::Ref(builder.arena.alloc(expr)),
+            TirKind::Ref(self.arena.alloc(expr)),
             expr.span,
         ))
     }
 
-    pub fn r#let<'a>(
+    pub fn r#let(
         &mut self,
         r#let @ LetAst { pat, ty, value, .. }: LetAst,
         _inference: Inference,
-        builder: &mut TirBuilder<'a, '_>,
-    ) -> ExprRes<'a> {
-        let ty = ty.map(|(.., ty)| self.ty(ty)).transpose()?;
-        let value = self.expr(value, ty.into(), builder)?;
-        let pat = self.pattern(pat, value.ty, builder)?;
+    ) -> ExprRes<'arena> {
+        let ty = ty.map(|(.., ty)| self.parser().ty(ty)).transpose()?;
+        let value = self.expr(value, ty.into())?;
+        let pat = self.pattern(pat, value.ty)?;
 
         Some(TirNode::new(
             Ty::UNIT,
-            TirKind::Let(builder.arena.alloc(LetTir { pat, value })),
+            TirKind::Let(self.arena.alloc(LetTir { pat, value })),
             r#let.span(),
         ))
     }

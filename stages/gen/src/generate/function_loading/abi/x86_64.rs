@@ -4,6 +4,7 @@
 use cranelift_codegen::ir::{types, ArgumentExtension, Type};
 use storage::*;
 use typec_t::*;
+use typec_u::type_creator;
 
 use crate::*;
 
@@ -52,6 +53,7 @@ fn classify_arg_low(
         Ty::Param(index) => {
             return classify_arg_low(generator, params[index as usize], &[], classes, offset);
         }
+        Ty::Array(_) => todo!(),
     };
 
     // Fill in `cls` for scalars (Int/Sse) and vectors (Sse).
@@ -83,10 +85,7 @@ fn classify_enum_arg(
     let flag_ty = Ty::Builtin(generator.typec.enum_flag_ty(e));
     classify_arg_low(generator, flag_ty, params, classes, offset)?;
     let offset = generator.gen_layouts.offsets[layout.offsets][value_offset] + offset;
-    for ty in generator
-        .typec
-        .instantiate_variants(e, params, generator.interner)
-    {
+    for ty in type_creator!(generator).instantiate_variants(e, params) {
         classify_arg_low(generator, ty, params, classes, offset)?;
     }
     Ok(())
@@ -100,9 +99,8 @@ fn classify_struct_arg(
     classes: &mut [Option<Class>],
     offset: u32,
 ) -> Result<(), Memory> {
-    for (ty, field_offset) in generator
-        .typec
-        .instantiate_fields(s, params, generator.interner)
+    for (ty, field_offset) in type_creator!(generator)
+        .instantiate_fields(s, params)
         .into_iter()
         .zip(generator.gen_layouts.offsets[layout.offsets].to_bumpvec())
     {
@@ -120,9 +118,7 @@ fn classify_instance_arg(
     offset: u32,
 ) -> Result<(), Memory> {
     let Instance { base, args } = generator.typec[instance];
-    let params = generator
-        .typec
-        .instantiate_slice(args, params, generator.interner);
+    let params = type_creator!(generator).instantiate_slice(args, params);
     match base {
         GenericTy::Struct(s) => classify_struct_arg(generator, s, &params, layout, classes, offset),
         GenericTy::Enum(e) => classify_enum_arg(generator, e, layout, &params, classes, offset),
@@ -230,7 +226,7 @@ pub fn compute_abi_info(
     let mut sse_regs = MAX_SSE_REGS;
 
     let mut arg_or_ret = |generator: &mut Generator, arg: Ty, is_arg: bool| {
-        let arg = generator.typec.instantiate(arg, params, generator.interner);
+        let arg = type_creator!(generator).instantiate(arg, params);
         let mut cls_or_mem = classify_arg(generator, arg, params);
         let layout = generator.ty_layout(arg);
 

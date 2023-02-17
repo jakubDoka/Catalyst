@@ -8,6 +8,7 @@ use std::{
 use mir_t::*;
 use storage::{FragRef, Interner, PushMap, ShadowMap, SmallVec, VRef, VRefSlice};
 use typec_t::*;
+use typec_u::type_creator;
 
 use crate::{context::ComputedConst, Gen, GenLayouts, Layout};
 
@@ -90,8 +91,7 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
             &next_view,
             &mut frame.types,
             &frame.params,
-            self.typec,
-            self.interner,
+            type_creator!(self),
         );
 
         let frame = mem::replace(self.current, frame);
@@ -232,9 +232,9 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
         let value = match op_str {
             "sizeof" => {
                 let ty = self.current.types[view.ty_params[params][0]].ty;
-                let size =
-                    self.layouts
-                        .ty_layout(ty, &self.current.params, self.typec, self.interner);
+                let size = self
+                    .layouts
+                    .ty_layout(ty, &self.current.params, type_creator!(self));
                 size.size as i64
             }
             "cast" => args[0],
@@ -419,7 +419,7 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
     }
 
     fn layout(&mut self, ty: Ty) -> Layout {
-        self.layouts.ty_layout(ty, &[], self.typec, self.interner)
+        self.layouts.ty_layout(ty, &[], type_creator!(self))
     }
 
     fn ensure_dest(

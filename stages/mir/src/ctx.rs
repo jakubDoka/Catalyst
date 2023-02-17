@@ -9,6 +9,7 @@ use mir_t::*;
 use packaging_t::*;
 use storage::*;
 use typec_t::*;
+use typec_u::TypeCreator;
 
 use crate::builder::moves::MoveCtx;
 
@@ -201,6 +202,15 @@ pub struct ExternalMirCtx<'m, 'i> {
 
     pub arena: &'i Arena,
     pub resources: &'i Resources,
+}
+
+impl<'i, 'm> ExternalMirCtx<'m, 'i> {
+    pub(crate) fn creator(&mut self) -> TypeCreator {
+        TypeCreator {
+            typec: self.typec,
+            interner: self.interner,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]

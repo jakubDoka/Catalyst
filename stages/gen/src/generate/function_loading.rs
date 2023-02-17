@@ -131,17 +131,9 @@ impl Generator<'_> {
         let prefix = if jit { "jit-" } else { "native-" };
         interner.intern_with_compressed(|s, t| {
             t.push_str(prefix);
-            write!(t, "{triple}").unwrap();
-            typec.func_name(func_id, t, s);
-            if let Some(first) = params.next() {
-                t.push('[');
-                typec.display_ty_to(first, t, s);
-                for ty in params.by_ref() {
-                    t.push_str(", ");
-                    typec.display_ty_to(ty, t, s);
-                }
-                t.push(']');
-            };
+            write!(t, "{triple}")?;
+            typec_u::display_func_name(typec, s, func_id, t)?;
+            typec_u::display_list(typec, s, params.by_ref(), t, ['[', ',', ']'])
         })
     }
 

@@ -4,6 +4,7 @@ use lexing_t::*;
 use rkyv::{Archive, Deserialize, Serialize};
 use storage::*;
 use typec_t::*;
+use typec_u::TypeCreator;
 
 #[derive(Serialize, Deserialize, Archive)]
 
@@ -429,8 +430,7 @@ pub fn swap_mir_types(
     view: &FuncMirView,
     dependant_types: &mut PushMap<MirTy>,
     params: &[Ty],
-    typec: &mut Typec,
-    interner: &mut Interner,
+    mut creator: TypeCreator,
 ) {
     dependant_types.clear();
     dependant_types.extend(view.types.values().cloned());
@@ -441,7 +441,7 @@ pub fn swap_mir_types(
 
     for &mir_ty in view.generic_types {
         let ty = dependant_types[mir_ty].ty;
-        let new_ty = typec.instantiate(ty, params, interner);
+        let new_ty = creator.instantiate(ty, params);
         dependant_types[mir_ty].ty = new_ty;
     }
 }

@@ -13,6 +13,14 @@ pub trait CtlError: Send + Sync + 'static {
     fn fill_snippet(&self, snippet: &mut CtlSnippet);
 }
 
+pub trait AddCtlError: Sized + CtlError {
+    fn add(self, workspace: &mut Workspace) -> Option<!> {
+        workspace.push(self)
+    }
+}
+
+impl<T: CtlError> AddCtlError for T {}
+
 #[derive(Default)]
 pub struct Workspace {
     snippets: Vec<Box<dyn CtlError>>,
