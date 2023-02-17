@@ -25,7 +25,7 @@ error: inaccessible scope item
   = info: item is defined in a different module and is private
 
 info: tir repr of functions:
-fn [] pass(var0: uint) -> uint return var0
+fn [] pass(uint) -> uint return var0
 
 fn [] new() -> 1\A return 1\A\{0}
 

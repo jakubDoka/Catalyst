@@ -8,7 +8,7 @@ error: not all parameter specs are satisfied
             u32: Clay
 
 info: tir repr of functions:
-fn [: Clay] pass(var0: param0) -> param0 return var0
+fn [:Clay ] pass(param0) -> param0 return var0
 
 fn [] main() -> uint return pass[uint](0)
 

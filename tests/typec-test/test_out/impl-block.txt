@@ -1,7 +1,7 @@
 info: tir repr of functions:
 fn [] main() -> uint return pass(0)
 
-fn [] pass(var0: uint) -> uint return var0
+fn [] pass(uint) -> uint return var0
 
 
 
