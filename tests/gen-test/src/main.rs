@@ -138,8 +138,8 @@ fn main() {
         }
 
         simple "constants" {
-            const NUM: uint = 10 + 10;
-            const SUM: uint = NUM + NUM;
+            const NUM = 10 + 10;
+            const SUM = NUM + NUM;
             #[entry];
             fn main -> uint => SUM - 40;
         }
@@ -147,8 +147,8 @@ fn main() {
         simple "constants-with-calls" {
             fn add(a: uint, b: uint) -> uint => a + b;
             break;
-            const NUM: uint = add(10, 10);
-            const SUM: uint = add(NUM, NUM);
+            const NUM = add(10, 10);
+            const SUM = add(NUM, NUM);
             #[entry];
             fn main -> uint => SUM - 40;
         }
@@ -179,14 +179,14 @@ fn main() {
 
             break;
 
-            const NUM: uint = iter_recur_fib(0, 1, 10) - iterative_fib(10) + fib(10);
+            const NUM = iter_recur_fib(0, 1, 10) - iterative_fib(10) + fib(10);
             #[entry];
             fn main -> uint => NUM - 55;
         }
 
         simple "constants-pointers" {
-            const NUM: uint = 10;
-            const PTR_TEST: uint = **** **** **** ^^^^ ^^^^ ^^^^ NUM;
+            const NUM = 10;
+            const PTR_TEST = **** **** **** ^^^^ ^^^^ ^^^^ NUM;
             #[entry];
             fn main -> uint => PTR_TEST - NUM;
         }
@@ -202,7 +202,7 @@ fn main() {
                 b: u8;
             };
 
-            const TEST: uint = Test::{ a: 10, b: 20 }.a;
+            const TEST = Test::{ a: 10, b: 20 }.a;
             const TEST_SMALL: TestSmall = ::{ a: 10, b: 20 };
             #[entry];
             fn main -> uint => TEST - TEST_SMALL.b.uint() + TEST_SMALL.a.uint();

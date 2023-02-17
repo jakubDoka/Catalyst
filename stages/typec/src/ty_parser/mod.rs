@@ -100,11 +100,14 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
 
     fn array_ty(&mut self, array_ast: TyArrayAst) -> Option<Ty> {
         let ty = self.ty(array_ast.ty)?;
-        let size = self.const_fold(Ty::UINT, array_ast.size)?.as_array_size()?;
+        let size = self
+            .const_fold(Some(Ty::UINT), array_ast.size)?
+            .0
+            .as_array_size()?;
         Some(Ty::Array(self.ext.creator().array_of(ty, size)))
     }
 
-    fn builder(&mut self, ty: Ty) -> TirBuilder<'arena, '_> {
+    fn builder(&mut self, ty: impl Into<Option<Ty>>) -> TirBuilder<'arena, '_> {
         TirBuilder::new(ty, self.arena, self.ctx, self.ext.clone_borrow(), self.meta)
     }
 
@@ -238,18 +241,27 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             .invalid_symbol_type(item, span, what, self.ext.workspace, &self.meta)
     }
 
-    fn const_fold(&mut self, ty: Ty, value: ExprAst) -> Option<FolderValue> {
-        let body = self.builder(ty).expr_body(value, Inference::Strong(ty))?;
+    fn const_fold(&mut self, ty: Option<Ty>, value: ExprAst) -> Option<(FolderValue, Ty)> {
+        let (body, ty) = self.builder(ty).expr_body(value, Inference::from(ty))?;
         if let Some(shortcut) = self.const_fold_shortcut(body) {
-            return Some(shortcut);
+            return Some((shortcut, ty));
         }
-        Some(self.ext.const_fold(ty, body))
+        Some((self.ext.const_fold(ty, body), ty))
     }
 
-    fn const_fold_shortcut(&mut self, _body: TirNode) -> Option<FolderValue> {
-        // TODO: this may prove usefull for general cases like just literals or just a constant
-        // access
-        None
+    fn const_fold_shortcut(&mut self, body: TirNode) -> Option<FolderValue> {
+        let TirKind::Return(Some(ret), ..) = body.kind else {
+            return None;
+        };
+
+        Some(match ret.kind {
+            TirKind::ConstAccess(c) => self.ext.typec[c].value.clone(),
+            TirKind::Int(i) => FolderValue::new_register(
+                i.unwrap_or_else(|| self.span_str(ret.span).parse().unwrap()) as u64,
+            ),
+            // TODO: most common cases are covered, we can add others later
+            _ => return None,
+        })
     }
 }
 

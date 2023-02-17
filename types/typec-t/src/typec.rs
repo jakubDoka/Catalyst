@@ -655,7 +655,7 @@ impl<T: 'static> TypecCtxSlice<T> for &[T] {
     }
 }
 
-#[derive(Archive, Serialize, Deserialize, Default)]
+#[derive(Clone, Archive, Serialize, Deserialize, Default)]
 pub struct FolderValue(u64);
 
 impl FolderValue {

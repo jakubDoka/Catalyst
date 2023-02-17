@@ -14,7 +14,6 @@ use {
 };
 
 mod call;
-mod consts;
 mod control_flow;
 mod data;
 mod lookup;
@@ -22,7 +21,7 @@ mod lookup;
 pub type ExprRes<'arena> = Option<TirNode<'arena>>;
 
 pub struct TirBuilder<'arena, 'ctx> {
-    ret: Ty,
+    ret: Option<Ty>,
     arena: &'arena Arena,
     ctx: &'ctx mut TypecCtx,
     ext: TypecExternalCtx<'arena, 'ctx>,
@@ -31,7 +30,7 @@ pub struct TirBuilder<'arena, 'ctx> {
 
 impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     pub fn new(
-        ret: Ty,
+        ret: impl Into<Option<Ty>>,
         arena: &'arena Arena,
         ctx: &'ctx mut TypecCtx,
         ext: TypecExternalCtx<'arena, 'ctx>,
@@ -39,7 +38,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     ) -> Self {
         Self {
             arena,
-            ret,
+            ret: ret.into(),
             ctx,
             ext,
             meta,
@@ -458,9 +457,12 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         &mut self,
         expr: ExprAst,
         inference: Inference,
-    ) -> Option<TirNode<'arena>> {
+    ) -> Option<(TirNode<'arena>, Ty)> {
         let expr = self.expr(expr, inference)?;
-        self.return_low(Some(expr), expr.span)
+        Some((
+            self.return_low(Some(expr), expr.span)?,
+            self.ret.expect("return_low ensures ret is set"),
+        ))
     }
 }
 

@@ -129,12 +129,16 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
             vis,
             keyword: self.advance(),
             name: self.name("constant name")?,
-            colon: self.expect(TokenKind::Colon, |p| MissingColon {
-                something: "constant",
-                found: p.current.kind,
-                loc: p.loc(),
-            })?,
-            ty: self.ty()?,
+            ty: self
+                .try_advance(TokenKind::Colon)
+                .map(|colon| self.ty().map(|ty| (colon, ty)))
+                .transpose()
+                .map(
+                    |e| match e.is_some() || vis.map(|vis| vis.vis) != Some(Vis::Pub) {
+                        true => e,
+                        false => self.workspace.push(InferredPubGloal { loc: self.loc() })?,
+                    },
+                )?,
             eqal: self.expect("=", |p| ExpectedAssignEqual {
                 got: p.current.kind,
                 loc: p.loc(),
@@ -285,6 +289,13 @@ ctl_errors! {
     #[err => "trailing attribute(s)"]
     #[info => "attribute must be placed before the item"]
     error TrailingAttribute: fatal {
+        #[err loc]
+        loc: SourceLoc,
+    }
+
+    #[err => "public global with inferred type"]
+    #[info => "public api cannot be inferred"]
+    error InferredPubGloal: fatal {
         #[err loc]
         loc: SourceLoc,
     }

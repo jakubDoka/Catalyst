@@ -153,9 +153,11 @@ impl<'ctx> Fmt<'ctx> {
 
         self.name(r#const.name);
 
-        self.source_info(r#const.colon);
-        self.buffer.push(' ');
-        self.ty(&r#const.ty);
+        if let Some((colon, ref ty)) = r#const.ty {
+            self.source_info(colon);
+            self.buffer.push(' ');
+            self.ty(ty);
+        }
 
         self.buffer.push(' ');
         self.source_info(r#const.eqal);

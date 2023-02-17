@@ -478,11 +478,12 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         };
 
         // since we inserted const into scope we have to recover here
-        let ty = self.ty(ty).unwrap_or_default();
+        let ty = ty.and_then(|(.., ty)| self.ty(ty));
+        let (value, ty) = self.const_fold(ty, value).unwrap_or_default();
         let r#const = Const {
             name: name.ident,
             ty,
-            value: self.const_fold(ty, value).unwrap_or_default(),
+            value,
             loc,
         };
 

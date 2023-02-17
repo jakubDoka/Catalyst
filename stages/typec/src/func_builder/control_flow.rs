@@ -25,7 +25,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
 
     pub fn r#return(&mut self, expr: Option<ExprAst>, span: Span) -> ExprRes<'arena> {
         let value = expr
-            .map(|expr| self.expr(expr, Inference::Strong(self.ret)))
+            .map(|expr| self.expr(expr, Inference::from(self.ret)))
             .transpose()?;
 
         let span = expr.map_or(span, |expr| span.joined(expr.span()));
@@ -34,7 +34,9 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     }
 
     pub fn return_low(&mut self, value: ExprRes<'arena>, span: Span) -> ExprRes<'arena> {
-        self.type_check(self.ret, value.map_or(Ty::UNIT, |value| value.ty), span)?;
+        let checked_ty = value.map_or(Ty::UNIT, |value| value.ty);
+        let &mut ret_ty = self.ret.get_or_insert(checked_ty);
+        self.type_check(ret_ty, value.map_or(Ty::UNIT, |value| value.ty), span)?;
 
         Some(TirNode::new(
             Ty::TERMINAL,
