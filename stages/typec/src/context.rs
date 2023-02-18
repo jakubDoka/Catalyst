@@ -399,12 +399,12 @@ impl TypecCtx {
         let mut token_macros = bumpvec![];
         let mod_ent = &resources.modules[module];
         for dep in &resources.module_deps[mod_ent.deps] {
-            self.scope.push(dep.name, dep.ptr, dep.name_span);
-
-            let items = &typec.module_items[dep.ptr];
+            let dep_source = resources.modules[dep.ptr].source;
+            self.scope.push(dep.name, dep_source, dep.name_span);
+            let items = &typec.module_items[dep_source];
             for &item in items.items.values() {
                 self.scope
-                    .insert(module, dep.ptr, item, resources, interner);
+                    .insert(mod_ent.source, dep_source, item, resources, interner);
 
                 if let ModuleItemPtr::Ty(ty) = item.ptr
                     && let Some(r#impl) = typec.macros.get(&ty)
@@ -584,7 +584,12 @@ impl TypecCtx {
             ScopeError::Collision => {
                 let suggestions = resources.module_deps[resources.modules[meta.module].deps]
                     .iter()
-                    .filter(|dep| typec[dep.ptr].items.values().any(|i| i.id == sym))
+                    .filter(|dep| {
+                        typec[resources.modules[dep.ptr].source]
+                            .items
+                            .values()
+                            .any(|i| i.id == sym)
+                    })
                     .map(|dep| dep.name.get(interner))
                     .intersperse(", ")
                     .collect::<String>();
@@ -629,7 +634,7 @@ impl TypecCtx {
             ..
         }: &mut TypecExternalCtx,
         meta: &TypecMeta,
-    ) -> Option<Loc> {
+    ) -> Option<GuaranteedLoc> {
         if let Err(record) = self.scope.insert_current(item) {
             match record.span() {
                 Some(span) => workspace.push(DuplicateDefinition {
@@ -761,30 +766,30 @@ impl TypecMeta {
         }
     }
 
+    pub fn source(&self) -> VRef<Source> {
+        self.source
+    }
+
     pub fn span_str<'a>(&self, span: Span, resources: &'a Resources) -> &'a str {
         resources.sources[self.source].span_str(span)
     }
 
     pub fn can_access(
         &self,
-        loc: Option<Loc>,
+        loc: Loc,
         vis: Option<Vis>,
         code_span: Span,
         def_span: Span,
         ext: &mut TypecExternalCtx,
     ) -> bool {
-        let Some(loc) = loc else {
-            return true;
-        };
-
         let (position, accessible) =
-            Scope::compute_accessibility(self.module, loc.module, vis, ext.resources);
+            Scope::compute_accessibility(self.source, loc.source(), vis, ext.resources);
 
         if let Some(pos) = position && !accessible {
             ext.workspace.push(InaccessibleScopeItem {
                 pos,
                 item_def: SourceLoc {
-                    origin: ext.resources.modules[loc.module].source,
+                    origin: loc.source(),
                     span: def_span,
                 },
                 loc: self.loc(code_span),
@@ -794,11 +799,8 @@ impl TypecMeta {
         accessible
     }
 
-    pub(crate) fn item_loc(&self, typec: &mut Typec, item: ModuleItem) -> Loc {
-        Loc {
-            module: self.module,
-            item: typec[self.module].items.push(item),
-        }
+    pub(crate) fn item_loc(&self, typec: &mut Typec, item: ModuleItem) -> GuaranteedLoc {
+        GuaranteedLoc::new(self.source, typec[self.source].items.push(item))
     }
 }
 

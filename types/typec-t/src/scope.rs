@@ -2,7 +2,7 @@ use std::collections::hash_map;
 
 use diags::SourceLoc;
 use lexing_t::*;
-use packaging_t::{Module, Resources, Source};
+use packaging_t::{Resources, Source};
 use rkyv::{Archive, Deserialize, Serialize};
 use storage::*;
 
@@ -66,26 +66,25 @@ impl Scope {
 
     pub fn insert(
         &mut self,
-        current_module: VRef<Module>,
-        foreign_module: VRef<Module>,
+        current: VRef<Source>,
+        foreign: VRef<Source>,
         item: ModuleItem,
         resources: &Resources,
         interner: &mut Interner,
     ) {
-        debug_assert!(current_module != foreign_module);
+        debug_assert!(current != foreign);
 
         let (position, accessible) =
-            Self::compute_accessibility(current_module, foreign_module, item.vis, resources);
+            Self::compute_accessibility(current, foreign, item.vis, resources);
 
         let record = ScopeRecord::Imported {
-            module: foreign_module,
-            source: resources.modules[foreign_module].source,
+            source: foreign,
             item,
             position,
             accessible,
         };
 
-        let scoped_id = interner.intern_scoped(foreign_module.index(), item.id);
+        let scoped_id = interner.intern_scoped(foreign.index(), item.id);
         self.data.insert(scoped_id, record);
 
         if let Some(existing_option) = self.data.get_mut(&item.id) {
@@ -104,16 +103,16 @@ impl Scope {
     }
 
     pub fn compute_accessibility(
-        current_module: VRef<Module>,
-        foreign_module: VRef<Module>,
+        current: VRef<Source>,
+        foreign: VRef<Source>,
         vis: Option<Vis>,
         resources: &Resources,
     ) -> (Option<ScopePosition>, bool) {
-        if current_module == foreign_module {
+        if current == foreign {
             return (None, true);
         }
 
-        if resources.modules[current_module].package == resources.modules[foreign_module].package {
+        if resources.sources[current].package == resources.sources[foreign].package {
             return (Some(ScopePosition::Module), vis != Some(Vis::Priv));
         }
 
@@ -144,7 +143,6 @@ pub enum ScopePosition {
 #[derive(Clone, Copy, Debug)]
 pub enum ScopeRecord {
     Imported {
-        module: VRef<Module>,
         source: VRef<Source>,
         item: ModuleItem,
         position: Option<ScopePosition>,
@@ -249,7 +247,7 @@ wrapper_enum! {
         SpecFunc: FragRef<SpecFunc> => "spec function",
         SpecBase: FragRef<SpecBase> => "spec",
         VarHeaderTir: VRef<VarHeaderTir> => "variable",
-        Module: VRef<Module> => "module",
+        Module: VRef<Source> => "module",
         LoopHeaderTir: VRef<LoopHeaderTir> => "loop label",
         Const: FragRef<Const> => "constant",
     }

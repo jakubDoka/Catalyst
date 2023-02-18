@@ -130,9 +130,7 @@ pub fn display_func_name(
     let Func {
         name, loc, owner, ..
     } = typec[func];
-    if let Some(loc) = loc {
-        write!(to, "{}\\", loc.module.index()).unwrap();
-    }
+    write!(to, "{}\\", loc.source().index()).unwrap();
     if let Some(owner) = owner {
         owner.base(typec).display(typec, interner, to)?;
         write!(to, "\\").unwrap();
@@ -145,23 +143,11 @@ impl TypeDisplay for Ty {
     fn display(self, typec: &Typec, interner: &Interner, out: &mut String) -> fmt::Result {
         match self {
             Ty::Struct(r#struct) => {
-                write!(
-                    out,
-                    "{}\\",
-                    typec[r#struct]
-                        .loc
-                        .map_or(usize::MAX, |loc| loc.module.index())
-                )?;
+                write!(out, "{}\\", typec[r#struct].loc.source().index())?;
                 out.push_str(typec[r#struct].name.get(interner))
             }
             Ty::Enum(r#enum) => {
-                write!(
-                    out,
-                    "{}\\",
-                    typec[r#enum]
-                        .loc
-                        .map_or(usize::MAX, |loc| loc.module.index())
-                )?;
+                write!(out, "{}\\", typec[r#enum].loc.source().index())?;
                 out.push_str(typec[r#enum].name.get(interner))
             }
             Ty::Instance(instance) => typec[instance].display(typec, interner, out)?,

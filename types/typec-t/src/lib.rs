@@ -88,8 +88,8 @@ pub use {
     },
     typec::{
         lookup_water_drop, sorted_water_drops, ConstFolder, ConstFolderContext, FolderValue,
-        ImplList, ImplLookup, Implemented, Loc, MacroImpl, Macros, Mapping, MayNeedDrop,
-        ModuleItems, ParamPresence, SpecCmpError, Typec, TypecBase, TypecCache, TypecCacheBase,
-        TypecCtxSlice, TypecLookup,
+        GuaranteedLoc, ImplList, ImplLookup, Implemented, Loc, MacroImpl, Macros, Mapping,
+        MayNeedDrop, ModuleItems, ParamPresence, SpecCmpError, Typec, TypecBase, TypecCache,
+        TypecCacheBase, TypecCtxSlice, TypecLookup,
     },
 };

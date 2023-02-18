@@ -9,7 +9,7 @@ use std::{mem, ops::Deref};
 use crate::*;
 
 use diags::{SourceLoc, Workspace};
-use packaging_t::{Module, Resources};
+use packaging_t::{Resources, Source};
 
 use rkyv::{Archive, Deserialize, Serialize};
 use storage::*;
@@ -81,7 +81,7 @@ impl Default for Typec {
 pub struct Typec {
     pub mapping: Arc<Mapping>,
     pub cache: TypecCache,
-    pub module_items: ShadowMap<Module, ModuleItems>,
+    pub module_items: ShadowMap<Source, ModuleItems>,
 }
 
 impl Deref for Typec {
@@ -92,16 +92,16 @@ impl Deref for Typec {
     }
 }
 
-impl Index<VRef<Module>> for Typec {
+impl Index<VRef<Source>> for Typec {
     type Output = ModuleItems;
 
-    fn index(&self, index: VRef<Module>) -> &Self::Output {
+    fn index(&self, index: VRef<Source>) -> &Self::Output {
         &self.module_items[index]
     }
 }
 
-impl IndexMut<VRef<Module>> for Typec {
-    fn index_mut(&mut self, index: VRef<Module>) -> &mut Self::Output {
+impl IndexMut<VRef<Source>> for Typec {
+    fn index_mut(&mut self, index: VRef<Source>) -> &mut Self::Output {
         &mut self.module_items[index]
     }
 }
@@ -493,15 +493,67 @@ pub enum SpecCmpError {
 #[derive(Clone, Copy, Deserialize, Serialize, Archive)]
 
 pub struct Loc {
-    pub module: VRef<Module>,
-    pub item: VRef<ModuleItem>,
+    source: VRef<Source>,
+    item: Option<VRef<ModuleItem>>,
 }
 
 impl Loc {
-    pub fn source_loc(&self, typec: &Typec, resources: &Resources) -> SourceLoc {
+    pub fn new(source: VRef<Source>, item: impl Into<Option<VRef<ModuleItem>>>) -> Self {
+        Self {
+            source,
+            item: item.into(),
+        }
+    }
+
+    pub fn source(self) -> VRef<Source> {
+        self.source
+    }
+
+    pub fn source_loc(self, typec: &Typec) -> Option<SourceLoc> {
+        Some(SourceLoc {
+            origin: self.source,
+            span: typec.module_items[self.source].items[self.item?].span,
+        })
+    }
+}
+
+impl Default for Loc {
+    fn default() -> Self {
+        Self {
+            source: Resources::BUILTIN_SOURCE,
+            item: None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Deserialize, Serialize, Archive)]
+pub struct GuaranteedLoc {
+    source: VRef<Source>,
+    item: VRef<ModuleItem>,
+}
+
+impl GuaranteedLoc {
+    pub fn new(source: VRef<Source>, item: VRef<ModuleItem>) -> Self {
+        Self { source, item }
+    }
+
+    pub fn source(self) -> VRef<Source> {
+        self.source
+    }
+
+    pub fn source_loc(self, typec: &Typec) -> SourceLoc {
         SourceLoc {
-            origin: resources.modules[self.module].source,
-            span: typec.module_items[self.module].items[self.item].span,
+            origin: self.source,
+            span: typec.module_items[self.source].items[self.item].span,
+        }
+    }
+}
+
+impl Into<Loc> for GuaranteedLoc {
+    fn into(self) -> Loc {
+        Loc {
+            source: self.source,
+            item: Some(self.item),
         }
     }
 }

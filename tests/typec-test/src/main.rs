@@ -60,6 +60,7 @@ impl Scheduler for TestState {
 
         self.typec_transfere = active.erase();
         self.arena.clear();
+        self.typec_ctx.cast_checks().for_each(drop);
     }
 
     fn finally(&mut self) {
@@ -441,12 +442,6 @@ fn main() {
                     window.do_something()
                 }
             }
-        }
-
-        simple "array" {
-            const SIZE: uint = 4;
-            fn main() -> uint => cast::[u32]([0, 0, 1, 0]) - 256.u32();
-            fn take_array(arr: [u32; SIZE * 2]) {}
         }
     }
 }

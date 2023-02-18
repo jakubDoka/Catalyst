@@ -17,7 +17,7 @@ pub struct Func {
     pub flags: FuncFlags,
     pub visibility: FuncVisibility,
     pub name: Ident,
-    pub loc: Option<Loc>,
+    pub loc: Loc,
 }
 
 derive_relocated!(struct Func { generics owner upper_generics signature });

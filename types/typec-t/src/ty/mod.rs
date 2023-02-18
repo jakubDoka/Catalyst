@@ -25,7 +25,7 @@ pub struct Impl {
     pub generics: Generics,
     pub key: ImplKey,
     pub methods: FragRefSlice<Func>,
-    pub loc: Loc,
+    pub loc: GuaranteedLoc,
 }
 
 derive_relocated!(struct Impl { generics key methods });
@@ -62,7 +62,7 @@ pub struct Struct {
     pub name: Ident,
     pub generics: Generics,
     pub fields: FragSlice<Field>,
-    pub loc: Option<Loc>,
+    pub loc: Loc,
 }
 
 derive_relocated!(struct Struct { generics fields });
@@ -88,7 +88,7 @@ pub struct Enum {
     pub name: Ident,
     pub generics: Generics,
     pub variants: FragSlice<Variant>,
-    pub loc: Option<Loc>,
+    pub loc: Loc,
 }
 
 derive_relocated!(struct Enum { generics variants });
@@ -254,7 +254,7 @@ pub struct SpecBase {
     pub generics: Generics,
     pub inherits: FragSlice<Spec>,
     pub methods: FragSlice<SpecFunc>,
-    pub loc: Option<Loc>,
+    pub loc: Loc,
 }
 
 derive_relocated!(struct SpecBase { generics inherits methods });
@@ -503,12 +503,8 @@ impl Ty {
 
     pub fn span(self, typec: &Typec) -> Option<Span> {
         match self {
-            Self::Struct(s) => {
-                Some(typec.module_items[typec[s].loc?.module].items[typec[s].loc?.item].span)
-            }
-            Self::Enum(e) => {
-                Some(typec.module_items[typec[e].loc?.module].items[typec[e].loc?.item].span)
-            }
+            Self::Struct(s) => Some(typec[s].loc.source_loc(typec)?.span),
+            Self::Enum(e) => Some(typec[e].loc.source_loc(typec)?.span),
             Self::Instance(..)
             | Self::Pointer(..)
             | Self::Param(..)

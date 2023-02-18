@@ -17,9 +17,9 @@ members = [
 
 [profile.release]
 opt-level = 3
-lto = true
+# lto = true
 panic = "abort"
-codegen-units = 1
+# codegen-units = 1
 # debug = 1
 # strip = true
 

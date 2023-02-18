@@ -24,7 +24,7 @@ fn main() {
         println!("Compiling test case: {name}");
         Command::new("cargo")
             .current_dir(path)
-            .args(["build"])
+            .args(["build", "--release"])
             .status()
             .unwrap();
     }

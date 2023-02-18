@@ -138,9 +138,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         {
             CollidingImpl {
                 colliding: self.meta.loc(span),
-                existing: self.ext.typec[already]
-                    .loc
-                    .source_loc(self.ext.typec, self.ext.resources),
+                existing: self.ext.typec[already].loc.source_loc(self.ext.typec),
                 ty: self.ext.creator().display(ty),
                 spec: self.ext.creator().display(spec),
             }
@@ -198,9 +196,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
                     else {continue};
 
             if let Err(err) = self.ext.check_impl_signature(ty, spec_method, method, true) {
-                let spec_source_loc = self.ext.typec[spec_base]
-                    .loc
-                    .map(|loc| loc.source_loc(self.ext.typec, self.ext.resources));
+                let spec_source_loc = self.ext.typec[spec_base].loc.source_loc(self.ext.typec);
                 self.ext.handle_signature_check_error(
                     err,
                     span,
@@ -266,7 +262,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             .insert_scope_item(item, &mut self.ext, &self.meta)?;
         let spec = SpecBase {
             name: name.ident,
-            loc: Some(loc),
+            loc: loc.into(),
             ..default()
         };
         Some(self.insert_humid_item(spec, meta))
@@ -331,8 +327,8 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             FuncVisibility::Local
         };
 
-        let loc = if not_in_scope {
-            None
+        let (loc, meta) = if not_in_scope {
+            (Loc::new(self.meta.source(), None), None)
         } else {
             let meta = self.next_humid_item_id::<Func>(name, attributes);
             let local_id = owner.map_or(name.ident, |owner| {
@@ -346,11 +342,11 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
                 name.span,
                 vis.map(|vis| vis.vis).or(upper_vis),
             );
-            Some(
-                self.ctx
-                    .insert_scope_item(item, &mut self.ext, &self.meta)
-                    .map(|id| (id, meta))?,
-            )
+            let (loc, meta) = self
+                .ctx
+                .insert_scope_item(item, &mut self.ext, &self.meta)
+                .map(|id| (id, meta))?;
+            (loc.into(), Some(meta))
         };
 
         let func = Func {
@@ -362,9 +358,9 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
                 | (FuncFlags::NO_MOVES & no_moves.is_some()),
             visibility,
             name: name.ident,
-            loc: loc.as_ref().map(|&(loc, ..)| loc),
+            loc,
         };
-        Some(if let Some((.., meta)) = loc {
+        Some(if let Some(meta) = meta {
             self.insert_humid_item(func, meta)
         } else {
             self.ext.typec.cache.funcs.push(func)
@@ -453,7 +449,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         let (loc, meta) = self.humid_item_loc(name, attributes, vis, Some(generics))?;
         let s = Struct {
             name: name.ident,
-            loc: Some(loc),
+            loc: loc.into(),
             ..default()
         };
         Some(self.insert_humid_item(s, meta))
@@ -484,7 +480,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             name: name.ident,
             ty,
             value,
-            loc,
+            loc: loc.into(),
         };
 
         Some(self.ext.typec.cache.consts.push(r#const))
@@ -503,7 +499,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         let (loc, meta) = self.humid_item_loc(name, attributes, vis, Some(generics))?;
         let e = Enum {
             name: name.ident,
-            loc: Some(loc),
+            loc: loc.into(),
             ..default()
         };
         Some(self.insert_humid_item(e, meta))
@@ -515,7 +511,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         attributes: &[TopLevelAttrAst],
         vis: Option<VisAst>,
         check_macro: Option<Option<ListAst<ParamAst>>>,
-    ) -> Option<(Loc, HumidMeta<T>)>
+    ) -> Option<(GuaranteedLoc, HumidMeta<T>)>
     where
         FragRef<T>: Into<Ty>,
     {

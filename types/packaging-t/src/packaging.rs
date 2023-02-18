@@ -59,6 +59,7 @@ impl Resources {
             dead: false,
             loaded: true,
             builtin: true,
+            package: Self::BUILTIN_PACKAGE,
         });
         assert_eq!(Self::BUILTIN_SOURCE, builtin_source);
 
@@ -141,6 +142,7 @@ pub struct Source {
     #[with(Skip)]
     pub loaded: bool,
     pub builtin: bool,
+    pub package: VRef<Package>,
 }
 
 impl Source {

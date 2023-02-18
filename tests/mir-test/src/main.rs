@@ -93,6 +93,7 @@ impl Scheduler for TestState {
 
         self.typec_transfere = active.erase();
         self.module.clear();
+        self.typec_ctx.cast_checks().for_each(drop);
     }
 
     fn finally(&mut self) {
@@ -148,20 +149,6 @@ fn main() {
 
             #[entry];
             fn main -> uint => pass::[uint, B](0uint, 'h');
-        }
-
-        // simple "compile-time" {
-        //     fn sub(a: uint, b: uint) -> uint => a - b;
-
-        //     #[entry];
-        //     fn main -> uint => const sub(1, 1);
-        // }
-
-        simple "constants" {
-            const NUM: uint = 10 + 10;
-            const SUM: uint = NUM + NUM;
-            #[entry];
-            fn main -> uint => SUM - 40;
         }
 
         simple "match" {

@@ -94,7 +94,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
                 MissingSpecInherits {
                     ty: self.ext.creator().display(ty),
                     missing: missing_impls,
-                    loc: loc.source_loc(self.ext.typec, self.ext.resources),
+                    loc: loc.source_loc(self.ext.typec),
                 }
                 .add(self.ext.workspace);
             }

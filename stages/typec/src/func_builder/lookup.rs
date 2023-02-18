@@ -554,13 +554,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             })
     }
 
-    fn can_access(
-        &mut self,
-        loc: Option<Loc>,
-        vis: Option<Vis>,
-        code_span: Span,
-        def_span: Span,
-    ) -> bool {
+    fn can_access(&mut self, loc: Loc, vis: Option<Vis>, code_span: Span, def_span: Span) -> bool {
         self.meta
             .can_access(loc, vis, code_span, def_span, &mut self.ext)
     }

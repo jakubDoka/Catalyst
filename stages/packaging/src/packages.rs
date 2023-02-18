@@ -251,6 +251,7 @@ impl<'a> PackageLoader<'a> {
         let source = self.load_source(
             path.clone(),
             Some(SourceLoc { origin, span }),
+            package,
             ctx,
             "module",
         )?;
@@ -457,7 +458,13 @@ impl<'a> PackageLoader<'a> {
     ) -> Option<()> {
         let package_path = path.join("package").with_extension("ctlm");
 
-        let source_id = self.load_source(package_path, loc, ctx, "package")?;
+        let source_id = self.load_source(
+            package_path,
+            loc,
+            Resources::BUILTIN_PACKAGE,
+            ctx,
+            "package",
+        )?;
 
         let source = &self.resources.sources[source_id];
         let mut parser_ctx = ParserCtx::new(&source.content);
@@ -602,18 +609,21 @@ impl<'a> PackageLoader<'a> {
         &mut self,
         path: PathBuf,
         loc: Option<SourceLoc>,
+        package: VRef<Package>,
         ctx: &mut ResourceLoaderCtx,
         owner: &'static str,
     ) -> Option<VRef<Source>> {
         let last_modified = self.db.get_modification_time(&path);
         if let Some(&source) = ctx.sources.get(&path)
             && let Ok(last_modified) = last_modified
-            && self.resources.sources[source].last_modified == last_modified
+            && let source_ent = &mut self.resources.sources[source]
+            && source_ent.last_modified == last_modified
         {
-            if self.resources.sources[source].dead {
-                self.resources.sources[source].changed = false;
-                self.resources.sources[source].dead = false;
+            if source_ent.dead {
+                source_ent.changed = false;
+                source_ent.dead = false;
             }
+            source_ent.package = package;
             return Some(source);
         }
 
@@ -640,6 +650,7 @@ impl<'a> PackageLoader<'a> {
             dead: false,
             loaded: true,
             builtin: false,
+            package,
         };
 
         Some(match ctx.sources.entry(path) {

@@ -637,14 +637,15 @@ impl Middleware {
         let mut module_items = ShadowMap::new();
 
         for (key, module) in resources.modules.iter() {
+            let key = resources.modules[key].source;
             if let Some(items) = cached_items.remove(&module.source) {
                 module_items[key] = items;
             }
         }
 
         fn sync_module_items(
-            target: &mut ShadowMap<Module, ModuleItems>,
-            source: &ShadowMap<Module, ModuleItems>,
+            target: &mut ShadowMap<Source, ModuleItems>,
+            source: &ShadowMap<Source, ModuleItems>,
         ) {
             for (k, v) in source.iter() {
                 let mv = &mut target[k];
@@ -733,7 +734,7 @@ impl Middleware {
         }
 
         for (key, items) in module_items.iter_mut() {
-            cached_items.insert(resources.modules[key].source, mem::take(items));
+            cached_items.insert(key, mem::take(items));
         }
 
         res

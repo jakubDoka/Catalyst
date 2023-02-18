@@ -197,7 +197,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
 
         Some(TirNode::new(
             array_ty.into(),
-            TirKind::Ctor(self.arena.alloc(elements)),
+            TirKind::Ctor(self.arena.alloc_iter(elements)),
             array.span(),
         ))
     }
@@ -299,9 +299,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                     self.ext.workspace.push(MissingStructPatternFields {
                         loc: self.meta.loc(fields.span()),
                         missing_fields,
-                        struct_loc: self.ext.typec[struct_ty]
-                            .loc
-                            .map(|loc| loc.source_loc(self.ext.typec, self.ext.resources)),
+                        struct_loc: self.ext.typec[struct_ty].loc.source_loc(self.ext.typec),
                     })?;
                 }
 

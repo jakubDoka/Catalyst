@@ -78,7 +78,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             args,
             signature,
             inference,
-            &|s| loc.map(|loc| loc.source_loc(s.ext.typec, s.ext.resources)),
+            &|s| loc.source_loc(s.ext.typec),
         )?;
 
         if func == Func::CAST && let &[to, from] = params {
@@ -134,11 +134,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             args,
             signature,
             inference,
-            &|s| {
-                s.ext.typec[func_ent.parent]
-                    .loc
-                    .map(|loc| loc.source_loc(s.ext.typec, s.ext.resources))
-            },
+            &|s| s.ext.typec[func_ent.parent].loc.source_loc(s.ext.typec),
         )?;
 
         let call_tir = CallTir {
