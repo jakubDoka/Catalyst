@@ -1,10 +1,26 @@
-error: type mismatch
- --> array/root.ctl:7:36
-  |
-7 |   fn make_int_array() -> [uint; LEN] {
-  |  ____________________________________^
-8 | | }
-  | |_^ here
-  |
-  = info: expected '[uint; 3]' but got '()'
+info: generated ir:
+native-x86_64-unknown-linux-gnu0\main[] function u0:0() fast {
+block0:
+    v0 = iconst.i16 0
+    v1 = iconst.i8 1
+    v2 = uextend.i16 v1  ; v1 = 1
+    v3 = band_imm v0, -256  ; v0 = 0
+    v4 = bor v3, v2
+    v5 = iconst.i8 0
+    v6 = uextend.i16 v5  ; v5 = 0
+    v7 = ishl_imm v6, 8
+    v8 = band_imm v4, 0xffff_ffff_ffff_00ff
+    v9 = bor v8, v7
+    v10 = iconst.i8 1
+    v11 = uextend.i16 v10  ; v10 = 1
+    v12 = ishl_imm v11, 16
+    v13 = band_imm v9, 0xffff_ffff_ff00_ffff
+    v14 = bor v13, v12
+    return
+}
+
+
+info: status: exit status: 0
+ = info: stdout: 
+ = info: stderr: 
 
