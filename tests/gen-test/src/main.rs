@@ -488,13 +488,18 @@ fn main() {
             fn main -> u32 => 0uint.u32() + false.u32();
         }
 
-        // TDOD: array impl
-        // simple "array" {
-        //     #[entry];
-        //     fn main {
-        //         [true, false, true]
-        //     }
-        // }
+        simple "array" {
+            #[entry];
+            fn main {
+                [true, false, true]
+            }
+
+            const LEN = 3;
+
+            fn make_int_array() -> [uint; LEN] {
+                [1, 2, 3]
+            }
+        }
 
         // simple "swap-macro" {
         //     use {

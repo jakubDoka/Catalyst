@@ -205,7 +205,7 @@ impl Generator<'_> {
         let on_stack = matches!(pass_target.ret, Some(PassMode::Indirect(..)));
         if on_stack {
             target.params.push(AbiParam::special(
-                self.gen_layouts.ptr_ty,
+                self.layouts.ptr_ty,
                 ArgumentPurpose::StructReturn,
             ));
         }

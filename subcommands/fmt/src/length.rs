@@ -245,6 +245,7 @@ impl Length for UnitExprAst<'_, u32> {
             Deref(d, e) => d.length(fmt) + e.length(fmt),
             Ref(m, d, e) => m.length(fmt) + d.length(fmt) + d.is_some() as usize + e.length(fmt),
             Block(b) => b.length(fmt),
+            Array(a) => a.length(fmt),
         }
     }
 }

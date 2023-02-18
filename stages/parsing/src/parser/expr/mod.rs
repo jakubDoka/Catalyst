@@ -73,6 +73,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
                 })?,
             }},
             LeftBrace => self.block("code block", Self::expr).map(UnitExprAst::Block),
+            LeftBracket => self.array("array", Self::expr).map(UnitExprAst::Array),
             @"expression",
         });
 

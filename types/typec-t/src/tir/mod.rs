@@ -221,6 +221,14 @@ impl Inference {
             other => other,
         }
     }
+
+    pub fn map(self, f: impl FnOnce(Ty) -> Option<Ty>) -> Inference {
+        match self {
+            Inference::Strong(ty) => f(ty).map(Inference::Strong).unwrap_or(Inference::None),
+            Inference::Weak(ty) => f(ty).map(Inference::Weak).unwrap_or(Inference::None),
+            Inference::None => Inference::None,
+        }
+    }
 }
 
 impl From<Option<Ty>> for Inference {

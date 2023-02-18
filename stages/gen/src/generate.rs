@@ -266,9 +266,7 @@ impl Generator<'_> {
                 let variants = s.typec[e].variants;
                 let flag_ty = s.typec.enum_flag_ty(e);
                 let flag_repr = s.ty_repr(Ty::Builtin(flag_ty));
-                let &[flag_offset, value_offset] = &s.gen_layouts.offsets[layout.offsets] else {
-                    unreachable!();
-                };
+                let [flag_offset, value_offset] = [0, layout.align.get() as u32];
                 let dest = builder.create_block();
                 let mut current = Some(dest);
                 let mut flag_value = None;
@@ -300,9 +298,9 @@ impl Generator<'_> {
             match ty {
                 Ty::Struct(s) => {
                     let layout = self.ty_layout(ty);
-                    self.gen_layouts.offsets[layout.offsets]
-                        .iter()
-                        .map(|&of| of + offset)
+                    layout
+                        .offsets(&self.layouts.offsets)
+                        .map(|of| of + offset)
                         .rev()
                         .zip(self.typec[self.typec[s].fields].iter().map(|f| f.ty).rev())
                         .map(DropFrame::Drop)
@@ -314,9 +312,9 @@ impl Generator<'_> {
                     match base {
                         GenericTy::Struct(s) => {
                             let layout = self.ty_layout(ty);
-                            self.gen_layouts.offsets[layout.offsets]
-                                .iter()
-                                .map(|&of| of + offset)
+                            layout
+                                .offsets(&self.layouts.offsets)
+                                .map(|of| of + offset)
                                 .rev()
                                 .zip(type_creator!(self).instantiate_fields(s, args))
                                 .map(DropFrame::Drop)
@@ -442,8 +440,11 @@ impl Generator<'_> {
             must_load,
         } = self.gen_resources.values[header];
         let header_ty = builder.value_ty(header);
-        let offsets = self.ty_layout(header_ty).offsets;
-        let field_offset = self.gen_layouts.offsets[offsets][field as usize];
+        let field_offset = self
+            .ty_layout(header_ty)
+            .offsets(&self.layouts.offsets)
+            .nth(field as usize)
+            .unwrap();
         if self.gen_resources.values[ret].computed.is_some() {
             self.save_value(
                 ret,
@@ -473,10 +474,10 @@ impl Generator<'_> {
 
         let base_value = self.gen_resources.values[ret];
 
-        self.gen_layouts.offsets[layout.offsets]
-            .iter()
+        layout
+            .offsets(&self.layouts.offsets)
             .zip(&builder.body.value_args[fields])
-            .for_each(|(&offset, &field)| {
+            .for_each(|(offset, &field)| {
                 self.gen_resources.values[field] = GenValue {
                     offset: offset as i32 + base_value.offset,
                     ..base_value
@@ -822,7 +823,7 @@ impl Generator<'_> {
         } = self.gen_resources.values[target];
 
         let must_load_target = match computed.is_none() {
-            true => builder.body.values[target].referenced() || layout.on_stack,
+            true => builder.body.values[target].referenced() || layout.on_stack(),
             false => must_load,
         };
 
@@ -943,7 +944,7 @@ impl Generator<'_> {
         pass_mode: PassMode,
     ) -> (ir::Value, Option<ir::Value>) {
         let source = if must_load_source {
-            if layout.on_stack {
+            if layout.on_stack() {
                 'a: {
                     let value = match source_value {
                         ComputedValue::Value(val) => val,
@@ -1048,7 +1049,7 @@ impl Generator<'_> {
         let referenced = builder.body.values[target].referenced();
 
         let layout = self.ty_layout(builder.value_ty(target));
-        let must_load = layout.on_stack || referenced;
+        let must_load = layout.on_stack() || referenced;
         let computed = if must_load {
             let ss = builder.create_stack_slot(layout);
             if let Some(source) = source_value {

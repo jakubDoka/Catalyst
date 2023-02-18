@@ -1,3 +1,8 @@
+use std::{
+    iter::{Copied, StepBy},
+    slice::Iter,
+};
+
 use typec_u::{type_creator, TypeCreator};
 
 use super::*;
@@ -25,7 +30,7 @@ impl GenLayouts {
             Ty::Param(index) => self.ty_layout(params[index as usize], &[], cr),
             Ty::Instance(inst) => self.instance_layout(inst, params, cr),
             Ty::Enum(ty) => self.enum_layout(ty, params, cr),
-            Ty::Array(_) => todo!(),
+            Ty::Array(a) => self.array_layout(a, params, cr),
         };
 
         if creator.typec.contains_params(ty) {
@@ -35,6 +40,27 @@ impl GenLayouts {
         self.mapping.insert(ty, res);
 
         res
+    }
+
+    fn array_layout(
+        &mut self,
+        array: FragRef<Array>,
+        params: &[Ty],
+        mut creator: TypeCreator,
+    ) -> Layout {
+        let Array { len, item } = creator.typec[array];
+        let elem_layout = self.ty_layout(item, params, type_creator!(creator));
+        let size = elem_layout.size * len;
+
+        let (repr, on_stack) = self.repr_for_size(size);
+
+        Layout {
+            size,
+            offsets: VSlice::new(0..elem_layout.size as usize),
+            align: elem_layout.align,
+            repr,
+            flags: LayoutFlags::ON_STACK & on_stack | LayoutFlags::ARRAY,
+        }
     }
 
     fn enum_layout(
@@ -53,16 +79,15 @@ impl GenLayouts {
             .unwrap_or((0, 1));
 
         let align = base_align.max(tag_size as u8);
-        let offsets = [0, align as u32];
         let size = Layout::aligned_to(tag_size + base_size, align as u32);
         let (repr, on_stack) = self.repr_for_size(size);
 
         Layout {
             size,
-            offsets: self.offsets.extend(offsets),
+            offsets: VSlice::new(0..align as usize),
             align: align.try_into().unwrap(),
             repr,
-            on_stack,
+            flags: LayoutFlags::ON_STACK & on_stack | LayoutFlags::ENUM,
         }
     }
 
@@ -115,7 +140,7 @@ impl GenLayouts {
             offsets: self.offsets.extend(offsets),
             align: align.try_into().unwrap(),
             size,
-            on_stack,
+            flags: LayoutFlags::ON_STACK & on_stack,
         }
     }
 
@@ -191,10 +216,10 @@ pub type Offset = u32;
 #[derive(Clone, Copy, Debug)]
 pub struct Layout {
     pub size: u32,
-    pub offsets: VSlice<Offset>,
+    offsets: VSlice<Offset>,
     pub align: NonZeroU8,
     pub repr: Type,
-    pub on_stack: bool,
+    flags: LayoutFlags,
 }
 
 impl Layout {
@@ -203,7 +228,7 @@ impl Layout {
         align: unsafe { NonZeroU8::new_unchecked(1) },
         offsets: VSlice::empty(),
         repr: types::INVALID,
-        on_stack: false,
+        flags: LayoutFlags::empty(),
     };
 
     pub fn rust_layout(&self) -> alloc::Layout {
@@ -216,7 +241,7 @@ impl Layout {
             offsets: default(),
             align: (repr.bytes() as u8).try_into().unwrap(),
             repr,
-            on_stack: false,
+            flags: LayoutFlags::empty(),
         }
     }
 
@@ -226,5 +251,71 @@ impl Layout {
 
     pub fn aligned_to(size: u32, align: u32) -> u32 {
         size + (size as usize as *mut u8).align_offset(align as usize) as u32
+    }
+
+    pub fn on_stack(&self) -> bool {
+        self.flags.contains(LayoutFlags::ON_STACK)
+    }
+
+    pub fn array(&self) -> bool {
+        self.flags.contains(LayoutFlags::ARRAY)
+    }
+
+    pub fn is_enum(&self) -> bool {
+        self.flags.contains(LayoutFlags::ENUM)
+    }
+
+    pub fn offsets(self, offsets: &PushMap<u32>) -> impl DoubleEndedIterator<Item = u32> + '_ {
+        enum OffsetIter<'a> {
+            Array(StepBy<Range<u32>>),
+            Struct(Copied<Iter<'a, u32>>),
+            Enum(std::array::IntoIter<u32, 2>),
+        }
+
+        impl<'a> Iterator for OffsetIter<'a> {
+            type Item = u32;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                match self {
+                    OffsetIter::Array(iter) => iter.next(),
+                    OffsetIter::Struct(iter) => iter.next(),
+                    OffsetIter::Enum(iter) => iter.next(),
+                }
+            }
+
+            fn nth(&mut self, n: usize) -> Option<Self::Item> {
+                match self {
+                    OffsetIter::Array(iter) => iter.nth(n),
+                    OffsetIter::Struct(iter) => iter.nth(n),
+                    OffsetIter::Enum(iter) => iter.nth(n),
+                }
+            }
+        }
+
+        impl DoubleEndedIterator for OffsetIter<'_> {
+            fn next_back(&mut self) -> Option<Self::Item> {
+                match self {
+                    OffsetIter::Array(iter) => iter.next_back(),
+                    OffsetIter::Struct(iter) => iter.next_back(),
+                    OffsetIter::Enum(iter) => iter.next_back(),
+                }
+            }
+        }
+
+        if self.array() {
+            OffsetIter::Array((0..self.size).step_by(self.offsets.len()))
+        } else if self.is_enum() {
+            OffsetIter::Enum([0, self.align.get() as u32].into_iter())
+        } else {
+            OffsetIter::Struct(offsets[self.offsets].iter().copied())
+        }
+    }
+}
+
+bitflags! {
+    LayoutFlags: u8 {
+        ON_STACK
+        ARRAY
+        ENUM
     }
 }

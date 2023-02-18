@@ -267,6 +267,7 @@ impl<'ctx> Fmt<'ctx> {
                 self.unit_expr(expr, state);
             }
             Block(block) => self.block(Self::expr, block),
+            Array(array) => self.list(Self::expr, array),
         }
     }
 

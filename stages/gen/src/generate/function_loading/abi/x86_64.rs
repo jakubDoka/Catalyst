@@ -84,7 +84,11 @@ fn classify_enum_arg(
     let value_offset = 1;
     let flag_ty = Ty::Builtin(generator.typec.enum_flag_ty(e));
     classify_arg_low(generator, flag_ty, params, classes, offset)?;
-    let offset = generator.gen_layouts.offsets[layout.offsets][value_offset] + offset;
+    let offset = layout
+        .offsets(&generator.layouts.offsets)
+        .nth(value_offset)
+        .unwrap()
+        + offset;
     for ty in type_creator!(generator).instantiate_variants(e, params) {
         classify_arg_low(generator, ty, params, classes, offset)?;
     }
@@ -102,7 +106,11 @@ fn classify_struct_arg(
     for (ty, field_offset) in type_creator!(generator)
         .instantiate_fields(s, params)
         .into_iter()
-        .zip(generator.gen_layouts.offsets[layout.offsets].to_bumpvec())
+        .zip(
+            layout
+                .offsets(&generator.layouts.offsets)
+                .collect::<BumpVec<_>>(),
+        )
     {
         classify_arg_low(generator, ty, params, classes, offset + field_offset)?;
     }
@@ -265,13 +273,13 @@ pub fn compute_abi_info(
                     assert_eq!(int_regs, MAX_INT_REGS);
                     int_regs -= 1;
                 }
-                PassMode::Indirect(generator.gen_layouts.ptr_ty, layout.size)
+                PassMode::Indirect(generator.layouts.ptr_ty, layout.size)
             }
             Ok(ref cls) => {
                 // split into sized chunks passed individually
                 if arg.is_aggregate() {
                     let size = layout.size;
-                    cast_target(&mut generator.gen_layouts, cls, size)
+                    cast_target(&mut generator.layouts, cls, size)
                 } else {
                     PassMode::Single(layout.repr, super::extension_for(arg))
                 }

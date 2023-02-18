@@ -416,6 +416,13 @@ impl Ty {
         })
     }
 
+    pub fn array_base(self, typec: &Typec) -> Option<Ty> {
+        match self {
+            Ty::Array(a) => Some(typec[a].item),
+            _ => None,
+        }
+    }
+
     pub fn compatible(a: Self, b: Self) -> bool {
         b == Self::TERMINAL
             || a == Self::TERMINAL

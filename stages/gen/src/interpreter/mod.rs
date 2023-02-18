@@ -162,9 +162,9 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
         self.ensure_dest(dest, view, layout)?;
 
         let base_offset = self.current.offsets[dest];
-        for (&value, &offset) in view.value_args[fields]
+        for (&value, offset) in view.value_args[fields]
             .iter()
-            .zip(&self.layouts.offsets[layout.offsets])
+            .zip(layout.offsets(&self.layouts.offsets))
         {
             self.current.values[value] = Some(ISlot::Variable(dest));
             self.current.offsets[value] = base_offset + offset;
@@ -488,8 +488,11 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
     ) -> (Option<ISlot>, u32) {
         let ty = self.current.value_ty(target, func);
         let layout = self.layout(ty);
-        let offset =
-            self.layouts.offsets[layout.offsets][field as usize] + self.current.offsets[target];
+        let offset = layout
+            .offsets(&self.layouts.offsets)
+            .nth(field as usize)
+            .unwrap()
+            + self.current.offsets[target];
         (self.current.values[target], offset)
     }
 }

@@ -3,6 +3,8 @@ use crate::{
     ty_parser::TypecParser,
 };
 
+use self::lookup::CannotInferExpression;
+
 use {
     crate::ty_parser::TyPathResult,
     diags::*,
@@ -166,7 +168,38 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             Deref(.., &expr) => self.deref(expr, inference),
             Ref(.., mutability, &expr) => self.r#ref(mutability, expr, inference),
             Block(block) => self.block(block, inference),
+            Array(array) => self.array(array, inference),
         }
+    }
+
+    fn array(&mut self, array: ListAst<ExprAst>, mut inference: Inference) -> ExprRes<'arena> {
+        let mut elements = bumpvec![cap array.len()];
+
+        inference = inference.map(|ty| ty.array_base(self.ext.typec));
+
+        for &expr in array.iter() {
+            let Some(element) = self.expr(expr, inference) else {continue};
+            inference = Inference::Strong(element.ty);
+            elements.push(element);
+        }
+
+        let Some(elem_ty) = inference.ty() else {
+            CannotInferExpression {
+                loc: self.meta.loc(array.span()),
+                help: "array element is infered based of its first element",
+            }.add(self.ext.workspace)?;
+        };
+
+        let array_ty = self
+            .ext
+            .creator()
+            .array_of(elem_ty, elements.len() as ArraySize);
+
+        Some(TirNode::new(
+            array_ty.into(),
+            TirKind::Ctor(self.arena.alloc(elements)),
+            array.span(),
+        ))
     }
 
     fn dot_expr(

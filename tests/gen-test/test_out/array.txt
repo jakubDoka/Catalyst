@@ -1,0 +1,10 @@
+error: type mismatch
+ --> array/root.ctl:7:36
+  |
+7 |   fn make_int_array() -> [uint; LEN] {
+  |  ____________________________________^
+8 | | }
+  | |_^ here
+  |
+  = info: expected '[uint; 3]' but got '()'
+

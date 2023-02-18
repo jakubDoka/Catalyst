@@ -53,6 +53,7 @@ pub enum UnitExprAst<'a, M = NoTokenMeta> {
         &'a UnitExprAst<'a, M>,
     ),
     Block(ListAst<'a, ExprAst<'a, M>, M>),
+    Array(ListAst<'a, ExprAst<'a, M>, M>),
 }
 
 impl<'a, M> Spanned for UnitExprAst<'a, M> {
@@ -75,6 +76,7 @@ impl<'a, M> Spanned for UnitExprAst<'a, M> {
             Deref(e, expr) => e.span.joined(expr.span()),
             Ref(e, _, expr) => e.span.joined(expr.span()),
             Block(e) => e.span(),
+            Array(e) => e.span(),
         }
     }
 }
