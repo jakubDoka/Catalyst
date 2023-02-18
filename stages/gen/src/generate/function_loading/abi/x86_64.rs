@@ -279,7 +279,7 @@ pub fn compute_abi_info(
                 // split into sized chunks passed individually
                 if arg.is_aggregate() {
                     let size = layout.size;
-                    cast_target(&mut generator.layouts, cls, size)
+                    cast_target(generator.layouts, cls, size)
                 } else {
                     PassMode::Single(layout.repr, super::extension_for(arg))
                 }

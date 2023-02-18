@@ -189,7 +189,7 @@ impl Generator<'_> {
                 builder.ins().iconst(layout.repr, bits as i64)
             }
             ir::types::F32 => builder.ins().f32const(f32::from_bits(bits as u32)),
-            ir::types::F64 => builder.ins().f64const(f64::from_bits(bits as u64)),
+            ir::types::F64 => builder.ins().f64const(f64::from_bits(bits)),
             _ => unimplemented!(),
         };
 

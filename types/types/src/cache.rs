@@ -549,11 +549,11 @@ impl GuaranteedLoc {
     }
 }
 
-impl Into<Loc> for GuaranteedLoc {
-    fn into(self) -> Loc {
+impl From<GuaranteedLoc> for Loc {
+    fn from(val: GuaranteedLoc) -> Self {
         Loc {
-            source: self.source,
-            item: Some(self.item),
+            source: val.source,
+            item: Some(val.item),
         }
     }
 }

@@ -90,7 +90,7 @@ impl TypeDisplay for Func {
             .cc
             .as_ref()
             .map(|cc| cc.get(interner))
-            .map_or(Ok(()), |cc| write!(out, "\"{}\" ", cc))?;
+            .map_or(Ok(()), |cc| write!(out, "\"{cc}\" "))?;
         display_list(
             types,
             interner,
@@ -177,7 +177,7 @@ pub fn display_array(
 ) -> fmt::Result {
     write!(to, "[")?;
     item.display(types, interner, to)?;
-    write!(to, "; {}]", len)?;
+    write!(to, "; {len}]")?;
     Ok(())
 }
 

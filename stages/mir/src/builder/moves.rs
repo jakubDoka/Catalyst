@@ -40,7 +40,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
         if self
             .ext
             .creator()
-            .is_copy(self.func.value_ty(dest), &self.func.generics)
+            .is_copy(self.func.value_ty(dest), self.func.generics)
         {
             return;
         }
@@ -81,7 +81,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
         if self
             .ext
             .creator()
-            .is_copy(self.func.value_ty(value), &self.func.generics)
+            .is_copy(self.func.value_ty(value), self.func.generics)
         {
             return;
         }

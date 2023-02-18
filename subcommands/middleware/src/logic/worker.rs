@@ -800,14 +800,14 @@ impl<'arena, 'ctx> ConstFolderImpl<'arena, 'ctx> {
             mir: self.mir,
             layouts: self.layouts,
             current: &mut current,
-            gen: &self.gen,
+            gen: self.gen,
         };
 
         let value = match interp.interpret() {
             Ok(v) => v,
             Err(err) => {
                 let snip = TodoSnippet {
-                    message: format!("Failed to fold constant: {:?}", err),
+                    message: format!("Failed to fold constant: {err:?}"),
                     loc: meta.source_loc(tir_body.span),
                 };
                 ctx.workspace.push(snip)?;

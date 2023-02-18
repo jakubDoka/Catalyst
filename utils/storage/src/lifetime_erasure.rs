@@ -30,6 +30,7 @@ macro_rules! gen_erasable {
     };
 }
 
+/// # Safety
 /// Trait should not be implemented manually. Use `gen_erasable!` if possible.
 pub unsafe trait Erasable {
     type Erased: 'static;
