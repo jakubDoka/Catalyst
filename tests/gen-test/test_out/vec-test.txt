@@ -1,5 +1,5 @@
 info: generated ir:
-native-x86_64-unknown-linux-gnu2\main[] function u0:0() -> i64 uext fast {
+native-x86_64-unknown-linux-gnu3\main[] function u0:0() -> i64 uext fast {
     ss0 = explicit_slot 24
     ss1 = explicit_slot 24
     ss2 = explicit_slot 24
@@ -69,7 +69,7 @@ block0:
     v30 = load.i64 v28
     return v30
 }
-native-x86_64-unknown-linux-gnu0\0\Vec\get_ptr[uint] function u0:0(i64, i64 uext) -> i64 fast {
+native-x86_64-unknown-linux-gnu4\4\Vec\get_ptr[uint] function u0:0(i64, i64 uext) -> i64 fast {
 block0(v0: i64, v1: i64):
     v2 = load.i64 v0
     v3 = iconst.i64 8
@@ -77,7 +77,7 @@ block0(v0: i64, v1: i64):
     v5 = iadd v2, v4
     return v5
 }
-native-x86_64-unknown-linux-gnu0\0\Vec\get_ptr[0\Vec[uint]] function u0:0(i64, i64 uext) -> i64 fast {
+native-x86_64-unknown-linux-gnu4\4\Vec\get_ptr[4\Vec[uint]] function u0:0(i64, i64 uext) -> i64 fast {
 block0(v0: i64, v1: i64):
     v2 = load.i64 v0
     v3 = iconst.i64 24
@@ -85,7 +85,7 @@ block0(v0: i64, v1: i64):
     v5 = iadd v2, v4
     return v5
 }
-native-x86_64-unknown-linux-gnu0\0\Vec\get_mut_ptr[0\Vec[uint]] function u0:0(i64, i64 uext) -> i64 fast {
+native-x86_64-unknown-linux-gnu4\4\Vec\get_mut_ptr[4\Vec[uint]] function u0:0(i64, i64 uext) -> i64 fast {
 block0(v0: i64, v1: i64):
     v2 = load.i64 v0
     v3 = iconst.i64 24
@@ -93,7 +93,7 @@ block0(v0: i64, v1: i64):
     v5 = iadd v2, v4
     return v5
 }
-native-x86_64-unknown-linux-gnu0\0\Vec\push[0\Vec[uint]] function u0:0(i64, i64 sarg(24)) fast {
+native-x86_64-unknown-linux-gnu4\4\Vec\push[4\Vec[uint]] function u0:0(i64, i64 sarg(24)) fast {
     sig0 = (i64) fast
     sig1 = (i64, i64 uext) -> i64 fast
     sig2 = (i64, i64 sarg(24)) fast
@@ -125,7 +125,7 @@ block3:
     store v9, v0+8
     return
 }
-native-x86_64-unknown-linux-gnu3\write[0\Vec[uint]] function u0:0(i64, i64 sarg(24)) fast {
+native-x86_64-unknown-linux-gnu6\write[4\Vec[uint]] function u0:0(i64, i64 sarg(24)) fast {
 block0(v0: i64, v1: i64):
     v2 = load.i64 aligned v1
     v3 = load.i64 aligned v1+8
@@ -135,7 +135,7 @@ block0(v0: i64, v1: i64):
     store aligned v4, v0+16
     return
 }
-native-x86_64-unknown-linux-gnu0\0\Vec\grow[0\Vec[uint]] function u0:0(i64) fast {
+native-x86_64-unknown-linux-gnu4\4\Vec\grow[4\Vec[uint]] function u0:0(i64) fast {
     sig0 = (i64, i64 uext) -> i64 fast
     fn0 = u0:40 sig0
 
@@ -166,7 +166,7 @@ block3(v8: i64):
     store v13, v0
     return
 }
-native-x86_64-unknown-linux-gnu0\0\Vec\new[0\Vec[uint]] function u0:0(i64 sret) fast {
+native-x86_64-unknown-linux-gnu4\4\Vec\new[4\Vec[uint]] function u0:0(i64 sret) fast {
 block0(v0: i64):
     v1 = iconst.i64 0
     store v1, v0  ; v1 = 0
@@ -176,7 +176,7 @@ block0(v0: i64):
     store v3, v0+16  ; v3 = 0
     return
 }
-native-x86_64-unknown-linux-gnu0\0\Vec\push[uint] function u0:0(i64, i64 uext) fast {
+native-x86_64-unknown-linux-gnu4\4\Vec\push[uint] function u0:0(i64, i64 uext) fast {
     sig0 = (i64) fast
     sig1 = (i64, i64 uext) -> i64 fast
     sig2 = (i64, i64 uext) fast
@@ -208,12 +208,12 @@ block3:
     store v9, v0+8
     return
 }
-native-x86_64-unknown-linux-gnu3\write[uint] function u0:0(i64, i64 uext) fast {
+native-x86_64-unknown-linux-gnu6\write[uint] function u0:0(i64, i64 uext) fast {
 block0(v0: i64, v1: i64):
     store v1, v0
     return
 }
-native-x86_64-unknown-linux-gnu0\0\Vec\get_mut_ptr[uint] function u0:0(i64, i64 uext) -> i64 fast {
+native-x86_64-unknown-linux-gnu4\4\Vec\get_mut_ptr[uint] function u0:0(i64, i64 uext) -> i64 fast {
 block0(v0: i64, v1: i64):
     v2 = load.i64 v0
     v3 = iconst.i64 8
@@ -221,7 +221,7 @@ block0(v0: i64, v1: i64):
     v5 = iadd v2, v4
     return v5
 }
-native-x86_64-unknown-linux-gnu0\0\Vec\grow[uint] function u0:0(i64) fast {
+native-x86_64-unknown-linux-gnu4\4\Vec\grow[uint] function u0:0(i64) fast {
     sig0 = (i64, i64 uext) -> i64 fast
     fn0 = u0:40 sig0
 
@@ -252,7 +252,7 @@ block3(v8: i64):
     store v13, v0
     return
 }
-native-x86_64-unknown-linux-gnu0\0\Vec\new[uint] function u0:0(i64 sret) fast {
+native-x86_64-unknown-linux-gnu4\4\Vec\new[uint] function u0:0(i64 sret) fast {
 block0(v0: i64):
     v1 = iconst.i64 0
     store v1, v0  ; v1 = 0
@@ -262,7 +262,7 @@ block0(v0: i64):
     store v3, v0+16  ; v3 = 0
     return
 }
-native-x86_64-unknown-linux-gnu0\Vec\drop[0\Vec[uint]] function u0:0(i64) fast {
+native-x86_64-unknown-linux-gnu4\4\Vec\drop[4\Vec[uint]] function u0:0(i64) fast {
     ss0 = explicit_slot 24
     sig0 = (i64, i64 uext) -> i64 fast
     sig1 = (i64 sret, i64) fast
@@ -306,7 +306,7 @@ block5:
     call fn3(v12)
     return
 }
-native-x86_64-unknown-linux-gnu3\read[0\Vec[uint]] function u0:0(i64 sret, i64) fast {
+native-x86_64-unknown-linux-gnu6\read[4\Vec[uint]] function u0:0(i64 sret, i64) fast {
 block0(v0: i64, v1: i64):
     v2 = load.i64 aligned v1
     v3 = load.i64 aligned v1+8
@@ -316,7 +316,7 @@ block0(v0: i64, v1: i64):
     store aligned v4, v0+16
     return
 }
-native-x86_64-unknown-linux-gnu0\Vec\drop[uint] function u0:0(i64) fast {
+native-x86_64-unknown-linux-gnu4\4\Vec\drop[uint] function u0:0(i64) fast {
     ss0 = explicit_slot 8
     sig0 = (i64, i64 uext) -> i64 fast
     sig1 = (i64) -> i64 uext fast
@@ -357,7 +357,7 @@ block5:
     call fn2(v12)
     return
 }
-native-x86_64-unknown-linux-gnu3\read[uint] function u0:0(i64) -> i64 uext fast {
+native-x86_64-unknown-linux-gnu6\read[uint] function u0:0(i64) -> i64 uext fast {
 block0(v0: i64):
     v1 = load.i64 v0
     return v1

@@ -9,7 +9,7 @@ error: infinitely sized type detected between defined types
 5 | struct B {
   |        - info: this type is part of the cycle
   |
-  = info: cycle: 0\A -> 0\B -> 0\A
+  = info: cycle: 3\A -> 3\B -> 3\A
 
 info: tir repr of functions:
 

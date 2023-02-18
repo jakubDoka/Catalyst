@@ -27,7 +27,7 @@ error: inaccessible scope item
 info: tir repr of functions:
 fn [] pass(uint) -> uint return var0
 
-fn [] new() -> 1\A return 1\A\{0}
+fn [] new() -> 4\A return 4\A\{0}
 
 
 

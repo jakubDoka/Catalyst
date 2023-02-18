@@ -1,5 +1,5 @@
 info: tir repr of functions:
-fn [] main() -> uint return match 0\Option[uint]\{0, 0} {
+fn [] main() -> uint return match 3\Option[uint]\{0, 0} {
     \0~4 => {
         5
     }
