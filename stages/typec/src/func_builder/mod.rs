@@ -9,7 +9,7 @@ use {
     crate::ty_parser::TyPathResult,
     diags::*,
     span::*,
-    parsing_t::*,
+    ast::*,
     std::{cmp::Ordering, default::default, iter},
     storage::*,
     types::*,

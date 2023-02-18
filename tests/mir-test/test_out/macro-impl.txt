@@ -1,4 +1,4 @@
-info: mir repr of functions:
+info: borrowc repr of functions:
 fn [] next(var0: ^1\MacroLexer) -> 1\MacroToken  { ret var3
     block0(var2: ^1\MacroLexer) {
         access var2

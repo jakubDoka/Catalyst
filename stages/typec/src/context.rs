@@ -6,7 +6,7 @@ use std::{
 use diags::*;
 use lexing::*;
 use resources::*;
-use parsing_t::*;
+use ast::*;
 use storage::*;
 use types::*;
 use type_creator::TypeCreator;

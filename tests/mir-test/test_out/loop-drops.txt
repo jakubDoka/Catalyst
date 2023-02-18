@@ -40,7 +40,7 @@ error: value is possibly moved more then once
    = note: nonlocal value remains moved even after loop jumps back
    = help: 'break' after the move or move the value beck before next iteration
 
-info: mir repr of functions:
+info: borrowc repr of functions:
 fn [: ] drop(param0) -> () { (var3: param0) ret var0
     block0 {
         drop var3

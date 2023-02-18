@@ -1,4 +1,4 @@
-info: mir repr of functions:
+info: borrowc repr of functions:
 const function u0:0() -> i32 windows_fastcall {
     sig0 = (i32) -> i32 windows_fastcall
     fn0 = u0:2 sig0

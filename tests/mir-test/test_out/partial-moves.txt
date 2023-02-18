@@ -19,7 +19,7 @@ error: reference to already moved value
    |
    = note: you can disable move semantics with '#[no_moves]' function attribute
 
-info: mir repr of functions:
+info: borrowc repr of functions:
 fn [: ] drop(param0) -> () { (var3: param0) ret var0
     block0 {
         drop var3

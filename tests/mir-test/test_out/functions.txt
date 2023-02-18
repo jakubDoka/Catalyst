@@ -1,4 +1,4 @@
-info: mir repr of functions:
+info: borrowc repr of functions:
 fn [] main() -> uint { () ret var0
     block0 {
         var0 = 0

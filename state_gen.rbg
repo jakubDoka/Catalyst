@@ -30,7 +30,7 @@ file "stages/typec/src/state_gen.rs" {
     }
 }
 
-file "stages/mir/src/state_gen.rs" {
+file "stages/borrowc/src/state_gen.rs" {
     use "storage"
     use "diags"
     use "types"

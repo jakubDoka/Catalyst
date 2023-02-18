@@ -12,7 +12,7 @@ error: amount of arguments passed to the function is incorrect
   |
   = info: expected 1, but got 2
 
-info: mir repr of functions:
+info: borrowc repr of functions:
 fn [: ] pass(param0) -> param0 { (var3: param0) ret var0
     block0 {
         var0 = var3

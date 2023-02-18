@@ -1,5 +1,5 @@
 [package]
-name = "mir-test"
+name = "borrowc-test"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,12 +7,12 @@ edition = "2021"
 
 [dependencies]
 diags = { version = "0.1.0", path = "../../types/diags" }
-mir = { version = "0.1.0", path = "../../stages/mir" }
+borrowc = { version = "0.1.0", path = "../../stages/borrowc" }
 mir-t = { version = "0.1.0", path = "../../types/mir-t" }
 packaging = { version = "0.1.0", path = "../../stages/packaging" }
 resources = { version = "0.1.0", path = "../../types/resources" }
 parsing = { version = "0.1.0", path = "../../stages/parsing" }
-parsing-t = { version = "0.1.0", path = "../../types/parsing-t" }
+ast = { version = "0.1.0", path = "../../types/ast" }
 
 storage = { version = "0.1.0", path = "../../utils/storage" }
 testing = { version = "0.1.0", path = "../../utils/testing" }

@@ -1,4 +1,4 @@
-info: mir repr of functions:
+info: borrowc repr of functions:
 fn [] main() -> u32  { () ret var2
     block0 {
         var6 ={var5}

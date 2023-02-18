@@ -10,7 +10,7 @@ diags = { version = "0.1.0", path = "../../types/diags" }
 packaging = { version = "0.1.0", path = "../../stages/packaging" }
 resources = { version = "0.1.0", path = "../../types/resources" }
 parsing = { version = "0.1.0", path = "../../stages/parsing" }
-parsing-t = { version = "0.1.0", path = "../../types/parsing-t" }
+ast = { version = "0.1.0", path = "../../types/ast" }
 
 storage = { version = "0.1.0", path = "../../utils/storage" }
 testing = { version = "0.1.0", path = "../../utils/testing" }

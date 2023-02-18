@@ -8,12 +8,12 @@ edition = "2021"
 [dependencies]
 diags = { version = "0.1.0", path = "../../types/diags" }
 gen = { version = "0.1.0", path = "../../stages/gen" }
-mir = { version = "0.1.0", path = "../../stages/mir" }
+borrowc = { version = "0.1.0", path = "../../stages/borrowc" }
 mir-t = { version = "0.1.0", path = "../../types/mir-t" }
 packaging = { version = "0.1.0", path = "../../stages/packaging" }
 resources = { version = "0.1.0", path = "../../types/resources" }
 parsing = { version = "0.1.0", path = "../../stages/parsing" }
-parsing-t = { version = "0.1.0", path = "../../types/parsing-t" }
+ast = { version = "0.1.0", path = "../../types/ast" }
 lexing = { version = "0.1.0", path = "../../stages/lexing" }
 graphs = { version = "0.1.0", path = "../../utils/graphs" }
 span = { version = "0.1.0", path = "../../types/span" }

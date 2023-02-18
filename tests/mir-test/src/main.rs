@@ -1,7 +1,7 @@
 use std::{mem, path::Path};
 
 use diags::*;
-use mir::*;
+use borrowc::*;
 use mir_t::*;
 use packaging::*;
 use resources::*;
@@ -60,7 +60,7 @@ impl Scheduler for TestState {
         TypecParser::new(&self.arena, &mut self.typec_ctx, ext, meta).execute(items);
 
         let mir_module = self.mir.modules.next();
-        mir::compile_functions(
+        borrowc::compile_functions(
             module,
             mir_module,
             active.checked_funcs(),
@@ -115,7 +115,7 @@ impl ConstFolder for ConstFolderImpl {
 }
 
 ctl_errors! {
-    #[info => "mir repr of functions:\n{repr}"]
+    #[info => "borrowc repr of functions:\n{repr}"]
     error MirRepr {
         repr ref: String
     }

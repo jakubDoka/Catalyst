@@ -6,7 +6,7 @@ use crate::{context::MissingSpecInherits, ty_parser::TypecParser};
 
 use super::collecting::CollectGroup;
 
-use {parsing_t::*, std::default::default, storage::*, types::*};
+use {ast::*, std::default::default, storage::*, types::*};
 
 impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
     pub(super) fn build_impl_funcs(&mut self) -> &mut Self {

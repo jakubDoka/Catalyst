@@ -12,7 +12,7 @@ error: match is not exhaustive
    = info: missing patterns: \{ a: 0..1, b: 2..max }, \{ a: 1..2, b: 1..max }, \{ a: 2..max, b: 1..max }
    = help: adding '_ {}' will make the match exhaustive
 
-info: mir repr of functions:
+info: borrowc repr of functions:
 fn [] main() -> uint  { () ret var2
     block0 {
         var5 ={var3, var4}

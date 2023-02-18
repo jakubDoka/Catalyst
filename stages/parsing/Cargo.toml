@@ -14,5 +14,5 @@ storage = { path = "../../utils/storage" }
 
 diags = { path = "../../types/diags" }
 span = { path = "../../types/span" }
-parsing-t = { path = "../../types/parsing-t" }
+ast = { path = "../../types/ast" }
 resources = { path = "../../types/resources" }

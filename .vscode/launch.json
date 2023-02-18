@@ -194,16 +194,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in library 'parsing-t'",
+            "name": "Debug unit tests in library 'ast'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
                     "--lib",
-                    "--package=parsing-t"
+                    "--package=ast"
                 ],
                 "filter": {
-                    "name": "parsing-t",
+                    "name": "ast",
                     "kind": "lib"
                 }
             },
@@ -213,16 +213,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in library 'mir'",
+            "name": "Debug unit tests in library 'borrowc'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
                     "--lib",
-                    "--package=mir"
+                    "--package=borrowc"
                 ],
                 "filter": {
-                    "name": "mir",
+                    "name": "borrowc",
                     "kind": "lib"
                 }
             },
@@ -402,15 +402,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'mir-test'",
+            "name": "Debug executable 'borrowc-test'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=mir-test",
-                    "--package=mir-test"
+                    "--bin=borrowc-test",
+                    "--package=borrowc-test"
                 ],
                 "filter": {
-                    "name": "mir-test",
+                    "name": "borrowc-test",
                     "kind": "bin"
                 }
             },
@@ -420,16 +420,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'mir-test'",
+            "name": "Debug unit tests in executable 'borrowc-test'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=mir-test",
-                    "--package=mir-test"
+                    "--bin=borrowc-test",
+                    "--package=borrowc-test"
                 ],
                 "filter": {
-                    "name": "mir-test",
+                    "name": "borrowc-test",
                     "kind": "bin"
                 }
             },

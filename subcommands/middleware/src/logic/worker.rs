@@ -669,7 +669,7 @@ impl Worker {
             resources: shared.resources,
         };
 
-        mir::compile_functions(module, module_ref, active.checked_funcs(), &mut ctx);
+        borrowc::compile_functions(module, module_ref, active.checked_funcs(), &mut ctx);
 
         active
             .checked_funcs()

@@ -12,6 +12,6 @@ parsing = { path = "../parsing" }
 
 span = { path = "../../types/span" }
 lexing = { path = "../../stages/lexing" }
-parsing-t = { path = "../../types/parsing-t" }
+ast = { path = "../../types/ast" }
 resources = { path = "../../types/resources" }
 diags = { path = "../../types/diags" }
