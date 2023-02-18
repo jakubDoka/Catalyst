@@ -12,7 +12,7 @@ pub mod abi {
         isa::CallConv,
     };
     use target_lexicon::Architecture;
-    use typec_t::Ty;
+    use types::Ty;
 
     use crate::{Isa, Layout};
 
@@ -57,7 +57,7 @@ pub mod abi {
     pub(super) fn compute_abi_info(
         generator: &mut crate::Generator,
         cc: CallConv,
-        signature: typec_t::Signature,
+        signature: types::Signature,
         target: &mut PassSignature,
         params: &[Ty],
         isa: &Isa,
@@ -124,7 +124,7 @@ impl Generator<'_> {
         triple: &str,
         func_id: FragRef<Func>,
         mut params: impl Iterator<Item = Ty>,
-        typec: &Typec,
+        types: &Types,
         interner: &mut Interner,
     ) -> FragRef<&'static str> {
         use std::fmt::Write;
@@ -132,8 +132,8 @@ impl Generator<'_> {
         interner.intern_with_compressed(|s, t| {
             t.push_str(prefix);
             write!(t, "{triple}")?;
-            typec_u::display_func_name(typec, s, func_id, t)?;
-            typec_u::display_list(typec, s, params.by_ref(), t, ['[', ',', ']'])
+            typec_u::display_func_name(types, s, func_id, t)?;
+            typec_u::display_list(types, s, params.by_ref(), t, ['[', ',', ']'])
         })
     }
 
@@ -156,7 +156,7 @@ impl Generator<'_> {
             signature,
             visibility,
             ..
-        } = self.typec[func_id];
+        } = self.types[func_id];
 
         let params = params.collect::<BumpVec<_>>();
 

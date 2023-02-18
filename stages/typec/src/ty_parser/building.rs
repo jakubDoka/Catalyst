@@ -6,7 +6,7 @@ use crate::{context::MissingSpecInherits, ty_parser::TypecParser};
 
 use super::collecting::CollectGroup;
 
-use {parsing_t::*, std::default::default, storage::*, typec_t::*};
+use {parsing_t::*, std::default::default, storage::*, types::*};
 
 impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
     pub(super) fn build_impl_funcs(&mut self) -> &mut Self {
@@ -27,10 +27,10 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
 
             let Func {
                 generics, owner, ..
-            } = self.ext.typec[first];
+            } = self.ext.types[first];
             let offset = self.ctx.insert_generics(impl_ast.generics, 0);
             self.ctx
-                .insert_spec_functions(generics, 0, self.ext.typec, self.ext.interner);
+                .insert_spec_functions(generics, 0, self.ext.types, self.ext.interner);
 
             if let Some(impl_ref) = impl_ref {
                 self.build_spec_impl(impl_ref);
@@ -52,10 +52,10 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             generics,
             loc,
             ..
-        } = self.ext.typec[impl_ref];
+        } = self.ext.types[impl_ref];
 
-        let spec_base = spec.base(self.ext.typec);
-        // if SpecBase::is_macro(spec_base) && let Some(mut macro_impl) = self.ext.typec.macros.get_mut(&ty) {
+        let spec_base = spec.base(self.ext.types);
+        // if SpecBase::is_macro(spec_base) && let Some(mut macro_impl) = self.ext.types.macros.get_mut(&ty) {
         //      macro_impl.r#impl = Some(impl_ref);
         //      ctx.macros.push(MacroCompileRequest {
         //          name: macro_impl.name,
@@ -64,7 +64,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         //          params: macro_impl.params,
         //      });
         //  }
-        let spec_ent = self.ext.typec[spec_base];
+        let spec_ent = self.ext.types[spec_base];
 
         // check that all inherits are implemented
         // this is necessary for the validation but also grants
@@ -73,10 +73,10 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         {
             let params = match spec {
                 Spec::Base(..) => default(),
-                Spec::Instance(i) => self.ext.typec[i].args,
+                Spec::Instance(i) => self.ext.types[i].args,
             };
 
-            let missing_impls = self.ext.typec[spec_ent.inherits]
+            let missing_impls = self.ext.types[spec_ent.inherits]
                 .to_bumpvec()
                 .into_iter()
                 .filter_map(|inherit| {
@@ -94,7 +94,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
                 MissingSpecInherits {
                     ty: self.ext.creator().display(ty),
                     missing: missing_impls,
-                    loc: loc.source_loc(self.ext.typec),
+                    loc: loc.source_loc(self.ext.types),
                 }
                 .add(self.ext.workspace);
             }
@@ -114,7 +114,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
 
     pub(super) fn build_funcs(&mut self, funcs: &[(FuncDefAst, FragRef<Func>)], offset: usize) {
         for &(ast, func) in funcs.iter() {
-            let Func { signature, .. } = self.ext.typec[func];
+            let Func { signature, .. } = self.ext.types[func];
             match self.builder(signature.ret).build_func(ast, func, offset) {
                 Some(Some(body)) => {
                     self.ext.transfere.checked_funcs.push((func, body));
@@ -147,11 +147,11 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         let inherits = self.build_inherits(inherits, &mut spec_set);
         let methods = self.build_spec_methods(spec, body, &mut spec_set, generics_len + 1);
         let generics = self.take_generics(0, generics_len, &mut spec_set);
-        self.ext.typec[spec] = SpecBase {
+        self.ext.types[spec] = SpecBase {
             generics,
             methods,
             inherits,
-            ..self.ext.typec[spec]
+            ..self.ext.types[spec]
         };
 
         self.ctx.end_frame(frame);
@@ -196,7 +196,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
 
             methods.push(func);
         }
-        self.ext.typec.cache.spec_funcs.extend(methods)
+        self.ext.types.cache.spec_funcs.extend(methods)
     }
 
     pub(super) fn build_enum(
@@ -211,10 +211,10 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         self.generics(generics, &mut spec_set, 0);
         let variants = self.enum_variants(body, &mut spec_set);
         let generics = self.take_generics(0, generics_len, &mut spec_set);
-        self.ext.typec[r#enum] = Enum {
+        self.ext.types[r#enum] = Enum {
             generics,
             variants,
-            ..self.ext.typec[r#enum]
+            ..self.ext.types[r#enum]
         };
 
         self.ctx.end_frame(frame);
@@ -230,7 +230,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             .iter()
             .filter_map(|EnumVariantAst { name, ty }| {
                 let ty = ty.map_or(Some(Ty::UNIT), |(.., ty)| self.ty(ty))?;
-                self.ext.typec.register_ty_generics(ty, spec_set);
+                self.ext.types.register_ty_generics(ty, spec_set);
                 Some(Variant {
                     name: name.ident,
                     ty,
@@ -238,7 +238,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
                 })
             })
             .collect::<BumpVec<_>>();
-        self.ext.typec.cache.variants.extend(variants)
+        self.ext.types.cache.variants.extend(variants)
     }
 
     pub(super) fn build_struct(
@@ -253,10 +253,10 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         self.generics(generics, &mut spec_set, 0);
         let fields = self.struct_fields(body, &mut spec_set);
         let generics = self.take_generics(0, generics_len, &mut spec_set);
-        self.ext.typec[ty] = Struct {
+        self.ext.types[ty] = Struct {
             generics,
             fields,
-            ..self.ext.typec[ty]
+            ..self.ext.types[ty]
         };
 
         self.ctx.end_frame(frame);
@@ -284,7 +284,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
                         vis: vis.map(|vis| vis.vis),
                         ty: {
                             let ty = self.ty(ty)?;
-                            self.ext.typec.register_ty_generics(ty, spec_set);
+                            self.ext.types.register_ty_generics(ty, spec_set);
                             ty
                         },
                         flags: FieldFlags::MUTABLE & mutable.is_some()
@@ -296,6 +296,6 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             )
             .nsc_collect::<Option<BumpVec<_>>>()
             .unwrap_or_default();
-        self.ext.typec.cache.fields.extend(fields)
+        self.ext.types.cache.fields.extend(fields)
     }
 }

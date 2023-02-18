@@ -68,8 +68,8 @@ pub struct Struct {
 derive_relocated!(struct Struct { generics fields });
 
 impl Struct {
-    pub fn find_field(s: FragRef<Self>, name: Ident, typec: &Typec) -> Option<(usize, Field)> {
-        typec[typec[s].fields]
+    pub fn find_field(s: FragRef<Self>, name: Ident, types: &Types) -> Option<(usize, Field)> {
+        types[types[s].fields]
             .iter()
             .enumerate()
             .find_map(|(i, &v)| (v.name == name).then_some((i, v)))
@@ -94,8 +94,8 @@ pub struct Enum {
 derive_relocated!(struct Enum { generics variants });
 
 impl Enum {
-    pub fn find_variant(e: FragRef<Self>, name: Ident, typec: &Typec) -> Option<(usize, Ty)> {
-        typec[typec[e].variants]
+    pub fn find_variant(e: FragRef<Self>, name: Ident, types: &Types) -> Option<(usize, Ty)> {
+        types[types[e].variants]
             .iter()
             .enumerate()
             .find_map(|(i, v)| (v.name == name).then_some((i, v.ty)))
@@ -295,10 +295,10 @@ wrapper_enum! {
 }
 
 impl Spec {
-    pub fn base(self, typec: &Typec) -> FragRef<SpecBase> {
+    pub fn base(self, types: &Types) -> FragRef<SpecBase> {
         match self {
             Spec::Base(base) => base,
-            Spec::Instance(instance) => typec[instance].base,
+            Spec::Instance(instance) => types[instance].base,
         }
     }
 }
@@ -319,10 +319,10 @@ impl GenericTy {
         }
     }
 
-    pub fn is_generic(self, typec: &Typec) -> bool {
+    pub fn is_generic(self, types: &Types) -> bool {
         !match self {
-            GenericTy::Struct(s) => typec[s].generics.is_empty(),
-            GenericTy::Enum(e) => typec[e].generics.is_empty(),
+            GenericTy::Struct(s) => types[s].generics.is_empty(),
+            GenericTy::Enum(e) => types[e].generics.is_empty(),
         }
     }
 }
@@ -416,9 +416,9 @@ impl Ty {
         })
     }
 
-    pub fn array_base(self, typec: &Typec) -> Option<Ty> {
+    pub fn array_base(self, types: &Types) -> Option<Ty> {
         match self {
-            Ty::Array(a) => Some(typec[a].item),
+            Ty::Array(a) => Some(types[a].item),
             _ => None,
         }
     }
@@ -442,28 +442,28 @@ impl Ty {
         })
     }
 
-    pub fn base_with_params(self, typec: &Typec) -> (Self, FragSlice<Ty>) {
+    pub fn base_with_params(self, types: &Types) -> (Self, FragSlice<Ty>) {
         match self {
-            Self::Instance(i) => (typec[i].base.as_ty(), typec[i].args),
+            Self::Instance(i) => (types[i].base.as_ty(), types[i].args),
             _ => (self, default()),
         }
     }
 
-    pub fn base(self, typec: &Typec) -> Self {
-        self.base_with_params(typec).0
+    pub fn base(self, types: &Types) -> Self {
+        self.base_with_params(types).0
     }
 
-    pub fn caller_with_params(self, typec: &Typec) -> (Self, FragSlice<Ty>) {
-        self.ptr_base(typec).base_with_params(typec)
+    pub fn caller_with_params(self, types: &Types) -> (Self, FragSlice<Ty>) {
+        self.ptr_base(types).base_with_params(types)
     }
 
-    pub fn caller(self, typec: &Typec) -> Self {
-        self.caller_with_params(typec).0
+    pub fn caller(self, types: &Types) -> Self {
+        self.caller_with_params(types).0
     }
 
-    pub fn ptr_base(self, typec: &Typec) -> Self {
+    pub fn ptr_base(self, types: &Types) -> Self {
         match self {
-            Self::Pointer(p) => typec[p.ty()].ptr_base(typec),
+            Self::Pointer(p) => types[p.ty()].ptr_base(types),
             _ => self,
         }
     }
@@ -482,9 +482,9 @@ impl Ty {
         }
     }
 
-    pub fn ptr(self, typec: &Typec) -> (Self, u8, Mutability) {
+    pub fn ptr(self, types: &Types) -> (Self, u8, Mutability) {
         match self {
-            Self::Pointer(p) => (typec[p.ty()], p.depth, p.mutability.to_mutability()),
+            Self::Pointer(p) => (types[p.ty()], p.depth, p.mutability.to_mutability()),
             _ => (self, 0, Mutability::Immutable),
         }
     }
@@ -501,10 +501,10 @@ impl Ty {
         Ty::FLOATS.contains(&self)
     }
 
-    pub fn span(self, typec: &Typec) -> Option<Span> {
+    pub fn span(self, types: &Types) -> Option<Span> {
         match self {
-            Self::Struct(s) => Some(typec[s].loc.source_loc(typec)?.span),
-            Self::Enum(e) => Some(typec[e].loc.source_loc(typec)?.span),
+            Self::Struct(s) => Some(types[s].loc.source_loc(types)?.span),
+            Self::Enum(e) => Some(types[e].loc.source_loc(types)?.span),
             Self::Instance(..)
             | Self::Pointer(..)
             | Self::Param(..)
@@ -660,7 +660,7 @@ pub trait Humid: Sized + Clone + NoInteriorMutability {
     fn is_water_drop(key: FragRef<Self>) -> bool;
     fn lookup_water_drop(key: &str) -> Option<FragRef<Self>>;
     fn name(&self) -> Ident;
-    fn storage(typec: &mut Typec) -> &mut FragMap<Self>;
+    fn storage(types: &mut Types) -> &mut FragMap<Self>;
 }
 
 #[derive(Default)]

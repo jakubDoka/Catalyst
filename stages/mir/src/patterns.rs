@@ -5,7 +5,7 @@ use std::{
 };
 
 use storage::*;
-use typec_t::*;
+use types::*;
 
 use crate::ExternalMirCtx;
 
@@ -292,9 +292,9 @@ fn display_pat_low(
     use Builtin::*;
     match ty {
         Ty::Struct(s) => {
-            let Struct { fields, .. } = ext.typec[s];
+            let Struct { fields, .. } = ext.types[s];
             res.push_str("\\{ ");
-            if let Some((&first, rest)) = ext.typec[fields].split_first() {
+            if let Some((&first, rest)) = ext.types[fields].split_first() {
                 write!(res, "{}: ", first.name.get(ext.interner))?;
                 display_pat_low(first.ty, params, res, frontier, ext)?;
                 for &field in rest {
@@ -306,12 +306,12 @@ fn display_pat_low(
             res.push_str(" }");
         }
         Ty::Instance(inst) => {
-            let Instance { args, base } = ext.typec[inst];
-            let params = &ext.typec[args];
+            let Instance { args, base } = ext.types[inst];
+            let params = &ext.types[args];
             display_pat_low(base.as_ty(), params, res, frontier, ext)?;
         }
         Ty::Pointer(ptr) => {
-            let base = ext.typec[ptr.ty()];
+            let base = ext.types[ptr.ty()];
             res.push('^');
             write!(res, "{}", ptr.mutability.to_mutability())?;
             display_pat_low(base, params, res, frontier, ext)?;
@@ -338,13 +338,13 @@ fn display_pat_low(
             F32 | F64 => unreachable!(),
         },
         Ty::Enum(r#enum) => {
-            let Enum { variants, .. } = ext.typec[r#enum];
-            let variant = if ext.typec.enum_flag_ty(r#enum) != Uint {
+            let Enum { variants, .. } = ext.types[r#enum];
+            let variant = if ext.types.enum_flag_ty(r#enum) != Uint {
                 let flag = advance();
                 let index = flag.start as usize;
-                ext.typec[variants][index]
+                ext.types[variants][index]
             } else {
-                ext.typec[variants][0]
+                ext.types[variants][0]
             };
             write!(res, "\\{}", variant.name.get(ext.interner))?;
             if variant.ty != Ty::UNIT {

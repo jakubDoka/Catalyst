@@ -8,11 +8,11 @@ use lexing::*;
 use packaging_t::*;
 use parsing_t::*;
 use storage::*;
-use typec_t::*;
+use types::*;
 use typec_u::TypeCreator;
 
 pub struct TypecExternalCtx<'arena, 'ctx> {
-    pub typec: &'ctx mut Typec,
+    pub types: &'ctx mut Types,
     pub interner: &'ctx mut Interner,
     pub workspace: &'ctx mut Workspace,
     pub resources: &'ctx Resources,
@@ -23,7 +23,7 @@ pub struct TypecExternalCtx<'arena, 'ctx> {
 impl<'arena, 'ctx> TypecExternalCtx<'arena, 'ctx> {
     pub fn clone_borrow(&mut self) -> TypecExternalCtx<'arena, '_> {
         TypecExternalCtx {
-            typec: self.typec,
+            types: self.types,
             interner: self.interner,
             workspace: self.workspace,
             resources: self.resources,
@@ -39,17 +39,17 @@ impl<'arena, 'ctx> TypecExternalCtx<'arena, 'ctx> {
         func_id: FragRef<Func>,
         collect: bool,
     ) -> Result<(), SignatureCheckError> {
-        let func = self.typec[func_id];
+        let func = self.types[func_id];
 
         let spec_func_params = self
-            .typec
+            .types
             .pack_spec_func_param_specs(spec_func)
             .collect::<BumpVec<_>>();
         let generic_start = spec_func_params.len() - spec_func.generics.len();
         let mut spec_func_slots = vec![None; spec_func_params.len()];
         spec_func_slots[generic_start - 1] = Some(implementor);
         let func_params = self
-            .typec
+            .types
             .pack_func_param_specs(func_id)
             .collect::<BumpVec<_>>();
 
@@ -71,10 +71,10 @@ impl<'arena, 'ctx> TypecExternalCtx<'arena, 'ctx> {
             .zip(func.signature.args.keys())
             .enumerate()
         {
-            if let Err((a, b)) = self.typec.compatible(
+            if let Err((a, b)) = self.types.compatible(
                 &mut spec_func_slots,
-                self.typec[func_arg],
-                self.typec[spec_arg],
+                self.types[func_arg],
+                self.types[spec_arg],
             ) {
                 if let Some(ref mut mismatches) = mismatches {
                     mismatches.push((Some(i), a, b));
@@ -84,7 +84,7 @@ impl<'arena, 'ctx> TypecExternalCtx<'arena, 'ctx> {
             }
         }
 
-        if let Err((a, b)) = self.typec.compatible(
+        if let Err((a, b)) = self.types.compatible(
             &mut spec_func_slots,
             func.signature.ret,
             spec_func.signature.ret,
@@ -212,14 +212,14 @@ impl<'arena, 'ctx> TypecExternalCtx<'arena, 'ctx> {
 
     pub fn creator(&mut self) -> TypeCreator {
         TypeCreator {
-            typec: self.typec,
+            types: self.types,
             interner: self.interner,
         }
     }
 
     pub(crate) fn const_fold(&mut self, ret: Ty, body: TirNode) -> FolderValue {
         let ctx = ConstFolderContext {
-            typec: self.typec,
+            types: self.types,
             interner: self.interner,
             resources: self.resources,
             workspace: self.workspace,
@@ -380,7 +380,7 @@ impl TypecCtx {
         &mut self,
         module: VRef<Module>,
         resources: &Resources,
-        typec: &Typec,
+        types: &Types,
         interner: &mut Interner,
         builtin_funcs: &[FragRef<Func>],
     ) -> BumpVec<MacroCompileRequest> {
@@ -392,7 +392,7 @@ impl TypecCtx {
         }
 
         for &func in builtin_funcs {
-            let id = typec[func].name;
+            let id = types[func].name;
             self.scope.insert_builtin(id, func);
         }
 
@@ -401,13 +401,13 @@ impl TypecCtx {
         for dep in &resources.module_deps[mod_ent.deps] {
             let dep_source = resources.modules[dep.ptr].source;
             self.scope.push(dep.name, dep_source, dep.name_span);
-            let items = &typec.module_items[dep_source];
+            let items = &types.module_items[dep_source];
             for &item in items.items.values() {
                 self.scope
                     .insert(mod_ent.source, dep_source, item, resources, interner);
 
                 if let ModuleItemPtr::Ty(ty) = item.ptr
-                    && let Some(r#impl) = typec.macros.get(&ty)
+                    && let Some(r#impl) = types.macros.get(&ty)
                     && let MacroImpl { name, r#impl: Some(r#impl), params } = r#impl.to_owned()
                 {
                     token_macros.push(MacroCompileRequest { name, ty, r#impl, params });
@@ -420,7 +420,7 @@ impl TypecCtx {
     pub fn detect_infinite_types(
         &mut self,
         TypecExternalCtx {
-            typec,
+            types,
             interner,
             workspace,
             transfere,
@@ -438,15 +438,15 @@ impl TypecCtx {
 
         for ty in nodes.clone() {
             let (fields, variants) = match ty {
-                NewTy::Struct(s) => (&typec[typec[s].fields], &[][..]),
-                NewTy::Enum(e) => (&[][..], &typec[typec[e].variants]),
+                NewTy::Struct(s) => (&types[types[s].fields], &[][..]),
+                NewTy::Enum(e) => (&[][..], &types[types[e].variants]),
             };
 
             let iter = fields
                 .iter()
                 .map(|field| field.ty)
                 .chain(variants.iter().map(|variant| variant.ty))
-                .filter_map(|ty| NewTy::new(ty, typec));
+                .filter_map(|ty| NewTy::new(ty, types));
 
             self.ty_graph.new_node(ty).add_edges(iter);
         }
@@ -454,7 +454,7 @@ impl TypecCtx {
         if let Err(cycle) = self.ty_graph.ordering(nodes, &mut bumpvec![]) {
             let cycle_chart = cycle
                 .iter()
-                .map(|&ty| typec_u::display(typec, interner, ty.as_ty()))
+                .map(|&ty| typec_u::display(types, interner, ty.as_ty()))
                 .intersperse(" -> ".into())
                 .collect::<String>();
 
@@ -465,7 +465,7 @@ impl TypecCtx {
                     .iter()
                     .skip(1) // the first and last elements are the same
                     .filter_map(|&ty| {
-                        let span = ty.as_ty().span(typec).expect("builtin types should not have cycles");
+                        let span = ty.as_ty().span(types).expect("builtin types should not have cycles");
                         ctl_error_source_annotation!(info meta.loc(span), "this type is part of the cycle")
                     })
                     .collect(),
@@ -517,15 +517,15 @@ impl TypecCtx {
         &mut self,
         generics: Generics,
         offset: usize,
-        typec: &Typec,
+        types: &Types,
         interner: &mut Interner,
     ) {
-        let specs = typec[generics]
+        let specs = types[generics]
             .iter()
             .enumerate()
-            .flat_map(|(i, &spec)| typec[spec].iter().map(move |&spec| (offset + i, spec)));
+            .flat_map(|(i, &spec)| types[spec].iter().map(move |&spec| (offset + i, spec)));
         for (i, generic) in specs {
-            self.insert_spec_functions_recur(i, generic, typec, interner);
+            self.insert_spec_functions_recur(i, generic, types, interner);
         }
     }
 
@@ -533,13 +533,13 @@ impl TypecCtx {
         &mut self,
         index: usize,
         generic: Spec,
-        typec: &Typec,
+        types: &Types,
         interner: &mut Interner,
     ) {
-        let spec_base = generic.base(typec);
-        let functions = typec[spec_base].methods;
+        let spec_base = generic.base(types);
+        let functions = types[spec_base].methods;
 
-        for (key, &func) in functions.keys().zip(&typec[functions]) {
+        for (key, &func) in functions.keys().zip(&types[functions]) {
             let id = interner.intern_scoped(Ty::Param(index as u8), func.name);
             self.scope.push(id, key, func.span);
         }
@@ -566,7 +566,7 @@ impl TypecCtx {
         span: Span,
         expected: &'static str,
         TypecExternalCtx {
-            typec,
+            types,
             interner,
             workspace,
             resources,
@@ -585,7 +585,7 @@ impl TypecCtx {
                 let suggestions = resources.module_deps[resources.modules[meta.module].deps]
                     .iter()
                     .filter(|dep| {
-                        typec[resources.modules[dep.ptr].source]
+                        types[resources.modules[dep.ptr].source]
                             .items
                             .values()
                             .any(|i| i.id == sym)
@@ -628,7 +628,7 @@ impl TypecCtx {
         &mut self,
         item: ModuleItem,
         TypecExternalCtx {
-            typec,
+            types,
             interner,
             workspace,
             ..
@@ -649,7 +649,7 @@ impl TypecCtx {
             }?;
         }
 
-        Some(meta.item_loc(typec, item))
+        Some(meta.item_loc(types, item))
     }
 
     pub fn cast_checks(&mut self) -> impl Iterator<Item = CastCheck> + '_ {
@@ -799,8 +799,8 @@ impl TypecMeta {
         accessible
     }
 
-    pub(crate) fn item_loc(&self, typec: &mut Typec, item: ModuleItem) -> GuaranteedLoc {
-        GuaranteedLoc::new(self.source, typec[self.source].items.push(item))
+    pub(crate) fn item_loc(&self, types: &mut Types, item: ModuleItem) -> GuaranteedLoc {
+        GuaranteedLoc::new(self.source, types[self.source].items.push(item))
     }
 }
 
@@ -846,11 +846,11 @@ wrapper_enum! {
 }
 
 impl NewTy {
-    pub fn new(ty: Ty, typec: &Typec) -> Option<Self> {
+    pub fn new(ty: Ty, types: &Types) -> Option<Self> {
         match ty {
             Ty::Struct(s) => Some(Self::Struct(s)),
             Ty::Enum(e) => Some(Self::Enum(e)),
-            Ty::Instance(i) => match typec[i].base {
+            Ty::Instance(i) => match types[i].base {
                 GenericTy::Struct(s) => Some(Self::Struct(s)),
                 GenericTy::Enum(e) => Some(Self::Enum(e)),
             },

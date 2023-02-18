@@ -7,7 +7,7 @@ use std::{
 use cranelift_codegen::{binemit::Reloc, ir::LibCall};
 use lexing::*;
 use storage::*;
-use typec_t::*;
+use types::*;
 
 use crate::*;
 
@@ -70,7 +70,7 @@ impl JitContext {
         &mut self,
         funcs: impl IntoIterator<Item = CompiledFuncRef>,
         gen: &Gen,
-        typec: &Typec,
+        types: &Types,
         interner: &Interner,
         temp: bool,
     ) -> Result<(), JitRelocError> {
@@ -81,7 +81,7 @@ impl JitContext {
                 let compiled_func = gen.get_func_direct(func);
                 let Func {
                     visibility, name, ..
-                } = typec[compiled_func.func()];
+                } = types[compiled_func.func()];
 
                 if visibility == FuncVisibility::Imported {
                     let code = self

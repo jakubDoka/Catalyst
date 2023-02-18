@@ -3,6 +3,7 @@ use std::sync::mpsc::SendError;
 use typec_u::type_creator;
 
 use super::*;
+use typec::*;
 
 pub struct WorkerConnections {
     pub package_tasks: Receiver<(PackageTask, VRef<Package>)>,
@@ -72,7 +73,7 @@ impl Worker {
             &mut task.gen,
             &mut self.state.gen_resources,
             &mut task.interner,
-            &mut task.typec,
+            &mut task.types,
             &task.resources.compile_requests,
             shared.resources,
         );
@@ -119,7 +120,7 @@ impl Worker {
         builder.seal_block(entry);
 
         let entry_name = generator.interner.intern_compressed(gen::ENTRY_POINT_NAME);
-        let entry_func = generator.typec.cache.funcs.push(Func {
+        let entry_func = generator.types.cache.funcs.push(Func {
             visibility: FuncVisibility::Exported,
             name: generator.interner.intern(gen::ENTRY_POINT_NAME),
             ..default()
@@ -201,11 +202,11 @@ impl Worker {
     //     //     Parser::skip_imports,
     //     // );
 
-    //     // let mut macros = typec::build_scope(
+    //     // let mut macros = types::build_scope(
     //     //     module,
     //     //     &mut self.state.scope,
     //     //     shared.resources,
-    //     //     &task.typec,
+    //     //     &task.types,
     //     //     &mut task.interner,
     //     // );
 
@@ -287,7 +288,7 @@ impl Worker {
         self.state.typec_ctx.build_scope(
             module,
             shared.resources,
-            &task.typec,
+            &task.types,
             &mut task.interner,
             shared.builtin_functions,
         );
@@ -358,7 +359,7 @@ impl Worker {
 
     //         let mut interp = Interpreter {
     //             ctx: prepared_ctx,
-    //             typec: &mut task.typec,
+    //             types: &mut task.types,
     //             interner: &mut task.interner,
     //             mir: &mut task.mir,
     //             layouts: &mut self.state.jit_layouts,
@@ -371,9 +372,9 @@ impl Worker {
     //             Err(err) => {
     //                 let snip = TodoSnippet {
     //                     message: format!("Failed to fold constant: {:?}", err),
-    //                     loc: task.typec[constant]
+    //                     loc: task.types[constant]
     //                         .loc
-    //                         .source_loc(&task.typec, shared.resources),
+    //                         .source_loc(&task.types, shared.resources),
     //                 };
     //                 task.workspace.push(snip);
     //                 continue;
@@ -384,7 +385,7 @@ impl Worker {
     //             constant,
     //             value,
     //             &mut self.state.jit_layouts,
-    //             &mut task.typec,
+    //             &mut task.types,
     //             &mut task.interner,
     //         );
     //     }
@@ -411,7 +412,7 @@ impl Worker {
     //        .load_functions(
     //            compiled.into_iter().chain(imported),
     //            &task.gen,
-    //            &task.typec,
+    //            &task.types,
     //            &task.interner,
     //            false,
     //        )
@@ -437,7 +438,7 @@ impl Worker {
         {
             compiled.push(id);
 
-            let Func { signature, .. } = task.typec[func];
+            let Func { signature, .. } = task.types[func];
             let body = task
                 .mir
                 .bodies
@@ -486,7 +487,7 @@ impl Worker {
                 &mut task.gen,
                 &mut self.state.gen_resources,
                 &mut task.interner,
-                &mut task.typec,
+                &mut task.types,
                 &task.resources.compile_requests,
                 shared.resources,
             )
@@ -520,9 +521,9 @@ impl Worker {
     //    shared: &Shared,
     //) -> BumpVec<CompiledFuncRef> {
     //    let extractor = |&MacroCompileRequest { r#impl, params, .. }| {
-    //        let Impl { methods, .. } = task.typec[r#impl];
+    //        let Impl { methods, .. } = task.types[r#impl];
 
-    //        let params = task.typec[params].to_bumpvec();
+    //        let params = task.types[params].to_bumpvec();
     //        // todo try to avoid moving and allocate ty VSlice right away
     //        let pushed_params = task.compile_requests.ty_slices.bump_slice(&params);
 
@@ -532,7 +533,7 @@ impl Worker {
     //                &shared.jit_isa.triple,
     //                func,
     //                params.iter().copied(),
-    //                &task.typec,
+    //                &task.types,
     //                &mut task.interner,
     //            );
     //            let id = task.gen.get_or_insert_func(key, func);
@@ -546,7 +547,7 @@ impl Worker {
     //                Ok(0),
     //            )
     //        };
-    //        let frontier = task.typec[methods]
+    //        let frontier = task.types[methods]
     //            .iter()
     //            .map(collector)
     //            .collect::<BumpVec<_>>();
@@ -577,8 +578,8 @@ impl Worker {
     //         ..
     //     } in macros
     //     {
-    //         let impl_ent = task.typec.impls[r#impl];
-    //         let spec = impl_ent.key.spec.base(&task.typec);
+    //         let impl_ent = task.types.impls[r#impl];
+    //         let spec = impl_ent.key.spec.base(&task.types);
 
     //         match spec {
     //             s if s == SpecBase::TOKEN_MACRO => {
@@ -594,9 +595,9 @@ impl Worker {
     //         let layout =
     //             self.state
     //                 .jit_layouts
-    //                 .ty_layout(ty, &[], &mut task.typec, &mut task.interner);
-    //         let params = task.typec[params].to_bumpvec();
-    //         let funcs = task.typec.func_slices[impl_ent.methods]
+    //                 .ty_layout(ty, &[], &mut task.types, &mut task.interner);
+    //         let params = task.types[params].to_bumpvec();
+    //         let funcs = task.types.func_slices[impl_ent.methods]
     //             .iter()
     //             .map(|&func| {
     //                 Generator::func_instance_name(
@@ -604,7 +605,7 @@ impl Worker {
     //                     &isa.triple,
     //                     func,
     //                     params.iter().copied(),
-    //                     &task.typec,
+    //                     &task.types,
     //                     &mut task.interner,
     //                 )
     //             })
@@ -636,7 +637,7 @@ impl Worker {
     ) {
         let mut active = Active::take(&mut self.state.typec_transfere);
         let ext = TypecExternalCtx {
-            typec: &mut task.typec,
+            types: &mut task.types,
             interner: &mut task.interner,
             workspace: &mut task.resources.workspace,
             resources: shared.resources,
@@ -661,7 +662,7 @@ impl Worker {
             module_ent: &mut self.state.module,
             reused: &mut self.state.mir_ctx,
             mir: &mut task.mir,
-            typec: &mut task.typec,
+            types: &mut task.types,
             interner: &mut task.interner,
             workspace: &mut task.resources.workspace,
             arena,
@@ -673,7 +674,7 @@ impl Worker {
         active
             .checked_funcs()
             .iter()
-            .filter(|&&(func, ..)| task.typec[func].flags.contains(FuncFlags::ENTRY))
+            .filter(|&&(func, ..)| task.types[func].flags.contains(FuncFlags::ENTRY))
             .map(|(func, ..)| func)
             .collect_into(&mut task.resources.entry_points);
 
@@ -695,8 +696,8 @@ impl Worker {
     ) {
         for CastCheck { loc, from, to } in checks {
             let loc = SourceLoc { origin, span: loc };
-            let from_param_presence = task.typec.contains_params_low(from);
-            let to_param_presence = task.typec.contains_params_low(to);
+            let from_param_presence = task.types.contains_params_low(from);
+            let to_param_presence = task.types.contains_params_low(to);
             match from_param_presence.combine(to_param_presence) {
                 ParamPresence::Present => {
                     CastBetweenGenericTypes {
@@ -752,7 +753,7 @@ struct ConstFolderImpl<'arena, 'ctx> {
 impl<'arena, 'ctx> ConstFolderImpl<'arena, 'ctx> {
     fn fold(&mut self, ret: Ty, tir_body: TirNode, ctx: ConstFolderContext) -> Option<IValue> {
         let ext = ExternalMirCtx {
-            typec: ctx.typec,
+            types: ctx.types,
             interner: ctx.interner,
             workspace: ctx.workspace,
             arena: self.arena,
@@ -794,7 +795,7 @@ impl<'arena, 'ctx> ConstFolderImpl<'arena, 'ctx> {
 
         let mut interp = Interpreter {
             ctx: prepared_ctx,
-            typec: ctx.typec,
+            types: ctx.types,
             interner: ctx.interner,
             mir: self.mir,
             layouts: self.layouts,

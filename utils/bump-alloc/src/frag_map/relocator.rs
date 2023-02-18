@@ -317,14 +317,14 @@ impl FragMarkShard {
                 unsafe {
                     ptr::drop_in_place(ptr::slice_from_raw_parts_mut(
                         base.add(range.start as usize),
-                        range.len() as usize,
+                        range.len(),
                     ));
                 }
             }
 
             let mut cursor = 0;
             for (index, range) in marks.iter_mut() {
-                let len = range.len() as usize;
+                let len = range.len();
                 unsafe {
                     let source = base.add(range.start as usize);
                     let offset = base.add(cursor);

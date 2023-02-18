@@ -9,7 +9,7 @@ use lexing_t::*;
 use mir_t::*;
 use packaging_t::{Module, Resources};
 use storage::*;
-use typec_t::*;
+use types::*;
 
 mod control_flow;
 mod data;
@@ -46,7 +46,7 @@ pub struct MirCompilationCtx<'i, 'm> {
     pub module_ent: &'m mut ModuleMir,
     pub reused: &'m mut ReusedMirCtx,
     pub mir: &'m mut Mir,
-    pub typec: &'m mut Typec,
+    pub types: &'m mut Types,
     pub interner: &'m mut Interner,
     pub workspace: &'m mut Workspace,
     pub arena: &'i Arena,
@@ -64,7 +64,7 @@ pub fn compile_functions(
             signature: Signature { args, ret, .. },
             flags,
             ..
-        } = ctx.typec[func];
+        } = ctx.types[func];
 
         let meta = MirBuildMeta {
             source: ctx.resources.modules[module].source,
@@ -73,14 +73,14 @@ pub fn compile_functions(
         };
 
         let generics = ctx
-            .typec
+            .types
             .pack_func_param_specs(func)
             .collect::<BumpVec<_>>();
         let Some(body) = MirBuilder::new(
             ret,
             &generics,
             ExternalMirCtx {
-                typec: ctx.typec,
+                types: ctx.types,
                 interner: ctx.interner,
                 workspace: ctx.workspace,
                 arena: ctx.arena,
@@ -119,7 +119,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
         Self {
             block: None,
             depth: 0,
-            func: FuncMirCtx::new(ret, generics, module_ref, module, reused, ext.typec),
+            func: FuncMirCtx::new(ret, generics, module_ref, module, reused, ext.types),
             ext,
             meta,
             reused,
@@ -137,9 +137,9 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
     }
 
     fn push_args(&mut self, args: FragSlice<Ty>) -> BumpVec<VRef<ValueMir>> {
-        self.ext.typec[args]
+        self.ext.types[args]
             .iter()
-            .map(|&ty| self.func.create_var(ty, self.reused, self.ext.typec))
+            .map(|&ty| self.func.create_var(ty, self.reused, self.ext.types))
             .collect::<BumpVec<_>>()
     }
 
@@ -221,7 +221,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
     }
 
     fn create_params(&mut self, params: &[Ty]) -> VSlice<VRef<MirTy>> {
-        self.func.create_params(params, self.reused, self.ext.typec)
+        self.func.create_params(params, self.reused, self.ext.types)
     }
 
     fn field(

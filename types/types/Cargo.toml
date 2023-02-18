@@ -1,5 +1,5 @@
 [package]
-name = "typec-t"
+name = "types"
 version = "0.1.0"
 edition = "2021"
 

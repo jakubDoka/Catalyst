@@ -7,14 +7,14 @@ use parsing::*;
 
 use storage::*;
 use testing::*;
+use types::*;
 use typec::*;
-use typec_t::*;
 use typec_u::type_creator;
 
 #[derive(Default)]
 struct TestState {
     interner: Interner,
-    typec: Typec,
+    types: Types,
     workspace: Workspace,
     resources: Resources,
     package_graph: PackageGraph,
@@ -34,7 +34,7 @@ impl Scheduler for TestState {
         self.typec_ctx.build_scope(
             module,
             &self.resources,
-            &self.typec,
+            &self.types,
             &mut self.interner,
             &self.builtin_funcs,
         );
@@ -43,7 +43,7 @@ impl Scheduler for TestState {
     fn parse_segment(&mut self, module: storage::VRef<Module>, items: GroupedItemsAst) {
         let mut active = Active::take(&mut self.typec_transfere);
         let mut ext = TypecExternalCtx {
-            typec: &mut self.typec,
+            types: &mut self.types,
             interner: &mut self.interner,
             workspace: &mut self.workspace,
             resources: &self.resources,

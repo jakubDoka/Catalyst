@@ -6,7 +6,7 @@ use std::{
 use mir_t::*;
 use packaging_t::Resources;
 use storage::*;
-use typec_t::*;
+use types::*;
 use typec_u::TypeDisplay;
 
 pub fn display_function(
@@ -19,7 +19,7 @@ pub fn display_function(
 }
 
 pub struct MirDisplayCtx<'i> {
-    pub typec: &'i Typec,
+    pub types: &'i Types,
     pub module: &'i ModuleMir,
     pub interner: &'i Interner,
     pub resources: &'i Resources,
@@ -51,7 +51,7 @@ impl MirDisplayCtx<'_> {
         func: FragRef<Func>,
         buffer: &mut String,
     ) -> fmt::Result {
-        self.typec[func].display(self.typec, self.interner, buffer)?;
+        self.types[func].display(self.types, self.interner, buffer)?;
         writeln!(
             buffer,
             " {{ ({}) ret var{}",
@@ -60,7 +60,7 @@ impl MirDisplayCtx<'_> {
                 .map(|&arg| format!(
                     "var{}: {}",
                     arg.index(),
-                    typec_u::display(self.typec, self.interner, mir.value_ty(arg))
+                    typec_u::display(self.types, self.interner, mir.value_ty(arg))
                 ))
                 .collect::<Vec<_>>()
                 .join(", "),
@@ -173,12 +173,12 @@ impl MirDisplayCtx<'_> {
 
                 match callable {
                     CallableMir::Func(func) => {
-                        buffer.push_str(self.typec[func].name.get(self.interner))
+                        buffer.push_str(self.types[func].name.get(self.interner))
                     }
                     CallableMir::SpecFunc(bound_func) => {
-                        let SpecFunc { name, parent, .. } = self.typec[bound_func];
+                        let SpecFunc { name, parent, .. } = self.types[bound_func];
                         let bound_id =
-                            typec_u::display(self.typec, self.interner, Spec::Base(parent));
+                            typec_u::display(self.types, self.interner, Spec::Base(parent));
                         write!(buffer, "{}\\{}", bound_id, name.get(self.interner))?;
                     }
                     CallableMir::Pointer(ptr) => write!(buffer, "val{}", ptr.index())?,
@@ -189,7 +189,7 @@ impl MirDisplayCtx<'_> {
                     let iter = mir.ty_params[params]
                         .iter()
                         .map(|&ty| mir.types[ty].ty)
-                        .map(|ty| typec_u::display(self.typec, self.interner, ty))
+                        .map(|ty| typec_u::display(self.types, self.interner, ty))
                         .intersperse(", ".into())
                         .collect::<String>();
                     buffer.push_str(&iter);
@@ -245,7 +245,7 @@ impl MirDisplayCtx<'_> {
                     buffer,
                     "var{} = const_access {}",
                     ret.index(),
-                    self.typec[r#const].name.get(self.interner)
+                    self.types[r#const].name.get(self.interner)
                 )?;
             }
             InstMir::Drop(drop) => {

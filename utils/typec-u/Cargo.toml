@@ -9,4 +9,4 @@ edition = "2021"
 lexing-t = { version = "0.1.0", path = "../../types/lexing-t" }
 packaging-t = { version = "0.1.0", path = "../../types/packaging-t" }
 storage = { version = "0.1.0", path = "../storage" }
-typec-t = { version = "0.1.0", path = "../../types/typec-t" }
+types = { version = "0.1.0", path = "../../types/types" }

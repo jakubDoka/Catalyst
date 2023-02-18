@@ -2,7 +2,7 @@ use std::mem;
 
 use crate::{context::*, TirBuilder};
 
-use {diags::*, lexing_t::*, parsing_t::*, std::iter, storage::*, typec_t::*};
+use {diags::*, lexing_t::*, parsing_t::*, std::iter, storage::*, types::*};
 
 mod building;
 mod collecting;
@@ -132,7 +132,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             .map(|&ast| self.spec(ast))
             .nsc_collect::<Option<BumpVec<_>>>()?;
         for &spec in specs.iter() {
-            self.ext.typec.register_spec_generics(spec, spec_set)
+            self.ext.types.register_spec_generics(spec, spec_set)
         }
         Some(self.ext.creator().spec_sum(specs.iter().copied()))
     }
@@ -212,7 +212,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             match item {
                 ScopeItem::Ty(ty) => TyPathResult::Ty(ty),
                 ScopeItem::SpecBase(spec) => TyPathResult::Spec(spec),
-                item => self.invalid_symbol_type(item, start.span, "typec or spec")?,
+                item => self.invalid_symbol_type(item, start.span, "types or spec")?,
             },
             match segments {
                 [] => None,
@@ -255,7 +255,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         };
 
         Some(match ret.kind {
-            TirKind::ConstAccess(c) => self.ext.typec[c].value.clone(),
+            TirKind::ConstAccess(c) => self.ext.types[c].value.clone(),
             TirKind::Int(i) => FolderValue::new_register(
                 i.unwrap_or_else(|| self.span_str(ret.span).parse().unwrap()) as u64,
             ),

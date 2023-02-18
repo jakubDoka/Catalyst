@@ -1,9 +1,9 @@
 // The classification code for the x86_64 ABI is taken from the clay language
 // https://github.com/jckarter/clay/blob/master/compiler/src/externals.cpp
 
-use cranelift_codegen::ir::{types, ArgumentExtension, Type};
+use cranelift_codegen::ir::{self, ArgumentExtension, Type};
 use storage::*;
-use typec_t::*;
+use types::*;
 use typec_u::type_creator;
 
 use crate::*;
@@ -37,7 +37,7 @@ fn classify_arg_low(
         return layout.is_zero_sized().then_some(()).ok_or(Memory);
     }
 
-    use typec_t::Builtin::*;
+    use types::Builtin::*;
     let mut c = match ty {
         Ty::Builtin(bt) => match bt {
             Bool | Char | U8 | U16 | U32 | Uint | Short | Long | LongLong | Cint => Class::Int,
@@ -82,7 +82,7 @@ fn classify_enum_arg(
     offset: u32,
 ) -> Result<(), Memory> {
     let value_offset = 1;
-    let flag_ty = Ty::Builtin(generator.typec.enum_flag_ty(e));
+    let flag_ty = Ty::Builtin(generator.types.enum_flag_ty(e));
     classify_arg_low(generator, flag_ty, params, classes, offset)?;
     let offset = layout
         .offsets(&generator.layouts.offsets)
@@ -125,7 +125,7 @@ fn classify_instance_arg(
     classes: &mut [Option<Class>],
     offset: u32,
 ) -> Result<(), Memory> {
-    let Instance { base, args } = generator.typec[instance];
+    let Instance { base, args } = generator.types[instance];
     let params = type_creator!(generator).instantiate_slice(args, params);
     match base {
         GenericTy::Struct(s) => classify_struct_arg(generator, s, &params, layout, classes, offset),
@@ -196,11 +196,11 @@ fn reg_component(
             *i += vec_len;
             Some(if vec_len == 1 {
                 match size {
-                    4 => types::F32,
-                    _ => types::F64,
+                    4 => ir::types::F32,
+                    _ => ir::types::F64,
                 }
             } else {
-                types::I8.by(size).unwrap()
+                ir::types::I8.by(size).unwrap()
             })
         }
         Some(c) => unreachable!("reg_component: unhandled class {:?}", c),
@@ -289,7 +289,7 @@ pub fn compute_abi_info(
 
     target.ret = arg_or_ret(generator, sig.ret, false);
     target.args.clear();
-    generator.typec[sig.args]
+    generator.types[sig.args]
         .to_bumpvec()
         .into_iter()
         .filter_map(|arg| arg_or_ret(generator, arg, true))

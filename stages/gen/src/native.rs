@@ -7,7 +7,7 @@ use object::{
     Architecture, BinaryFormat, Endianness, SymbolFlags, SymbolKind,
 };
 use storage::*;
-use typec_t::*;
+use types::*;
 
 use crate::{context::Isa, *};
 
@@ -62,7 +62,7 @@ impl ObjectContext {
         &mut self,
         funcs: impl IntoIterator<Item = CompiledFuncRef>,
         gen: &Gen,
-        typec: &Typec,
+        types: &Types,
         interner: &mut Interner,
     ) -> Result<(), ObjectRelocationError> {
         // register functions
@@ -72,7 +72,7 @@ impl ObjectContext {
             .map(|func| {
                 let ent = gen.get_func_direct(func);
 
-                let meta = &typec[ent.func()];
+                let meta = &types[ent.func()];
                 let (scope, weak) = Self::translate_visibility(meta.visibility);
 
                 let name = match scope {

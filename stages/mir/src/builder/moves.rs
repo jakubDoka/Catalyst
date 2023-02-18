@@ -144,7 +144,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
     }
 
     pub(super) fn create_value(&mut self, ty: Ty) -> VRef<ValueMir> {
-        let val = self.func.create_value(ty, self.reused, self.ext.typec);
+        let val = self.func.create_value(ty, self.reused, self.ext.types);
         self.reused.moves.value_depths[val] = self.depth;
         val
     }
@@ -229,7 +229,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
             // partially moved, thus we can drop the whole thing
             Ty::Enum(..) => dropper(self),
             Ty::Instance(i) => {
-                let Instance { base, args } = self.ext.typec[i];
+                let Instance { base, args } = self.ext.types[i];
                 match base {
                     GenericTy::Struct(s) => self.partial_struct_drop(s, args, value, key, span),
                     GenericTy::Enum(..) => dropper(self),
@@ -249,7 +249,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
         key: &mut Option<&mut MoveKey>,
         span: Span,
     ) {
-        for (i, field) in self.ext.typec[self.ext.typec[s].fields]
+        for (i, field) in self.ext.types[self.ext.types[s].fields]
             .to_bumpvec()
             .into_iter()
             .enumerate()

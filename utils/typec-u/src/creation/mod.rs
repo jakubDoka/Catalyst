@@ -1,7 +1,7 @@
 use crate::*;
 use std::{default::default, fmt::Write, iter};
 use storage::*;
-use typec_t::*;
+use types::*;
 
 pub mod display;
 
@@ -16,7 +16,7 @@ impl<'ctx> TypeCreator<'ctx> {
                 return self.may_need_drop_low(param, &[]),
             Ty::Param(..) => return (true, true),
             Ty::Pointer(..) | Ty::Builtin(..) => return (false, false),
-            ty if let Some(is) = self.typec.may_need_drop.get(&ty) => return (*is, false),
+            ty if let Some(is) = self.types.may_need_drop.get(&ty) => return (*is, false),
             Ty::Struct(..) |
             Ty::Enum(..) |
             Ty::Array(..) |
@@ -24,34 +24,34 @@ impl<'ctx> TypeCreator<'ctx> {
         };
         // its split since map entry handle must be dropped.
         let (is, param) = match ty {
-            Ty::Struct(s) => self.typec[s]
+            Ty::Struct(s) => self.types[s]
                 .fields
                 .keys()
                 .map(|f| {
-                    let ty = self.typec[f].ty;
+                    let ty = self.types[f].ty;
                     self.may_need_drop_low(ty, params)
                 })
                 .reduce(|(a, b), (c, d)| (a | c, b | d))
                 .unwrap_or((false, false)),
-            Ty::Enum(e) => self.typec[e]
+            Ty::Enum(e) => self.types[e]
                 .variants
                 .keys()
                 .map(|f| {
-                    let ty = self.typec[f].ty;
+                    let ty = self.types[f].ty;
                     self.may_need_drop_low(ty, params)
                 })
                 .reduce(|(a, b), (c, d)| (a | c, b | d))
                 .unwrap_or((false, false)),
             Ty::Instance(i) => {
-                let Instance { base, args } = self.typec[i];
+                let Instance { base, args } = self.types[i];
                 let params = self.instantiate_slice(args, params);
                 self.may_need_drop_low(base.as_ty(), &params)
             }
-            Ty::Array(a) => self.may_need_drop_low(self.typec[a].item, params),
+            Ty::Array(a) => self.may_need_drop_low(self.types[a].item, params),
             Ty::Param(..) | Ty::Pointer(..) | Ty::Builtin(..) => unreachable!(),
         };
         if !param {
-            self.typec.may_need_drop.insert(ty, is);
+            self.types.may_need_drop.insert(ty, is);
         }
         (is, param)
     }
@@ -62,9 +62,9 @@ impl<'ctx> TypeCreator<'ctx> {
         params: impl TypecCtxSlice<Ty>,
         field_name: Ident,
     ) -> Option<(usize, FragRef<Field>, Ty)> {
-        let Struct { fields, .. } = self.typec[struct_id];
+        let Struct { fields, .. } = self.types[struct_id];
         let (i, id, ty) = self
-            .typec
+            .types
             .cache
             .fields
             .indexed(fields)
@@ -79,18 +79,18 @@ impl<'ctx> TypeCreator<'ctx> {
     ) -> FragSlice<Spec> {
         let id = self
             .interner
-            .intern_with(|s, t| display_spec_sum(self.typec, s, specs.clone(), t));
+            .intern_with(|s, t| display_spec_sum(self.types, s, specs.clone(), t));
 
         if id == Interner::EMPTY {
             return default();
         }
 
         let res = self
-            .typec
+            .types
             .mapping
             .lookup
             .entry(id)
-            .or_insert_with(|| ComputedTypecItem::SpecSum(self.typec.cache.spec_sums.extend(specs)))
+            .or_insert_with(|| ComputedTypecItem::SpecSum(self.types.cache.spec_sums.extend(specs)))
             .to_owned();
 
         match res {
@@ -106,43 +106,43 @@ impl<'ctx> TypeCreator<'ctx> {
     pub fn contains_params_low(&self, ty: Ty) -> ParamPresence {
         use ParamPresence::*;
         match ty {
-            Ty::Instance(instance) => self.typec[self.typec[instance].args]
+            Ty::Instance(instance) => self.types[self.types[instance].args]
                 .iter()
                 .map(|&ty| self.contains_params_low(ty))
                 .fold(Absent, ParamPresence::combine),
             Ty::Pointer(pointer) => self
-                .contains_params_low(self.typec[pointer.ty()])
+                .contains_params_low(self.types[pointer.ty()])
                 .combine(pointer.mutability.to_mutability().into())
                 .put_behind_pointer(),
-            Ty::Array(array) => self.contains_params_low(self.typec[array].item),
+            Ty::Array(array) => self.contains_params_low(self.types[array].item),
             Ty::Param(..) => Present,
             Ty::Struct(..) | Ty::Builtin(..) | Ty::Enum(..) => Absent,
         }
     }
 
     pub fn init(&mut self, builtin_functions: &mut Vec<FragRef<Func>>) {
-        SpecBase::init_water_drops(self.typec);
-        Enum::init_water_drops(self.typec);
-        Struct::init_water_drops(self.typec);
-        Func::init_water_drops(self.typec);
+        SpecBase::init_water_drops(self.types);
+        Enum::init_water_drops(self.types);
+        Struct::init_water_drops(self.types);
+        Func::init_water_drops(self.types);
         self.init_builtin_funcs(builtin_functions);
     }
 
     fn init_builtin_funcs(&mut self, builtin_functions: &mut Vec<FragRef<Func>>) {
         builtin_functions.extend(Func::WATER_DROPS.map(|(.., func)| func));
-        self.typec.cache.funcs[Func::CAST] = Func {
-            generics: self.typec.cache.params.extend([default(), default()]), // F, T
+        self.types.cache.funcs[Func::CAST] = Func {
+            generics: self.types.cache.params.extend([default(), default()]), // F, T
             signature: Signature {
                 cc: default(),
-                args: self.typec.cache.args.extend([Ty::Param(1)]),
+                args: self.types.cache.args.extend([Ty::Param(1)]),
                 ret: Ty::Param(0),
             },
             name: Interner::CAST,
             flags: FuncFlags::BUILTIN,
             ..default()
         };
-        self.typec.cache.funcs[Func::SIZEOF] = Func {
-            generics: self.typec.cache.params.extend([default()]), // T
+        self.types.cache.funcs[Func::SIZEOF] = Func {
+            generics: self.types.cache.params.extend([default()]), // T
             signature: Signature {
                 cc: default(),
                 args: default(),
@@ -157,11 +157,11 @@ impl<'ctx> TypeCreator<'ctx> {
             let op = self.interner.intern(op);
             let id = self
                 .interner
-                .intern_with(|s, t| display_bin_op(self.typec, s, op, a, b, t));
+                .intern_with(|s, t| display_bin_op(self.types, s, op, a, b, t));
 
             let signature = Signature {
                 cc: default(),
-                args: self.typec.cache.args.extend([a, b]),
+                args: self.types.cache.args.extend([a, b]),
                 ret: r,
             };
 
@@ -173,9 +173,9 @@ impl<'ctx> TypeCreator<'ctx> {
             };
 
             if let Some(water_drop) = Func::lookup_water_drop(id.get(self.interner)) {
-                self.typec.cache.funcs[water_drop] = func;
+                self.types.cache.funcs[water_drop] = func;
             } else {
-                builtin_functions.push(self.typec.cache.funcs.push(func));
+                builtin_functions.push(self.types.cache.funcs.push(func));
             }
         };
 
@@ -211,7 +211,7 @@ impl<'ctx> TypeCreator<'ctx> {
 
             let signature = Signature {
                 cc: default(),
-                args: self.typec.cache.args.extend(iter::once(from)),
+                args: self.types.cache.args.extend(iter::once(from)),
                 ret: to,
             };
 
@@ -222,7 +222,7 @@ impl<'ctx> TypeCreator<'ctx> {
                 ..default()
             };
 
-            let func = self.typec.cache.funcs.push(func);
+            let func = self.types.cache.funcs.push(func);
 
             builtin_functions.push(func);
         };
@@ -237,19 +237,19 @@ impl<'ctx> TypeCreator<'ctx> {
     pub fn pointer_to(&mut self, mutability: RawMutability, base: Ty) -> Pointer {
         let id = self.interner.intern_with(|s, t| {
             t.push_str("ptr ");
-            base.display(self.typec, s, t)
+            base.display(self.types, s, t)
         });
         let depth = base.ptr_depth() + 1;
         let ty = self
-            .typec
+            .types
             .mapping
             .lookup
             .entry(id)
-            .or_insert_with(|| ComputedTypecItem::Pointer(self.typec.cache.args.push(base)))
+            .or_insert_with(|| ComputedTypecItem::Pointer(self.types.cache.args.push(base)))
             .to_owned();
 
         let ComputedTypecItem::Pointer(ty) = ty else { unreachable!() };
-        debug_assert_eq!(self.typec[ty], base);
+        debug_assert_eq!(self.types[ty], base);
 
         Pointer::new(ty, mutability, depth)
     }
@@ -257,18 +257,18 @@ impl<'ctx> TypeCreator<'ctx> {
     pub fn instance(&mut self, base: GenericTy, args: &[Ty]) -> FragRef<Instance> {
         let id = self
             .interner
-            .intern_with(|s, t| display_instance(self.typec, s, base, args, t));
+            .intern_with(|s, t| display_instance(self.types, s, base, args, t));
         let item = self
-            .typec
+            .types
             .mapping
             .lookup
             .entry(id)
             .or_insert_with(|| {
                 let instance = Instance {
                     base,
-                    args: self.typec.cache.args.extend(args.iter().cloned()),
+                    args: self.types.cache.args.extend(args.iter().cloned()),
                 };
-                let instance = self.typec.cache.instances.push(instance);
+                let instance = self.types.cache.instances.push(instance);
                 ComputedTypecItem::Instance(instance)
             })
             .to_owned();
@@ -281,18 +281,18 @@ impl<'ctx> TypeCreator<'ctx> {
     pub fn spec_instance(&mut self, base: FragRef<SpecBase>, args: &[Ty]) -> FragRef<SpecInstance> {
         let id = self
             .interner
-            .intern_with(|s, t| display_spec_instance(self.typec, s, base, args, t));
+            .intern_with(|s, t| display_spec_instance(self.types, s, base, args, t));
         let item = self
-            .typec
+            .types
             .mapping
             .lookup
             .entry(id)
             .or_insert_with(|| {
                 let instance = SpecInstance {
                     base,
-                    args: self.typec.cache.args.extend(args.iter().cloned()),
+                    args: self.types.cache.args.extend(args.iter().cloned()),
                 };
-                let instance = self.typec.cache.spec_instances.push(instance);
+                let instance = self.types.cache.spec_instances.push(instance);
                 ComputedTypecItem::SpecInstance(instance)
             })
             .to_owned();
@@ -310,7 +310,7 @@ impl<'ctx> TypeCreator<'ctx> {
         inferred: &[Ty],
         missing_keys: &mut Option<&mut BumpVec<ImplKey>>,
     ) -> bool {
-        self.typec[sum].to_bumpvec().into_iter().all(|spec| {
+        self.types[sum].to_bumpvec().into_iter().all(|spec| {
             let spec = self.instantiate_spec(spec, inferred);
             self.find_implementation(ty, spec, params, missing_keys)
                 .is_some()
@@ -319,7 +319,7 @@ impl<'ctx> TypeCreator<'ctx> {
 
     pub fn dereference(&self, ty: Ty) -> Ty {
         match ty {
-            Ty::Pointer(ptr, ..) => self.typec[ptr.ty()],
+            Ty::Pointer(ptr, ..) => self.types[ptr.ty()],
             _ => ty,
         }
     }
@@ -332,7 +332,7 @@ impl<'ctx> TypeCreator<'ctx> {
         missing_keys: &mut Option<&mut BumpVec<ImplKey>>,
     ) -> Option<Option<(FragRef<Impl>, FragSlice<Ty>)>> {
         if let Ty::Param(index) = ty {
-            let mut frontier = self.typec[params.get(self.typec)[index as usize]].to_bumpvec();
+            let mut frontier = self.types[params.get(self.types)[index as usize]].to_bumpvec();
             while let Some(other_spec) = frontier.pop() {
                 if spec == other_spec {
                     return Some(None);
@@ -340,11 +340,11 @@ impl<'ctx> TypeCreator<'ctx> {
 
                 let params = match other_spec {
                     Spec::Base(..) => default(),
-                    Spec::Instance(instance) => self.typec[instance].args,
+                    Spec::Instance(instance) => self.types[instance].args,
                 };
 
-                for inherit in self.typec[other_spec.base(self.typec)].inherits.keys() {
-                    let inherit = self.instantiate_spec(self.typec[inherit], params);
+                for inherit in self.types[other_spec.base(self.types)].inherits.keys() {
+                    let inherit = self.instantiate_spec(self.types[inherit], params);
                     frontier.push(inherit);
                 }
             }
@@ -353,18 +353,18 @@ impl<'ctx> TypeCreator<'ctx> {
 
         let key = ImplKey { ty, spec };
 
-        if let Some(result) = self.typec.implemented.get(&key) {
+        if let Some(result) = self.types.implemented.get(&key) {
             return Some(Some(result.to_owned()));
         }
 
         let ty_base = match ty {
-            Ty::Instance(instance) => self.typec[instance].base.as_ty(),
+            Ty::Instance(instance) => self.types[instance].base.as_ty(),
             _ => ty,
         };
-        let spec_base = spec.base(self.typec);
+        let spec_base = spec.base(self.types);
 
         let base_impls = self
-            .typec
+            .types
             .impl_lookup
             .get(&(spec_base, ty_base))
             .map(|i| i.inner.to_owned())
@@ -372,14 +372,14 @@ impl<'ctx> TypeCreator<'ctx> {
             .flatten();
 
         for r#impl in base_impls {
-            let impl_ent = self.typec.cache.impls[r#impl];
+            let impl_ent = self.types.cache.impls[r#impl];
 
             let mut generic_slots = bumpvec![None; impl_ent.generics.len()];
             let spec_compatible = self
-                .typec
+                .types
                 .compatible(&mut generic_slots, ty, impl_ent.key.ty);
             let ty_compatible =
-                self.typec
+                self.types
                     .compatible_spec(&mut generic_slots, spec, impl_ent.key.spec);
 
             if ty_compatible.is_err() || spec_compatible.is_err() {
@@ -398,7 +398,7 @@ impl<'ctx> TypeCreator<'ctx> {
                 .all(|(specs, &ty)| {
                     self.implements_sum(
                         ty,
-                        self.typec[specs],
+                        self.types[specs],
                         impl_ent.generics,
                         &params,
                         missing_keys,
@@ -409,9 +409,9 @@ impl<'ctx> TypeCreator<'ctx> {
                 continue;
             }
 
-            let params = self.typec.cache.args.extend(params);
+            let params = self.types.cache.args.extend(params);
             if !self.contains_params(ty) {
-                self.typec.implemented.insert(key, (r#impl, params));
+                self.types.implemented.insert(key, (r#impl, params));
             }
             return Some(Some((r#impl, params)));
         }
@@ -430,7 +430,7 @@ impl<'ctx> TypeCreator<'ctx> {
                 let muts = (0..(reference_depth - ty_depth))
                     .scan(reference, |r, _| {
                         let mutability = ty.mutability();
-                        *r = r.ptr_base(self.typec);
+                        *r = r.ptr_base(self.types);
                         Some(mutability)
                     })
                     .collect::<BumpVec<_>>();
@@ -444,7 +444,7 @@ impl<'ctx> TypeCreator<'ctx> {
             std::cmp::Ordering::Equal => ty,
             std::cmp::Ordering::Greater => {
                 for _ in 0..(ty_depth - reference_depth) {
-                    ty = ty.ptr_base(self.typec);
+                    ty = ty.ptr_base(self.types);
                 }
                 ty
             }
@@ -456,7 +456,7 @@ impl<'ctx> TypeCreator<'ctx> {
         slice: impl TypecCtxSlice<Ty>,
         params: impl TypecCtxSlice<Ty>,
     ) -> BumpVec<Ty> {
-        let mut types = slice.get(self.typec).to_bumpvec();
+        let mut types = slice.get(self.types).to_bumpvec();
         for ty in types.iter_mut() {
             *ty = self.instantiate(*ty, params);
         }
@@ -468,7 +468,7 @@ impl<'ctx> TypeCreator<'ctx> {
         slice: impl TypecCtxSlice<Ty>,
         params: &[Option<Ty>],
     ) -> Option<BumpVec<Ty>> {
-        let mut types = slice.get(self.typec).to_bumpvec();
+        let mut types = slice.get(self.types).to_bumpvec();
         for ty in types.iter_mut() {
             *ty = self.try_instantiate(*ty, params)?;
         }
@@ -480,7 +480,7 @@ impl<'ctx> TypeCreator<'ctx> {
         struct_id: FragRef<Struct>,
         params: impl TypecCtxSlice<Ty>,
     ) -> BumpVec<Ty> {
-        let mut fields = self.typec[self.typec[struct_id].fields]
+        let mut fields = self.types[self.types[struct_id].fields]
             .iter()
             .map(|f| f.ty)
             .collect::<BumpVec<_>>();
@@ -495,7 +495,7 @@ impl<'ctx> TypeCreator<'ctx> {
         enum_id: FragRef<Enum>,
         params: impl TypecCtxSlice<Ty>,
     ) -> BumpVec<Ty> {
-        let mut fields = self.typec[self.typec[enum_id].variants]
+        let mut fields = self.types[self.types[enum_id].variants]
             .iter()
             .map(|f| f.ty)
             .collect::<BumpVec<_>>();
@@ -510,22 +510,22 @@ impl<'ctx> TypeCreator<'ctx> {
             Ty::Struct(..) | Ty::Builtin(..) | Ty::Enum(..) => ty,
             ty if params.is_empty() => ty,
             Ty::Instance(instance) => {
-                let Instance { base, args } = self.typec[instance];
+                let Instance { base, args } = self.types[instance];
                 let args = args
                     .keys()
-                    .map(|arg| self.instantiate(self.typec[arg], params))
+                    .map(|arg| self.instantiate(self.types[arg], params))
                     .collect::<BumpVec<_>>();
                 Ty::Instance(self.instance(base, args.as_slice()))
             }
             Ty::Pointer(pointer) => {
-                let base = self.typec[pointer.ty()];
+                let base = self.types[pointer.ty()];
                 let base = self.instantiate(base, params);
-                let mutability = pointer.mutability.instantiate(params.get(self.typec));
+                let mutability = pointer.mutability.instantiate(params.get(self.types));
                 Ty::Pointer(self.pointer_to(mutability, base))
             }
-            Ty::Param(index) => params.get(self.typec)[index as usize],
+            Ty::Param(index) => params.get(self.types)[index as usize],
             Ty::Array(array) => {
-                let Array { item: ty, len } = self.typec[array];
+                let Array { item: ty, len } = self.types[array];
                 let ty = self.instantiate(ty, params);
                 Ty::Array(self.array_of(ty, len))
             }
@@ -537,19 +537,19 @@ impl<'ctx> TypeCreator<'ctx> {
             Ty::Struct(..) | Ty::Builtin(..) | Ty::Enum(..) => ty,
             ty if params.is_empty() => ty,
             Ty::Instance(instance) => {
-                let Instance { base, args } = self.typec[instance];
+                let Instance { base, args } = self.types[instance];
                 let args = self.try_instantiate_slice(args, params)?;
                 Ty::Instance(self.instance(base, args.as_slice()))
             }
             Ty::Pointer(pointer) => {
-                let base = self.typec[pointer.ty()];
+                let base = self.types[pointer.ty()];
                 let base = self.try_instantiate(base, params)?;
                 let mutability = pointer.mutability.try_instantiate(params)?;
                 Ty::Pointer(self.pointer_to(mutability, base))
             }
             Ty::Param(index) => return params[index as usize],
             Ty::Array(array) => {
-                let Array { item: ty, len } = self.typec[array];
+                let Array { item: ty, len } = self.types[array];
                 let ty = self.try_instantiate(ty, params)?;
                 Ty::Array(self.array_of(ty, len))
             }
@@ -559,14 +559,14 @@ impl<'ctx> TypeCreator<'ctx> {
     pub fn array_of(&mut self, item: Ty, len: ArraySize) -> FragRef<Array> {
         let id = self
             .interner
-            .intern_with(|s, t| display_array(self.typec, s, item, len, t));
+            .intern_with(|s, t| display_array(self.types, s, item, len, t));
         let item = self
-            .typec
+            .types
             .mapping
             .lookup
             .entry(id)
             .or_insert_with(|| {
-                let array = self.typec.cache.arrays.push(Array { item, len });
+                let array = self.types.cache.arrays.push(Array { item, len });
                 ComputedTypecItem::Array(array)
             })
             .to_owned();
@@ -582,7 +582,7 @@ impl<'ctx> TypeCreator<'ctx> {
             Spec::Base(..) => spec,
             spec if params.is_empty() => spec,
             Spec::Instance(instance) => {
-                let SpecInstance { base, args } = self.typec[instance];
+                let SpecInstance { base, args } = self.types[instance];
                 let args = self.instantiate_slice(args, params);
                 Spec::Instance(self.spec_instance(base, args.as_slice()))
             }
@@ -594,7 +594,7 @@ impl<'ctx> TypeCreator<'ctx> {
             Spec::Base(..) => spec,
             spec if params.is_empty() => spec,
             Spec::Instance(instance) => {
-                let SpecInstance { base, args } = self.typec[instance];
+                let SpecInstance { base, args } = self.types[instance];
                 let args = self.try_instantiate_slice(args, params)?;
                 Spec::Instance(self.spec_instance(base, args.as_slice()))
             }
@@ -602,15 +602,15 @@ impl<'ctx> TypeCreator<'ctx> {
     }
 
     pub fn component_ty(&mut self, ty: Ty, index: usize) -> Option<Ty> {
-        let Self { typec, .. } = self;
+        let Self { types, .. } = self;
         Some(match ty {
-            Ty::Struct(s) => typec[typec[s].fields][index].ty,
-            Ty::Enum(e) => typec[typec[e].variants][index].ty,
+            Ty::Struct(s) => types[types[s].fields][index].ty,
+            Ty::Enum(e) => types[types[e].variants][index].ty,
             Ty::Instance(i) => {
-                let Instance { base, args } = typec[i];
+                let Instance { base, args } = types[i];
                 let ty = match base {
-                    GenericTy::Struct(s) => typec[typec[s].fields][index].ty,
-                    GenericTy::Enum(e) => typec[typec[e].variants][index].ty,
+                    GenericTy::Struct(s) => types[types[s].fields][index].ty,
+                    GenericTy::Enum(e) => types[types[e].variants][index].ty,
                 };
                 self.instantiate(ty, args)
             }
@@ -619,17 +619,17 @@ impl<'ctx> TypeCreator<'ctx> {
     }
 
     pub fn find_component(&mut self, ty: Ty, name: Ident) -> Option<(usize, Ty)> {
-        let Self { typec, .. } = self;
+        let Self { types, .. } = self;
         match ty {
-            Ty::Struct(s) => Struct::find_field(s, name, typec).map(|(i, f)| (i, f.ty)),
-            Ty::Enum(e) => Enum::find_variant(e, name, typec),
+            Ty::Struct(s) => Struct::find_field(s, name, types).map(|(i, f)| (i, f.ty)),
+            Ty::Enum(e) => Enum::find_variant(e, name, types),
             Ty::Instance(i) => {
-                let Instance { base, args } = typec[i];
+                let Instance { base, args } = types[i];
                 let (index, ty) = match base {
                     GenericTy::Struct(s) => {
-                        Struct::find_field(s, name, typec).map(|(i, f)| (i, f.ty))
+                        Struct::find_field(s, name, types).map(|(i, f)| (i, f.ty))
                     }
-                    GenericTy::Enum(e) => Enum::find_variant(e, name, typec),
+                    GenericTy::Enum(e) => Enum::find_variant(e, name, types),
                 }?;
                 Some((index, self.instantiate(ty, args)))
             }
@@ -651,7 +651,7 @@ impl<'ctx> TypeCreator<'ctx> {
                 .find_implementation(ty, Spec::Base(SpecBase::COPY), params, &mut None)
                 .map(|_| None),
             Ty::Array(a) => self.find_implementation(
-                self.typec[a].item,
+                self.types[a].item,
                 Spec::Base(SpecBase::DROP),
                 params,
                 &mut None,
@@ -668,7 +668,7 @@ impl<'ctx> TypeCreator<'ctx> {
             Ty::Pointer(..) | Ty::Builtin(..) => true,
             Ty::Array(a) => self
                 .find_implementation(
-                    self.typec[a].item,
+                    self.types[a].item,
                     Spec::Base(SpecBase::COPY),
                     params,
                     &mut None,
@@ -681,10 +681,10 @@ impl<'ctx> TypeCreator<'ctx> {
     }
 
     pub fn display<T: TypeDisplay>(&self, value: T) -> String {
-        display(self.typec, self.interner, value)
+        display(self.types, self.interner, value)
     }
 
     pub fn type_diff(&self, a: Ty, b: Ty) -> String {
-        type_diff(self.typec, self.interner, a, b)
+        type_diff(self.types, self.interner, a, b)
     }
 }

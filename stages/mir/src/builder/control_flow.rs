@@ -405,7 +405,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
                     ty: enum_ty,
                     value: enum_value,
                 } => {
-                    let enum_flag_ty = self.ext.typec.enum_flag_ty(enum_ty);
+                    let enum_flag_ty = self.ext.types.enum_flag_ty(enum_ty);
                     let enum_flag = (enum_flag_ty != Builtin::Unit).then(|| {
                         let dest = self.create_value(Ty::Builtin(enum_flag_ty));
                         self.inst(InstMir::Field(value, 0, dest), span);
@@ -473,7 +473,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
                     value,
                 } => {
                     nodes.push(Node::Scalar(
-                        if id as usize == self.ext.typec[enum_ty].variants.len() - 1 {
+                        if id as usize == self.ext.types[enum_ty].variants.len() - 1 {
                             Range {
                                 start: id as u128,
                                 end: UpperBound::Outside,

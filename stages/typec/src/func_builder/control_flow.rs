@@ -182,7 +182,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     ) -> ExprRes<'arena> {
         let (enum_ty, variant_name, params) = self.enum_path(path, inference)?;
 
-        let (variant, variant_ty) = self.ext.typec[self.ext.typec[enum_ty].variants]
+        let (variant, variant_ty) = self.ext.types[self.ext.types[enum_ty].variants]
             .iter()
             .enumerate()
             .find_map(|(i, variant)| {
@@ -193,7 +193,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                 self.ext.workspace.push(ComponentNotFound {
                     ty,
                     loc: self.meta.loc(variant_name.span),
-                    suggestions: self.ext.typec[self.ext.typec[enum_ty].variants]
+                    suggestions: self.ext.types[self.ext.types[enum_ty].variants]
                         .iter()
                         .map(|variant| &variant.name)
                         .map(|name| name.get(self.ext.interner))
@@ -203,7 +203,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                 })?
             })?;
 
-        let flag_ty = self.ext.typec.enum_flag_ty(enum_ty);
+        let flag_ty = self.ext.types.enum_flag_ty(enum_ty);
 
         let variant_value = TirNode::new(
             Ty::Builtin(flag_ty),
@@ -211,9 +211,9 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             variant_name.span,
         );
 
-        let mut param_slots = bumpvec![None; self.ext.typec[enum_ty].generics.len()];
+        let mut param_slots = bumpvec![None; self.ext.types[enum_ty].generics.len()];
         if let Some(inference) = inference.ty() && let Ty::Instance(inst) = inference {
-            param_slots.iter_mut().zip(&self.ext.typec[self.ext.typec[inst].args])
+            param_slots.iter_mut().zip(&self.ext.types[self.ext.types[inst].args])
                 .for_each(|(slot, &arg)| *slot = Some(arg))
         }
 

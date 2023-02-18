@@ -56,8 +56,8 @@ impl TypecBase {
         }
     }
 
-    pub fn split(&self) -> impl Iterator<Item = Typec> + '_ {
-        self.cache.split().map(|cache| Typec {
+    pub fn split(&self) -> impl Iterator<Item = Types> + '_ {
+        self.cache.split().map(|cache| Types {
             cache,
             mapping: self.mapping.clone(),
             module_items: default(),
@@ -70,21 +70,21 @@ impl TypecBase {
     }
 }
 
-impl Default for Typec {
+impl Default for Types {
     fn default() -> Self {
         let base = TypecBase::new(1);
-        let typec = { base.split().next().unwrap() };
-        typec
+        let types = { base.split().next().unwrap() };
+        types
     }
 }
 
-pub struct Typec {
+pub struct Types {
     pub mapping: Arc<Mapping>,
-    pub cache: TypecCache,
+    pub cache: TypeCache,
     pub module_items: ShadowMap<Source, ModuleItems>,
 }
 
-impl Deref for Typec {
+impl Deref for Types {
     type Target = Mapping;
 
     fn deref(&self) -> &Self::Target {
@@ -92,7 +92,7 @@ impl Deref for Typec {
     }
 }
 
-impl Index<VRef<Source>> for Typec {
+impl Index<VRef<Source>> for Types {
     type Output = ModuleItems;
 
     fn index(&self, index: VRef<Source>) -> &Self::Output {
@@ -100,7 +100,7 @@ impl Index<VRef<Source>> for Typec {
     }
 }
 
-impl IndexMut<VRef<Source>> for Typec {
+impl IndexMut<VRef<Source>> for Types {
     fn index_mut(&mut self, index: VRef<Source>) -> &mut Self::Output {
         &mut self.module_items[index]
     }
@@ -113,7 +113,7 @@ macro_rules! gen_cache {
         [sync]
         $($sync_name:ident: $sync_ty:ty,)*
     ) => {
-        pub struct TypecCache {
+        pub struct TypeCache {
             $(
                 pub $name: FragMap<$ty>,
             )*
@@ -122,7 +122,7 @@ macro_rules! gen_cache {
             )*
         }
 
-        impl TypecCache {
+        impl TypeCache {
             pub fn commit(&mut self, base: &mut TypecCacheBase) {
                 $(
                     self.$name.commit(&mut base.$name);
@@ -143,7 +143,7 @@ macro_rules! gen_cache {
         }
 
         $(
-            impl Index<FragRef<$ty>> for Typec {
+            impl Index<FragRef<$ty>> for Types {
                 type Output = $ty;
 
                 #[inline]
@@ -152,14 +152,14 @@ macro_rules! gen_cache {
                 }
             }
 
-            impl IndexMut<FragRef<$ty>> for Typec {
+            impl IndexMut<FragRef<$ty>> for Types {
                 #[inline]
                 fn index_mut(&mut self, index: FragRef<$ty>) -> &mut Self::Output {
                     &mut self.cache.$name[index]
                 }
             }
 
-            impl Index<FragSlice<$ty>> for Typec {
+            impl Index<FragSlice<$ty>> for Types {
                 type Output = [$ty];
 
                 #[inline]
@@ -168,7 +168,7 @@ macro_rules! gen_cache {
                 }
             }
 
-            impl IndexMut<FragSlice<$ty>> for Typec {
+            impl IndexMut<FragSlice<$ty>> for Types {
                 #[inline]
                 fn index_mut(&mut self, index: FragSlice<$ty>) -> &mut Self::Output {
                     &mut self.cache.$name[index]
@@ -177,7 +177,7 @@ macro_rules! gen_cache {
         )*
 
         $(
-            impl Index<FragRef<$sync_ty>> for Typec {
+            impl Index<FragRef<$sync_ty>> for Types {
                 type Output = $sync_ty;
 
                 #[inline]
@@ -186,7 +186,7 @@ macro_rules! gen_cache {
                 }
             }
 
-            impl Index<FragSlice<$sync_ty>> for Typec {
+            impl Index<FragSlice<$sync_ty>> for Types {
                 type Output = [$sync_ty];
 
                 #[inline]
@@ -219,7 +219,7 @@ macro_rules! gen_cache {
                 }
             }
 
-            pub fn split(&self) -> impl Iterator<Item = TypecCache> + '_ {
+            pub fn split(&self) -> impl Iterator<Item = TypeCache> + '_ {
                 $(
                     let mut $name = self.$name.split();
                 )*
@@ -227,7 +227,7 @@ macro_rules! gen_cache {
                     let mut $sync_name = self.$sync_name.split();
                 )*
                 iter::from_fn(move || {
-                    Some(TypecCache {
+                    Some(TypeCache {
                         $(
                             $name: $name.next()?,
                         )*
@@ -272,7 +272,7 @@ gen_cache! {
     arrays: crate::Array,
 }
 
-impl Typec {
+impl Types {
     pub fn pull(&mut self, base: &TypecBase) {
         self.cache.pull(&base.cache);
     }
@@ -509,10 +509,10 @@ impl Loc {
         self.source
     }
 
-    pub fn source_loc(self, typec: &Typec) -> Option<SourceLoc> {
+    pub fn source_loc(self, types: &Types) -> Option<SourceLoc> {
         Some(SourceLoc {
             origin: self.source,
-            span: typec.module_items[self.source].items[self.item?].span,
+            span: types.module_items[self.source].items[self.item?].span,
         })
     }
 }
@@ -541,10 +541,10 @@ impl GuaranteedLoc {
         self.source
     }
 
-    pub fn source_loc(self, typec: &Typec) -> SourceLoc {
+    pub fn source_loc(self, types: &Types) -> SourceLoc {
         SourceLoc {
             origin: self.source,
-            span: typec.module_items[self.source].items[self.item].span,
+            span: types.module_items[self.source].items[self.item].span,
         }
     }
 }
@@ -680,16 +680,16 @@ impl From<Mutability> for ParamPresence {
 }
 
 pub trait TypecCtxSlice<T: 'static>: Copy {
-    fn get<'a, 'b: 'a>(&'b self, typec: &'a Typec) -> &'a [T];
+    fn get<'a, 'b: 'a>(&'b self, types: &'a Types) -> &'a [T];
     fn is_empty(&self) -> bool;
 }
 
 impl<T: 'static> TypecCtxSlice<T> for FragSlice<T>
 where
-    Typec: Index<FragSlice<T>, Output = [T]>,
+    Types: Index<FragSlice<T>, Output = [T]>,
 {
-    fn get<'a, 'b: 'a>(&'b self, typec: &'a Typec) -> &'a [T] {
-        &typec[*self]
+    fn get<'a, 'b: 'a>(&'b self, types: &'a Types) -> &'a [T] {
+        &types[*self]
     }
 
     fn is_empty(&self) -> bool {
@@ -698,7 +698,7 @@ where
 }
 
 impl<T: 'static> TypecCtxSlice<T> for &[T] {
-    fn get<'a, 'b: 'a>(&'b self, _: &'a Typec) -> &'a [T] {
+    fn get<'a, 'b: 'a>(&'b self, _: &'a Types) -> &'a [T] {
         self
     }
 
@@ -725,7 +725,7 @@ impl FolderValue {
 }
 
 pub struct ConstFolderContext<'ctx> {
-    pub typec: &'ctx mut Typec,
+    pub types: &'ctx mut Types,
     pub interner: &'ctx mut Interner,
     pub resources: &'ctx Resources,
     pub workspace: &'ctx mut Workspace,

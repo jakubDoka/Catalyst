@@ -9,7 +9,7 @@ use cranelift_codegen::ir::{
 use mir_t::*;
 use storage::*;
 
-use typec_t::*;
+use types::*;
 use typec_u::type_creator;
 
 use crate::{
@@ -183,7 +183,7 @@ impl Generator<'_> {
         if layout.is_zero_sized() {
             return;
         }
-        let bits = self.typec[r#const].value.as_register().unwrap();
+        let bits = self.types[r#const].value.as_register().unwrap();
         let value = match layout.repr {
             ir::types::I8 | ir::types::I16 | ir::types::I32 | ir::types::I64 => {
                 builder.ins().iconst(layout.repr, bits as i64)
@@ -263,15 +263,15 @@ impl Generator<'_> {
 
             let mut enum_expander = |s: &mut Self, params: FragSlice<Ty>, e: FragRef<Enum>| {
                 let layout = s.ty_layout(ty);
-                let variants = s.typec[e].variants;
-                let flag_ty = s.typec.enum_flag_ty(e);
+                let variants = s.types[e].variants;
+                let flag_ty = s.types.enum_flag_ty(e);
                 let flag_repr = s.ty_repr(Ty::Builtin(flag_ty));
                 let [flag_offset, value_offset] = [0, layout.align.get() as u32];
                 let dest = builder.create_block();
                 let mut current = Some(dest);
                 let mut flag_value = None;
                 for (i, variant) in variants.keys().enumerate().rev() {
-                    let ty = s.typec[variant].ty;
+                    let ty = s.types[variant].ty;
                     let ty = type_creator!(s).instantiate(ty, params);
                     if !type_creator!(s).may_need_drop(ty) {
                         continue;
@@ -302,13 +302,13 @@ impl Generator<'_> {
                         .offsets(&self.layouts.offsets)
                         .map(|of| of + offset)
                         .rev()
-                        .zip(self.typec[self.typec[s].fields].iter().map(|f| f.ty).rev())
+                        .zip(self.types[self.types[s].fields].iter().map(|f| f.ty).rev())
                         .map(DropFrame::Drop)
                         .collect_into(&mut *frontier);
                 }
                 Ty::Enum(e) => enum_expander(self, default(), e),
                 Ty::Instance(i) => {
-                    let Instance { base, args } = self.typec[i];
+                    let Instance { base, args } = self.types[i];
                     match base {
                         GenericTy::Struct(s) => {
                             let layout = self.ty_layout(ty);
@@ -489,7 +489,7 @@ impl Generator<'_> {
         let CallMir { args, .. } = builder.body.calls[call];
         let CompileRequestChild { id, func, params } = self.gen_resources.calls[call.index()];
 
-        if self.typec[func].flags.contains(FuncFlags::BUILTIN) {
+        if self.types[func].flags.contains(FuncFlags::BUILTIN) {
             if func == Func::CAST {
                 self.cast(args, ret, builder)
             } else if func == Func::SIZEOF {
@@ -604,7 +604,7 @@ impl Generator<'_> {
     ) {
         let Func {
             signature, name, ..
-        } = self.typec[func_id];
+        } = self.types[func_id];
         let ret_ty = self.ty_repr(signature.ret);
         let op_str = name
             .get(self.interner)
@@ -706,7 +706,7 @@ impl Generator<'_> {
                     false => builder.ins().fcvt_to_uint_sat(to, v),
                 },
                 (helper!(ints), to @ helper!(floats)) => {
-                    match self.typec[signature.args][0].is_signed() {
+                    match self.types[signature.args][0].is_signed() {
                         true => builder.ins().fcvt_from_sint(to, v),
                         false => builder.ins().fcvt_from_uint(to, v),
                     }
@@ -731,7 +731,7 @@ impl Generator<'_> {
             Ordering::Greater => builder.ins().ireduce(to, v),
             Ordering::Equal => v,
             Ordering::Less => {
-                let arg_is_signed = self.typec[signature.args][0].is_signed();
+                let arg_is_signed = self.types[signature.args][0].is_signed();
                 match arg_is_signed && signature.ret.is_signed() {
                     true => builder.ins().sextend(to, v),
                     false => builder.ins().uextend(to, v),

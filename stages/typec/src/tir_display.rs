@@ -9,7 +9,7 @@ use {
         iter,
     },
     storage::*,
-    typec_t::*,
+    types::*,
 };
 
 impl<'arena, 'ctx> TypecExternalCtx<'arena, 'ctx> {
@@ -38,9 +38,9 @@ impl<'arena, 'ctx> TypecExternalCtx<'arena, 'ctx> {
         tir: TirNode,
         buffer: &mut String,
     ) -> fmt::Result {
-        self.typec[func].display(self.typec, self.interner, buffer)?;
+        self.types[func].display(self.types, self.interner, buffer)?;
         buffer.push(' ');
-        let Func { signature, loc, .. } = self.typec[func];
+        let Func { signature, loc, .. } = self.types[func];
         self.display_tir(tir, buffer, 0, &mut signature.args.len(), loc.source())
     }
 
@@ -93,10 +93,10 @@ impl<'arena, 'ctx> TypecExternalCtx<'arena, 'ctx> {
             TirKind::Call(CallTir { func, params, args }) => {
                 match *func {
                     CallableTir::Func(func) => {
-                        write!(buffer, "{}", self.typec[func].name.get(self.interner))?
+                        write!(buffer, "{}", self.types[func].name.get(self.interner))?
                     }
                     CallableTir::SpecFunc(func) => {
-                        let SpecFunc { parent, name, .. } = self.typec[func];
+                        let SpecFunc { parent, name, .. } = self.types[func];
                         write!(
                             buffer,
                             "{}\\{}",
@@ -210,7 +210,7 @@ impl<'arena, 'ctx> TypecExternalCtx<'arena, 'ctx> {
                 self.display_tir(rhs, buffer, indent, var_count, source)?;
             }
             TirKind::ConstAccess(r#const) => {
-                let name = self.typec[r#const].name.get(self.interner);
+                let name = self.types[r#const].name.get(self.interner);
                 buffer.push_str(name);
             }
         }

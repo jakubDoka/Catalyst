@@ -11,7 +11,7 @@ mir-t = { version = "0.1.0", path = "../../types/mir-t" }
 packaging-t = { version = "0.1.0", path = "../../types/packaging-t" }
 storage = { version = "0.1.0", path = "../../utils/storage" }
 diags = { version = "0.1.0", path = "../../types/diags" }
-typec-t = { version = "0.1.0", path = "../../types/typec-t" }
+types = { version = "0.1.0", path = "../../types/types" }
 lexing = { version = "0.1.0", path = "../../stages/lexing" }
 
 

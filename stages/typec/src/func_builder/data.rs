@@ -34,8 +34,8 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                     loc: self.meta.loc(ctor.span()),
                 }.add(self.ext.workspace)?;
             };
-            let (ty, params) = ty.base_with_params(self.ext.typec);
-            (ty, Some((default(), self.ext.typec[params].to_bumpvec())))
+            let (ty, params) = ty.base_with_params(self.ext.types);
+            (ty, Some((default(), self.ext.types[params].to_bumpvec())))
         };
 
         let Ty::Struct(struct_ty) = ty else {
@@ -46,7 +46,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             }.add(self.ext.workspace)?;
         };
 
-        let struct_meta = self.ext.typec[struct_ty];
+        let struct_meta = self.ext.types[struct_ty];
 
         let mut param_slots = bumpvec![None; struct_meta.generics.len()];
 
@@ -110,7 +110,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             "(<struct_path>\\[<param_ty>, ...]\\{...})",
         )?;
 
-        let missing_fields = self.ext.typec[struct_meta.fields]
+        let missing_fields = self.ext.types[struct_meta.fields]
             .iter()
             .zip(fields.iter())
             .filter_map(|(field, value)| value.is_none().then_some(&field.name))
@@ -159,7 +159,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             let current_pointed_depth = node.ty.ptr_depth();
             match desired_pointer_depth.cmp(&current_pointed_depth) {
                 Ordering::Less => {
-                    let ty = self.ext.typec.dereference(node.ty);
+                    let ty = self.ext.types.dereference(node.ty);
                     let mutability = node.ty.mutability();
                     let mutable = mutability == RawMutability::MUTABLE && total_mutability;
                     total_mutability = mutable;
@@ -274,7 +274,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             }.add(self.ext.workspace)?;
         };
 
-        let base = self.ext.typec[ptr.ty()];
+        let base = self.ext.types[ptr.ty()];
 
         Some(TirNode::with_flags(
             base,

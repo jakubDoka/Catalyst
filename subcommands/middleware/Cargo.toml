@@ -22,7 +22,7 @@ cli = { version = "0.1.0", path = "../../utils/cli" }
 
 storage = { version = "0.1.0", path = "../../utils/storage" }
 typec = { version = "0.1.0", path = "../../stages/typec" }
-typec-t = { version = "0.1.0", path = "../../types/typec-t" }
+types = { version = "0.1.0", path = "../../types/types" }
 cranelift-codegen = "0.92.0"
 cranelift-frontend = "0.92.0"
 target-lexicon = "0.12.4"

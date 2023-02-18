@@ -18,7 +18,7 @@ middleware = { version = "0.1.0", path = "../../subcommands/middleware" }
 storage = { version = "0.1.0", path = "../../utils/storage" }
 testing = { version = "0.1.0", path = "../../utils/testing" }
 typec = { version = "0.1.0", path = "../../stages/typec" }
-typec-t = { version = "0.1.0", path = "../../types/typec-t" }
+types = { version = "0.1.0", path = "../../types/types" }
 cranelift-codegen = "0.92.0"
 cranelift-frontend = "0.92.0"
 target-lexicon = "0.12.4"

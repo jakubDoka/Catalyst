@@ -31,6 +31,6 @@ pub use {
     parsing_t::*,
     snippet_display::*,
     storage::*,
-    typec::*,
-    typec_t::*,
+    types::*,
+    types::*,
 };

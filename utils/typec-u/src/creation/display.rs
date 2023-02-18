@@ -2,20 +2,20 @@ use core::fmt;
 use core::fmt::Write;
 
 use storage::*;
-use typec_t::*;
+use types::*;
 
 pub trait TypeDisplay {
-    fn display(self, typec: &Typec, interner: &Interner, out: &mut String) -> fmt::Result;
+    fn display(self, types: &Types, interner: &Interner, out: &mut String) -> fmt::Result;
 }
 
-pub fn display<T: TypeDisplay>(typec: &Typec, interner: &Interner, value: T) -> String {
+pub fn display<T: TypeDisplay>(types: &Types, interner: &Interner, value: T) -> String {
     let mut str = String::new();
-    value.display(typec, interner, &mut str).unwrap();
+    value.display(types, interner, &mut str).unwrap();
     str
 }
 
 pub fn display_list<T: TypeDisplay>(
-    typec: &Typec,
+    types: &Types,
     interner: &Interner,
     values: impl IntoIterator<Item = T>,
     out: &mut String,
@@ -29,10 +29,10 @@ pub fn display_list<T: TypeDisplay>(
         return Ok(());
     };
 
-    first.display(typec, interner, out)?;
+    first.display(types, interner, out)?;
     for value in values {
         out.push(sep);
-        value.display(typec, interner, out)?;
+        value.display(types, interner, out)?;
     }
 
     out.push(close);
@@ -40,10 +40,10 @@ pub fn display_list<T: TypeDisplay>(
 }
 
 impl TypeDisplay for Spec {
-    fn display(self, typec: &Typec, interner: &Interner, out: &mut String) -> fmt::Result {
+    fn display(self, types: &Types, interner: &Interner, out: &mut String) -> fmt::Result {
         match self {
-            Spec::Base(base) => out.push_str(typec[base].name.get(interner)),
-            Spec::Instance(instance) => typec[instance].display(typec, interner, out)?,
+            Spec::Base(base) => out.push_str(types[base].name.get(interner)),
+            Spec::Instance(instance) => types[instance].display(types, interner, out)?,
         }
 
         Ok(())
@@ -51,33 +51,33 @@ impl TypeDisplay for Spec {
 }
 
 impl TypeDisplay for SpecInstance {
-    fn display(self, typec: &Typec, interner: &Interner, out: &mut String) -> fmt::Result {
-        display_spec_instance(typec, interner, self.base, &typec[self.args], out)
+    fn display(self, types: &Types, interner: &Interner, out: &mut String) -> fmt::Result {
+        display_spec_instance(types, interner, self.base, &types[self.args], out)
     }
 }
 
 pub fn display_spec_instance(
-    typec: &Typec,
+    types: &Types,
     interner: &Interner,
     base: FragRef<SpecBase>,
     args: &[Ty],
     to: &mut String,
 ) -> fmt::Result {
-    to.push_str(typec[base].name.get(interner));
-    display_list(typec, interner, args.iter().copied(), to, ['[', ',', ']'])
+    to.push_str(types[base].name.get(interner));
+    display_list(types, interner, args.iter().copied(), to, ['[', ',', ']'])
 }
 
 pub fn display_spec_sum(
-    typec: &Typec,
+    types: &Types,
     interner: &Interner,
     spec: impl Iterator<Item = Spec>,
     to: &mut String,
 ) -> fmt::Result {
-    display_list(typec, interner, spec, to, [':', '+', ' '])
+    display_list(types, interner, spec, to, [':', '+', ' '])
 }
 
 impl TypeDisplay for Func {
-    fn display(self, typec: &Typec, interner: &Interner, out: &mut String) -> fmt::Result {
+    fn display(self, types: &Types, interner: &Interner, out: &mut String) -> fmt::Result {
         let Func {
             signature,
             generics,
@@ -92,11 +92,11 @@ impl TypeDisplay for Func {
             .map(|cc| cc.get(interner))
             .map_or(Ok(()), |cc| write!(out, "\"{}\" ", cc))?;
         display_list(
-            typec,
+            types,
             interner,
-            typec[upper_generics]
+            types[upper_generics]
                 .iter()
-                .chain(&typec[generics])
+                .chain(&types[generics])
                 .copied(),
             out,
             ['[', ',', ']'],
@@ -104,35 +104,35 @@ impl TypeDisplay for Func {
         out.push(' ');
         out.push_str(name.get(interner));
         display_list(
-            typec,
+            types,
             interner,
-            typec[signature.args].iter().copied(),
+            types[signature.args].iter().copied(),
             out,
             ['(', ',', ')'],
         )?;
         out.push_str(" -> ");
-        signature.ret.display(typec, interner, out)
+        signature.ret.display(types, interner, out)
     }
 }
 
 impl TypeDisplay for FragSlice<Spec> {
-    fn display(self, typec: &Typec, interner: &Interner, out: &mut String) -> fmt::Result {
-        display_spec_sum(typec, interner, typec[self].iter().copied(), out)
+    fn display(self, types: &Types, interner: &Interner, out: &mut String) -> fmt::Result {
+        display_spec_sum(types, interner, types[self].iter().copied(), out)
     }
 }
 
 pub fn display_func_name(
-    typec: &Typec,
+    types: &Types,
     interner: &Interner,
     func: FragRef<Func>,
     to: &mut String,
 ) -> fmt::Result {
     let Func {
         name, loc, owner, ..
-    } = typec[func];
+    } = types[func];
     write!(to, "{}\\", loc.source().index()).unwrap();
     if let Some(owner) = owner {
-        owner.base(typec).display(typec, interner, to)?;
+        owner.base(types).display(types, interner, to)?;
         write!(to, "\\").unwrap();
     }
     to.push_str(name.get(interner));
@@ -140,26 +140,26 @@ pub fn display_func_name(
 }
 
 impl TypeDisplay for Ty {
-    fn display(self, typec: &Typec, interner: &Interner, out: &mut String) -> fmt::Result {
+    fn display(self, types: &Types, interner: &Interner, out: &mut String) -> fmt::Result {
         match self {
             Ty::Struct(r#struct) => {
-                write!(out, "{}\\", typec[r#struct].loc.source().index())?;
-                out.push_str(typec[r#struct].name.get(interner))
+                write!(out, "{}\\", types[r#struct].loc.source().index())?;
+                out.push_str(types[r#struct].name.get(interner))
             }
             Ty::Enum(r#enum) => {
-                write!(out, "{}\\", typec[r#enum].loc.source().index())?;
-                out.push_str(typec[r#enum].name.get(interner))
+                write!(out, "{}\\", types[r#enum].loc.source().index())?;
+                out.push_str(types[r#enum].name.get(interner))
             }
-            Ty::Instance(instance) => typec[instance].display(typec, interner, out)?,
+            Ty::Instance(instance) => types[instance].display(types, interner, out)?,
             Ty::Pointer(ptr) => {
-                let base = typec[ptr.ty()];
+                let base = types[ptr.ty()];
                 out.push('^');
                 write!(out, "{}", ptr.mutability.to_mutability())?;
-                base.display(typec, interner, out)?;
+                base.display(types, interner, out)?;
             }
             Ty::Array(array) => {
-                let Array { item, len, .. } = typec[array];
-                display_array(typec, interner, item, len, out)?;
+                let Array { item, len, .. } = types[array];
+                display_array(types, interner, item, len, out)?;
             }
             Ty::Param(i) => write!(out, "param{i}")?,
             Ty::Builtin(b) => out.push_str(b.name()),
@@ -169,43 +169,43 @@ impl TypeDisplay for Ty {
 }
 
 pub fn display_array(
-    typec: &Typec,
+    types: &Types,
     interner: &Interner,
     item: Ty,
     len: ArraySize,
     to: &mut String,
 ) -> fmt::Result {
     write!(to, "[")?;
-    item.display(typec, interner, to)?;
+    item.display(types, interner, to)?;
     write!(to, "; {}]", len)?;
     Ok(())
 }
 
 impl TypeDisplay for Instance {
-    fn display(self, typec: &Typec, interner: &Interner, out: &mut String) -> fmt::Result {
-        display_instance(typec, interner, self.base, &typec[self.args], out)
+    fn display(self, types: &Types, interner: &Interner, out: &mut String) -> fmt::Result {
+        display_instance(types, interner, self.base, &types[self.args], out)
     }
 }
 
 pub fn display_instance(
-    typec: &Typec,
+    types: &Types,
     interner: &Interner,
     base: GenericTy,
     args: &[Ty],
     out: &mut String,
 ) -> fmt::Result {
-    base.as_ty().display(typec, interner, out).unwrap();
-    display_list(typec, interner, args.iter().copied(), out, ['[', ',', ']'])
+    base.as_ty().display(types, interner, out).unwrap();
+    display_list(types, interner, args.iter().copied(), out, ['[', ',', ']'])
 }
 
-pub fn type_diff(typec: &Typec, interner: &Interner, pattern: Ty, value: Ty) -> String {
+pub fn type_diff(types: &Types, interner: &Interner, pattern: Ty, value: Ty) -> String {
     let mut buffer = String::new();
-    type_diff_recurse(typec, interner, pattern, value, &mut buffer).unwrap();
+    type_diff_recurse(types, interner, pattern, value, &mut buffer).unwrap();
     buffer
 }
 
 fn type_diff_recurse(
-    typec: &Typec,
+    types: &Types,
     interner: &Interner,
     pattern: Ty,
     value: Ty,
@@ -216,48 +216,48 @@ fn type_diff_recurse(
         (Ty::Pointer(pattern), Ty::Pointer(value)) => {
             to.push('^');
             write!(to, "{}", pattern.mutability.to_mutability()).unwrap();
-            type_diff_recurse(typec, interner, typec[pattern.ty()], typec[value.ty()], to)?;
+            type_diff_recurse(types, interner, types[pattern.ty()], types[value.ty()], to)?;
         }
         (Ty::Instance(pattern), Ty::Instance(value)) => {
             type_diff_recurse(
-                typec,
+                types,
                 interner,
-                typec[pattern].base.as_ty(),
-                typec[value].base.as_ty(),
+                types[pattern].base.as_ty(),
+                types[value].base.as_ty(),
                 to,
             )?;
-            let Some((&pattern_first, pattern_others)) = typec[typec[pattern].args].split_first() else {
+            let Some((&pattern_first, pattern_others)) = types[types[pattern].args].split_first() else {
                 return Ok(());
             };
-            let Some((&value_first, value_others)) = typec[typec[value].args].split_first() else {
+            let Some((&value_first, value_others)) = types[types[value].args].split_first() else {
                 return Ok(());
             };
 
             to.push('[');
-            type_diff_recurse(typec, interner, pattern_first, value_first, to)?;
+            type_diff_recurse(types, interner, pattern_first, value_first, to)?;
             for (&pattern, &value) in pattern_others.iter().zip(value_others) {
                 to.push_str(", ");
-                type_diff_recurse(typec, interner, pattern, value, to)?;
+                type_diff_recurse(types, interner, pattern, value, to)?;
             }
             to.push(']');
         }
-        _ => pattern.display(typec, interner, to)?,
+        _ => pattern.display(types, interner, to)?,
     }
 
     Ok(())
 }
 
 pub fn display_bin_op(
-    typec: &Typec,
+    types: &Types,
     interner: &Interner,
     op: Ident,
     lhs: Ty,
     rhs: Ty,
     to: &mut String,
 ) -> fmt::Result {
-    lhs.display(typec, interner, to)?;
+    lhs.display(types, interner, to)?;
     to.push(' ');
     to.push_str(op.get(interner));
     to.push(' ');
-    rhs.display(typec, interner, to)
+    rhs.display(types, interner, to)
 }

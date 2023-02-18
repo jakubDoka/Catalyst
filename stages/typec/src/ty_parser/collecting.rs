@@ -8,7 +8,7 @@ use {
     parsing_t::*,
     std::{default::default, iter},
     storage::*,
-    typec_t::*,
+    types::*,
 };
 
 #[allow(clippy::type_complexity)]
@@ -61,11 +61,11 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         };
 
         self.ext
-            .typec
+            .types
             .register_ty_generics(parsed_ty, &mut spec_set);
         if let Some(parsed_spec) = parsed_spec {
             self.ext
-                .typec
+                .types
                 .register_spec_generics(parsed_spec, &mut spec_set);
         }
 
@@ -96,7 +96,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         let parsed_generics = self.take_generics(0, generics_len, &mut spec_set);
 
         for &(method, ..) in explicit_methods.iter() {
-            self.ext.typec[method].upper_generics = parsed_generics;
+            self.ext.types[method].upper_generics = parsed_generics;
         }
 
         let impl_id = parsed_spec
@@ -126,8 +126,8 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         generics: Generics,
         explicit_methods: BumpVec<(FragRef<Func>, Span)>,
     ) -> OptFragRef<Impl> {
-        let spec_base = spec.base(self.ext.typec);
-        let ty_base = ty.base(self.ext.typec);
+        let spec_base = spec.base(self.ext.types);
+        let ty_base = ty.base(self.ext.types);
 
         // check for collisions in implementations,
         // we just check if spec is already implemented
@@ -138,7 +138,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         {
             CollidingImpl {
                 colliding: self.meta.loc(span),
-                existing: self.ext.typec[already].loc.source_loc(self.ext.typec),
+                existing: self.ext.types[already].loc.source_loc(self.ext.types),
                 ty: self.ext.creator().display(ty),
                 spec: self.ext.creator().display(spec),
             }
@@ -147,28 +147,28 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
 
         if spec_base == SpecBase::DROP {
             self.ext
-                .typec
+                .types
                 .may_need_drop
-                .insert(ty.base(self.ext.typec), true);
+                .insert(ty.base(self.ext.types), true);
         }
 
         let methods =
             self.collect_spec_impl_methods(ty, ty_base, spec_base, explicit_methods, span)?;
 
         let loc = {
-            let next = self.ext.typec.cache.impls.next();
+            let next = self.ext.types.cache.impls.next();
             let item = ModuleItem::new(Ident::default(), next, span, None);
-            self.meta.item_loc(self.ext.typec, item)
+            self.meta.item_loc(self.ext.types, item)
         };
 
-        let impl_ent = self.ext.typec.cache.impls.push(Impl {
+        let impl_ent = self.ext.types.cache.impls.push(Impl {
             generics,
             key: ImplKey { ty, spec },
             methods,
             loc,
         });
         self.ext
-            .typec
+            .types
             .impl_lookup
             .entry((spec_base, ty_base))
             .or_default()
@@ -185,18 +185,18 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         explicit_methods: BumpVec<(FragRef<Func>, Span)>,
         span: Span,
     ) -> Option<FragRefSlice<Func>> {
-        let spec_methods = self.ext.typec[spec_base].methods;
+        let spec_methods = self.ext.types[spec_base].methods;
         let mut slots = bumpvec![None; spec_methods.len()];
         for (method, span) in explicit_methods {
-            let method_name = self.ext.typec[method].name;
-            let Some((i, &spec_method)) = self.ext.typec[spec_methods]
+            let method_name = self.ext.types[method].name;
+            let Some((i, &spec_method)) = self.ext.types[spec_methods]
                     .iter()
                     .enumerate()
                     .find(|(_, m)| m.name == method_name)
                     else {continue};
 
             if let Err(err) = self.ext.check_impl_signature(ty, spec_method, method, true) {
-                let spec_source_loc = self.ext.typec[spec_base].loc.source_loc(self.ext.typec);
+                let spec_source_loc = self.ext.types[spec_base].loc.source_loc(self.ext.types);
                 self.ext.handle_signature_check_error(
                     err,
                     span,
@@ -215,7 +215,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             .zip(spec_methods.keys())
             .filter(|(slot, ..)| slot.is_none());
         for (slot, i) in iter {
-            let spec_func = self.ext.typec[i];
+            let spec_func = self.ext.types[i];
             let id = self.ext.interner.intern_scoped(ty_base, spec_func.name);
 
             let Ok(ScopeItem::Func(id)) = self.ctx.try_lookup(id) else {
@@ -234,7 +234,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         }
 
         let Some(methods) = slots.iter().copied().collect::<Option<BumpVec<_>>>() else {
-                let missing = self.ext.typec[spec_methods]
+                let missing = self.ext.types[spec_methods]
                     .iter()
                     .zip(slots.as_slice())
                     .filter_map(|(f, m)| m.is_none().then_some(&f.name))
@@ -247,7 +247,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
                 }.add(self.ext.workspace)?;
             };
 
-        Some(self.ext.typec.cache.func_slices.extend(methods))
+        Some(self.ext.types.cache.func_slices.extend(methods))
     }
 
     pub(super) fn collect_spec(
@@ -334,7 +334,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             let local_id = owner.map_or(name.ident, |owner| {
                 self.ext
                     .interner
-                    .intern_scoped(owner.caller(self.ext.typec), name.ident)
+                    .intern_scoped(owner.caller(self.ext.types), name.ident)
             });
             let item = ModuleItem::new(
                 local_id,
@@ -363,7 +363,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         Some(if let Some(meta) = meta {
             self.insert_humid_item(func, meta)
         } else {
-            self.ext.typec.cache.funcs.push(func)
+            self.ext.types.cache.funcs.push(func)
         })
     }
 
@@ -392,12 +392,12 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             .unwrap_or(Some(Ty::UNIT))?;
 
         for ty in args.iter().copied().chain(iter::once(ret)) {
-            self.ext.typec.register_ty_generics(ty, spec_set)
+            self.ext.types.register_ty_generics(ty, spec_set)
         }
 
         let signature = Signature {
             cc: cc.map(|cc| self.ext.interner.intern(self.span_str(cc.span.shifted(1)))),
-            args: self.ext.typec.cache.args.extend(args),
+            args: self.ext.types.cache.args.extend(args),
             ret,
         };
         self.generics(generics, spec_set, offset);
@@ -433,7 +433,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             generics.push(default());
         }
         spec_set.truncate(prev_len);
-        self.ext.typec.cache.params.extend(generics)
+        self.ext.types.cache.params.extend(generics)
     }
 
     pub(super) fn collect_struct(
@@ -467,7 +467,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         _: &[TopLevelAttrAst],
     ) -> Option<FragRef<Const>> {
         let loc = {
-            let id = self.ext.typec.cache.consts.next();
+            let id = self.ext.types.cache.consts.next();
             let item = ModuleItem::new(name.ident, id, name.span, vis.map(|vis| vis.vis));
             self.ctx
                 .insert_scope_item(item, &mut self.ext, &self.meta)?
@@ -483,7 +483,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             loc: loc.into(),
         };
 
-        Some(self.ext.typec.cache.consts.push(r#const))
+        Some(self.ext.types.cache.consts.push(r#const))
     }
 
     pub(super) fn collect_enum(
@@ -545,12 +545,12 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
                 }.add(self.ext.workspace);
 
                 return HumidMeta {
-                    id: I::storage(self.ext.typec).next(),
+                    id: I::storage(self.ext.types).next(),
                     humid: false,
                 };
             };
 
-            if I::storage(self.ext.typec)[id].name() != Interner::EMPTY {
+            if I::storage(self.ext.types)[id].name() != Interner::EMPTY {
                 InvalidWaterDrop {
                     message: "water drop already exists",
                     name: name.span,
@@ -563,7 +563,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             HumidMeta { id, humid: true }
         } else {
             HumidMeta {
-                id: I::storage(self.ext.typec).next(),
+                id: I::storage(self.ext.types).next(),
                 humid: false,
             }
         }
@@ -571,10 +571,10 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
 
     fn insert_humid_item<I: Humid>(&mut self, item: I, meta: HumidMeta<I>) -> FragRef<I> {
         if meta.humid {
-            I::storage(self.ext.typec)[meta.id] = item;
+            I::storage(self.ext.types)[meta.id] = item;
             meta.id
         } else {
-            I::storage(self.ext.typec).push(item)
+            I::storage(self.ext.types).push(item)
         }
     }
 
@@ -594,7 +594,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
                     .add(self.ext.workspace);
                     break;
                 }
-                self.ext.typec.macros.insert(
+                self.ext.types.macros.insert(
                     ty,
                     MacroImpl {
                         name: name.ident,

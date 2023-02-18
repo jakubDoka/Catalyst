@@ -7,7 +7,7 @@ use std::{
 
 use mir_t::*;
 use storage::{FragRef, Interner, PushMap, ShadowMap, SmallVec, VRef, VRefSlice};
-use typec_t::*;
+use types::*;
 use typec_u::type_creator;
 
 use crate::{Gen, GenLayouts, Layout};
@@ -16,7 +16,7 @@ pub type IRegister = i64;
 
 pub struct Interpreter<'ctx, 'ext> {
     pub ctx: PreparedInterpreterCtx<'ctx>,
-    pub typec: &'ctx mut Typec,
+    pub types: &'ctx mut Types,
     pub interner: &'ctx mut Interner,
     pub mir: &'ext Mir,
     pub layouts: &'ctx mut GenLayouts,
@@ -145,7 +145,7 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
     }
 
     fn constant(&mut self, c: FragRef<Const>) -> Option<ISlot> {
-        self.typec[c]
+        self.types[c]
             .value
             .as_register()
             .map(|r| ISlot::Value(IValue::Register(r as i64)))
@@ -191,7 +191,7 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
             CallableMir::Pointer(_) => todo!(),
         };
 
-        if self.typec[func].flags.contains(FuncFlags::BUILTIN) {
+        if self.types[func].flags.contains(FuncFlags::BUILTIN) {
             return self.call_builtin(func, params, args, view);
         }
 
@@ -208,7 +208,7 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
     ) -> Result<Option<ISlot>, StepError> {
         let Func {
             name, signature, ..
-        } = self.typec[func];
+        } = self.types[func];
 
         let op_str = name
             .get(self.interner)

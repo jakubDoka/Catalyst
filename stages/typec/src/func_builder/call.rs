@@ -55,10 +55,10 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             owner,
             loc,
             ..
-        } = self.ext.typec[func];
+        } = self.ext.types[func];
         let param_specs = self
             .ext
-            .typec
+            .types
             .pack_func_param_specs(func)
             .collect::<BumpVec<_>>();
         let generic_start = upper_generics.len();
@@ -78,7 +78,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             args,
             signature,
             inference,
-            &|s| loc.source_loc(s.ext.typec),
+            &|s| loc.source_loc(s.ext.types),
         )?;
 
         if func == Func::CAST && let &[to, from] = params {
@@ -110,11 +110,11 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             generics,
             signature,
             ..
-        } = self.ext.typec[func];
+        } = self.ext.types[func];
 
         let param_specs = self
             .ext
-            .typec
+            .types
             .pack_spec_func_param_specs(func_ent)
             .collect::<BumpVec<_>>();
         let mut param_slots = bumpvec![None; param_specs.len()];
@@ -134,7 +134,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             args,
             signature,
             inference,
-            &|s| s.ext.typec[func_ent.parent].loc.source_loc(s.ext.typec),
+            &|s| s.ext.types[func_ent.parent].loc.source_loc(s.ext.types),
         )?;
 
         let call_tir = CallTir {
@@ -163,13 +163,13 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         inference: Inference,
         func: &dyn Fn(&mut Self) -> Option<SourceLoc>,
     ) -> Option<(&'arena [TirNode<'arena>], &'arena [Ty], Ty)> {
-        let arg_types = self.ext.typec[signature.args].to_bumpvec();
+        let arg_types = self.ext.types[signature.args].to_bumpvec();
 
         if let Some(inference) = inference.ty() {
             // we don't want to report error twice so this one is ignored
             _ = self
                 .ext
-                .typec
+                .types
                 .compatible(param_slots, inference, signature.ret);
         }
 
@@ -181,7 +181,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             if let Some(owner) = owner {
                 let ty = caller.map_or_else(|expr| expr.ty, |ty| ty);
                 let owner = self.ext.creator().balance_pointers(owner, ty);
-                _ = self.ext.typec.compatible(param_slots, ty, owner);
+                _ = self.ext.types.compatible(param_slots, ty, owner);
             }
         }
 

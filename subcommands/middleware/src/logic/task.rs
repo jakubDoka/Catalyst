@@ -9,7 +9,7 @@ use super::*;
 
 pub struct TaskBase {
     pub interner: InternerBase,
-    pub typec: TypecBase,
+    pub types: TypecBase,
     pub gen: GenBase,
     pub mir: MirBase,
 }
@@ -18,7 +18,7 @@ impl TaskBase {
     pub fn new(thread_count: u8, builtin_functions: &mut Vec<FragRef<Func>>) -> Self {
         let mut s = Self {
             interner: InternerBase::new(thread_count),
-            typec: TypecBase::new(thread_count),
+            types: TypecBase::new(thread_count),
             gen: GenBase::new(thread_count),
             mir: MirBase::new(thread_count),
         };
@@ -36,7 +36,7 @@ impl TaskBase {
 
     pub fn split(&self, ir_dump: bool) -> impl Iterator<Item = Task> + '_ {
         let mut interner_split = self.interner.split();
-        let mut typec_split = self.typec.split();
+        let mut typec_split = self.types.split();
         let mut mir_split = self.mir.split();
         let mut gen_split = self.gen.split();
         let mut ids = 0..;
@@ -46,7 +46,7 @@ impl TaskBase {
                 ir_dump: ir_dump.then(String::new),
                 resources: TaskResources::default(),
                 interner: interner_split.next()?,
-                typec: typec_split.next()?,
+                types: typec_split.next()?,
                 mir: mir_split.next()?,
                 gen: gen_split.next()?,
             })
@@ -54,7 +54,7 @@ impl TaskBase {
     }
 
     pub fn register<'a>(&'a mut self, frags: &mut RelocatedObjects<'a>) {
-        self.typec.register(frags);
+        self.types.register(frags);
         self.mir.register(frags);
         self.gen.register(frags);
     }
@@ -73,7 +73,7 @@ pub struct Task {
     pub ir_dump: Option<String>,
     pub resources: TaskResources,
     pub interner: Interner,
-    pub typec: Typec,
+    pub types: Types,
     pub mir: Mir,
     pub gen: Gen,
 }
@@ -110,7 +110,7 @@ impl Task {
 
             let Func {
                 flags, visibility, ..
-            } = task.typec[func];
+            } = task.types[func];
             if flags.contains(FuncFlags::BUILTIN) {
                 continue;
             }
@@ -120,7 +120,7 @@ impl Task {
             }
 
             let generics = task
-                .typec
+                .types
                 .pack_func_param_specs(func)
                 .collect::<BumpVec<_>>();
 
@@ -225,14 +225,14 @@ impl Task {
             }
 
             if let Some(Some((r#impl, params))) = type_creator!(self).is_drop(ty, generics) {
-                let func = self.typec[self.typec[r#impl].methods][0];
-                let params = self.typec[params].to_bumpvec();
+                let func = self.types[self.types[r#impl].methods][0];
+                let params = self.types[params].to_bumpvec();
                 frontier.push(self.load_call(CallableMir::Func(func), params, task_id, isa, seen));
             }
 
             match ty {
                 Ty::Struct(s) => {
-                    self.typec[self.typec[s].fields]
+                    self.types[self.types[s].fields]
                         .iter()
                         // we do rev to preserve recursive order of fields
                         .rev()
@@ -240,14 +240,14 @@ impl Task {
                         .collect_into(&mut **type_frontier);
                 }
                 Ty::Enum(e) => {
-                    self.typec[self.typec[e].variants]
+                    self.types[self.types[e].variants]
                         .iter()
                         .rev()
                         .map(|v| v.ty)
                         .collect_into(&mut **type_frontier);
                 }
                 Ty::Instance(i) => {
-                    let Instance { base, args } = self.typec[i];
+                    let Instance { base, args } = self.types[i];
                     let types = match base {
                         GenericTy::Struct(s) => type_creator!(self).instantiate_fields(s, args),
                         GenericTy::Enum(e) => type_creator!(self).instantiate_variants(e, args),
@@ -279,7 +279,7 @@ impl Task {
             &isa.triple,
             func_id,
             params.iter().cloned(),
-            &self.typec,
+            &self.types,
             &mut self.interner,
         );
         let id = self.gen.get_or_insert_func(key, func_id);
@@ -304,8 +304,8 @@ impl Task {
         // TODO: I dislike how much can panic here, maybe improve this in the future
         let SpecFunc {
             parent, generics, ..
-        } = self.typec[func];
-        let SpecBase { methods, .. } = self.typec[parent];
+        } = self.types[func];
+        let SpecBase { methods, .. } = self.types[parent];
         let index = methods.keys().position(|key| key == func).unwrap();
         let generic_count = params.len() - generics.len() - 1;
         let (upper, caller) = (&params[..generic_count], params[generic_count]);
@@ -319,21 +319,21 @@ impl Task {
             .find_implementation(caller, used_spec, &[][..], &mut None)
             .unwrap()
             .unwrap();
-        let func_id = self.typec[self.typec[r#impl].methods][index];
-        let params = self.typec[params].to_bumpvec();
+        let func_id = self.types[self.types[r#impl].methods][index];
+        let params = self.types[params].to_bumpvec();
         (func_id, params)
     }
 
     pub fn pull(&mut self, task_base: &TaskBase) {
-        self.typec.pull(&task_base.typec);
+        self.types.pull(&task_base.types);
     }
 
     pub fn commit(&mut self, main_task: &mut TaskBase) {
-        self.typec.commit(&mut main_task.typec);
+        self.types.commit(&mut main_task.types);
     }
 
     pub fn commit_unique(self, main_task: &mut TaskBase) {
-        self.typec.commit_unique(&mut main_task.typec);
+        self.types.commit_unique(&mut main_task.types);
     }
 }
 

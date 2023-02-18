@@ -470,13 +470,13 @@ impl Middleware {
                     .chain(imported)
                     .chain(iter::once(entry_point)),
                 &main_task.gen,
-                &main_task.typec,
+                &main_task.types,
                 &mut main_task.interner,
             )
             // .map_err(|err| {
             //     if let ObjectRelocationError::MissingSymbol(id) = err {
             //         let func = main_task.gen[id].func;
-            //         dbg !(&main_task.interner[main_task.typec[func].name]);
+            //         dbg !(&main_task.interner[main_task.types[func].name]);
             //     }
             // })
             .unwrap();
@@ -599,7 +599,7 @@ impl Middleware {
                 &isa.triple,
                 func,
                 iter::empty(),
-                &main_task.typec,
+                &main_task.types,
                 &mut main_task.interner,
             );
             let id = tasks[task_id].gen.get_or_insert_func(key, func);
@@ -682,7 +682,7 @@ impl Middleware {
                     continue;
                 }
 
-                sync_module_items(&mut package_task.task.typec.module_items, &module_items);
+                sync_module_items(&mut package_task.task.types.module_items, &module_items);
                 package_task.task.pull(task_base);
                 package_task
                     .send(package)
@@ -700,7 +700,7 @@ impl Middleware {
             loop {
                 self.entry_points
                     .append(&mut package_task.task.entry_points);
-                sync_module_items(&mut module_items, &package_task.task.typec.module_items);
+                sync_module_items(&mut module_items, &package_task.task.types.module_items);
                 package_task.task.commit(task_base);
                 self.task_graph.finish(package);
                 tasks.push_back(package_task);
@@ -721,7 +721,7 @@ impl Middleware {
             .into_iter()
             .chain(leftover_tasks)
             .map(|task: PackageTask| {
-                sync_module_items(&mut module_items, &task.task.typec.module_items);
+                sync_module_items(&mut module_items, &task.task.types.module_items);
                 task.task
             })
             .collect::<Vec<_>>();

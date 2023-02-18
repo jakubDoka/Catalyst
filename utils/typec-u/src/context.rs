@@ -1,8 +1,8 @@
 use storage::*;
-use typec_t::*;
+use types::*;
 
 pub struct TypeCreator<'ctx> {
-    pub typec: &'ctx mut Typec,
+    pub types: &'ctx mut Types,
     pub interner: &'ctx mut Interner,
 }
 
@@ -10,7 +10,7 @@ pub struct TypeCreator<'ctx> {
 macro_rules! type_creator {
     ($self:expr) => {
         $crate::TypeCreator {
-            typec: &mut $self.typec,
+            types: &mut $self.types,
             interner: &mut $self.interner,
         }
     };

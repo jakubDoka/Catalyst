@@ -8,7 +8,7 @@ use lexing_t::*;
 use mir_t::*;
 use packaging_t::*;
 use storage::*;
-use typec_t::*;
+use types::*;
 use typec_u::TypeCreator;
 
 use crate::builder::moves::MoveCtx;
@@ -29,13 +29,13 @@ impl<'m, 'i> FuncMirCtx<'m, 'i> {
         module_ref: FragRef<ModuleMir>,
         module: &'m mut ModuleMir,
         reused: &mut ReusedMirCtx,
-        typec: &Typec,
+        types: &Types,
     ) -> Self {
         let mut check = module.check();
         let mut make_value = |ty| {
             check
                 .values
-                .push(ValueMir::new(reused.intern_ty(ty, &mut check.types, typec)))
+                .push(ValueMir::new(reused.intern_ty(ty, &mut check.types, types)))
         };
 
         Self {
@@ -52,7 +52,7 @@ impl<'m, 'i> FuncMirCtx<'m, 'i> {
         &mut self,
         of: Ty,
         reused: &mut ReusedMirCtx,
-        typec: &Typec,
+        types: &Types,
     ) -> VRef<ValueMir> {
         if of == Ty::UNIT {
             self.unit
@@ -62,7 +62,7 @@ impl<'m, 'i> FuncMirCtx<'m, 'i> {
             self.module.values.push(ValueMir::new(reused.intern_ty(
                 of,
                 &mut self.module.types,
-                typec,
+                types,
             )))
         }
     }
@@ -71,11 +71,11 @@ impl<'m, 'i> FuncMirCtx<'m, 'i> {
         &mut self,
         params: &[Ty],
         reused: &mut ReusedMirCtx,
-        typec: &Typec,
+        types: &Types,
     ) -> VSlice<VRef<MirTy>> {
         let iter = params
             .iter()
-            .map(|&of| reused.intern_ty(of, &mut self.module.types, typec));
+            .map(|&of| reused.intern_ty(of, &mut self.module.types, types));
 
         self.module.ty_params.extend(iter)
     }
@@ -108,9 +108,9 @@ impl<'m, 'i> FuncMirCtx<'m, 'i> {
         &mut self,
         ty: Ty,
         reused: &mut ReusedMirCtx,
-        typec: &Typec,
+        types: &Types,
     ) -> VRef<ValueMir> {
-        let value = self.create_value(ty, reused, typec);
+        let value = self.create_value(ty, reused, types);
         self.create_var_from_value(value, reused);
         value
     }
@@ -196,7 +196,7 @@ impl<'m, 'i> FuncMirCtx<'m, 'i> {
 }
 
 pub struct ExternalMirCtx<'m, 'i> {
-    pub typec: &'m mut Typec,
+    pub types: &'m mut Types,
     pub interner: &'m mut Interner,
     pub workspace: &'m mut Workspace,
 
@@ -207,7 +207,7 @@ pub struct ExternalMirCtx<'m, 'i> {
 impl<'i, 'm> ExternalMirCtx<'m, 'i> {
     pub(crate) fn creator(&mut self) -> TypeCreator {
         TypeCreator {
-            typec: self.typec,
+            types: self.types,
             interner: self.interner,
         }
     }
@@ -242,10 +242,10 @@ pub struct ReusedMirCtx {
 }
 
 impl ReusedMirCtx {
-    fn intern_ty(&mut self, ty: Ty, types: &mut PushMapCheck<MirTy>, typec: &Typec) -> VRef<MirTy> {
+    fn intern_ty(&mut self, ty: Ty, mir_types: &mut PushMapCheck<MirTy>, types: &Types) -> VRef<MirTy> {
         *self.used_types.entry(ty).or_insert_with(|| {
-            let res = types.push(MirTy { ty });
-            if typec.contains_params(ty) {
+            let res = mir_types.push(MirTy { ty });
+            if types.contains_params(ty) {
                 self.generic_types.push(res)
             }
             res

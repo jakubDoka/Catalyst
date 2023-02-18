@@ -9,7 +9,7 @@ use {
     crate::*,
     cranelift_codegen::{
         binemit::{CodeOffset, Reloc},
-        ir::{self, types, ArgumentPurpose, ExternalName, LibCall, Type, UserExternalName},
+        ir::{self, ArgumentPurpose, ExternalName, LibCall, Type, UserExternalName},
         isa::{self, CallConv, LookupError, TargetIsa},
         settings, CodegenError, Context,
     },
@@ -30,7 +30,7 @@ use {
     },
     storage::{dashmap::mapref::one::Ref, *},
     target_lexicon::{CDataModel, Triple},
-    typec_t::*,
+    types::*,
 };
 
 pub mod layout;

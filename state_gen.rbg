@@ -15,7 +15,7 @@ file "stages/packaging/src/state_gen.rs" {
 file "stages/typec/src/state_gen.rs" {
     use "storage"
     use "diags"
-    use "typec_t"
+    use "types"
     use "packaging_t"
 
     struct TyChecker {
@@ -33,7 +33,7 @@ file "stages/typec/src/state_gen.rs" {
 file "stages/mir/src/state_gen.rs" {
     use "storage"
     use "diags"
-    use "typec_t"
+    use "types"
     use "packaging_t"
     use "mir_t"
     use "crate"
@@ -56,7 +56,7 @@ file "stages/mir/src/state_gen.rs" {
 file "stages/gen/src/state_gen.rs" {
     use "crate"
     use "storage"
-    use "typec_t"
+    use "types"
     use "packaging_t"
 
     struct Generator {

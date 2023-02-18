@@ -12,7 +12,7 @@ use {
     parsing_t::*,
     std::{cmp::Ordering, default::default, iter},
     storage::*,
-    typec_t::*,
+    types::*,
 };
 
 mod call;
@@ -61,7 +61,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             signature,
             generics: self_generics,
             ..
-        } = self.ext.typec[func];
+        } = self.ext.types[func];
 
         let body = match body {
             FuncBodyAst::Arrow(arrow, expr) => BranchAst::Arrow(arrow, expr),
@@ -70,13 +70,13 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         };
 
         self.ctx
-            .load_generics(self.ext.typec.pack_func_param_specs(func));
+            .load_generics(self.ext.types.pack_func_param_specs(func));
 
         let frame = self.ctx.start_frame();
 
         self.ctx.insert_generics(generics, offset);
         self.ctx
-            .insert_spec_functions(self_generics, offset, self.ext.typec, self.ext.interner);
+            .insert_spec_functions(self_generics, offset, self.ext.types, self.ext.interner);
         let args = self.args(signature.args, args);
 
         let tir_body = match body {
@@ -175,7 +175,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     fn array(&mut self, array: ListAst<ExprAst>, mut inference: Inference) -> ExprRes<'arena> {
         let mut elements = bumpvec![cap array.len()];
 
-        inference = inference.map(|ty| ty.array_base(self.ext.typec));
+        inference = inference.map(|ty| ty.array_base(self.ext.types));
 
         for &expr in array.iter() {
             let Some(element) = self.expr(expr, inference) else {continue};
@@ -209,8 +209,8 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     ) -> ExprRes<'arena> {
         let mut header = self.unit_expr(lhs, Inference::None)?;
 
-        let deref = header.ty.ptr_base(self.ext.typec);
-        let caller = deref.base(self.ext.typec);
+        let deref = header.ty.ptr_base(self.ext.types);
+        let caller = deref.base(self.ext.types);
         let res = self.dot_path(caller, rhs)?;
 
         self.balance_pointers(&mut header, deref)?;
@@ -238,11 +238,11 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                 })
             }
             PatAst::StructCtor(StructCtorPatAst { fields, .. }) => {
-                let (Ty::Struct(struct_ty), params) = ty.caller_with_params(self.ext.typec) else {
+                let (Ty::Struct(struct_ty), params) = ty.caller_with_params(self.ext.types) else {
                     UnexpectedPatternType {
                         loc: self.meta.loc(fields.span()),
                         ty: self.ext.creator().display(ty),
-                        ty_loc: None, //TODO: make a typec getter for loc on type
+                        ty_loc: None, //TODO: make a types getter for loc on type
                         something: "struct",
                     }.add(self.ext.workspace)?;
                 };
@@ -289,7 +289,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
 
                 let missing_fields = tir_fields
                     .iter()
-                    .zip(&self.ext.typec[self.ext.typec[struct_ty].fields])
+                    .zip(&self.ext.types[self.ext.types[struct_ty].fields])
                     .filter_map(|(opt, f)| opt.is_none().then_some(&f.name))
                     .map(|name| name.get(self.ext.interner))
                     .intersperse(", ")
@@ -299,7 +299,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                     self.ext.workspace.push(MissingStructPatternFields {
                         loc: self.meta.loc(fields.span()),
                         missing_fields,
-                        struct_loc: self.ext.typec[struct_ty].loc.source_loc(self.ext.typec),
+                        struct_loc: self.ext.types[struct_ty].loc.source_loc(self.ext.types),
                     })?;
                 }
 
@@ -323,12 +323,12 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                 is_refutable: true,
             }),
             PatAst::EnumCtor(ctor) => {
-                let ty_base = ty.ptr_base(self.ext.typec);
-                let Ty::Enum(enum_ty) = ty_base.base(self.ext.typec) else {
+                let ty_base = ty.ptr_base(self.ext.types);
+                let Ty::Enum(enum_ty) = ty_base.base(self.ext.types) else {
                     UnexpectedPatternType {
                         loc: self.meta.loc(ctor.span()),
                         ty: self.ext.creator().display(ty),
-                        ty_loc: None, //TODO: make a typec getter for loc on type
+                        ty_loc: None, //TODO: make a types getter for loc on type
                         something: "enum",
                     }.add(self.ext.workspace)?;
                 };
@@ -341,7 +341,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                         ComponentNotFound {
                             loc: self.meta.loc(ctor.span()),
                             ty: self.ext.creator().display(Ty::Enum(enum_ty)),
-                            suggestions: self.ext.typec[self.ext.typec[enum_ty].variants]
+                            suggestions: self.ext.types[self.ext.types[enum_ty].variants]
                                 .iter()
                                 .map(|v| v.name.get(self.ext.interner))
                                 .intersperse(", ")
@@ -365,7 +365,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                     span: ctor.span(),
                     ty,
                     has_binding: value.map_or(false, |v| v.has_binding),
-                    is_refutable: self.ext.typec[enum_ty].variants.len() > 1,
+                    is_refutable: self.ext.types[enum_ty].variants.len() > 1,
                 })
             }
             PatAst::Wildcard(source_info) => Some(PatTir {
@@ -386,7 +386,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         span: Span,
     ) -> Option<()> {
         self.ext
-            .typec
+            .types
             .compatible(params, reference, template)
             .map_err(|_| {
                 GenericTypeMismatch {
@@ -426,7 +426,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
 
         let func = self.find_binary_func(op, lhs.ty, rhs.ty)?;
 
-        let ty = self.ext.typec[func].signature.ret;
+        let ty = self.ext.types[func].signature.ret;
         let call = CallTir {
             func: CallableTir::Func(func),
             params: default(),
@@ -445,7 +445,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         args: Option<ListAst<FuncArgAst>>,
     ) -> &'arena [PatTir<'arena>] {
         let Some(args) = args else {return &[]};
-        let args = self.ext.typec[types]
+        let args = self.ext.types[types]
             .to_bumpvec()
             .into_iter()
             .zip(args.iter())

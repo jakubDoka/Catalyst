@@ -4,6 +4,7 @@ use std::{
 };
 
 use typec_u::{type_creator, TypeCreator};
+use types::*;
 
 use super::*;
 
@@ -33,7 +34,7 @@ impl GenLayouts {
             Ty::Array(a) => self.array_layout(a, params, cr),
         };
 
-        if creator.typec.contains_params(ty) {
+        if creator.types.contains_params(ty) {
             self.subclear_items.push(ty);
         }
 
@@ -48,7 +49,7 @@ impl GenLayouts {
         params: &[Ty],
         mut creator: TypeCreator,
     ) -> Layout {
-        let Array { len, item } = creator.typec[array];
+        let Array { len, item } = creator.types[array];
         let elem_layout = self.ty_layout(item, params, type_creator!(creator));
         let size = elem_layout.size * len;
 
@@ -69,8 +70,8 @@ impl GenLayouts {
         params: &[Ty],
         mut creator: TypeCreator,
     ) -> Layout {
-        let tag_size = self.builtin_layout(creator.typec.enum_flag_ty(r#enum)).size;
-        let (base_size, base_align) = creator.typec[creator.typec[r#enum].variants]
+        let tag_size = self.builtin_layout(creator.types.enum_flag_ty(r#enum)).size;
+        let (base_size, base_align) = creator.types[creator.types[r#enum].variants]
             .to_bumpvec()
             .into_iter()
             .map(|variant| self.ty_layout(variant.ty, params, type_creator!(creator)))
@@ -97,7 +98,7 @@ impl GenLayouts {
         params: &[Ty],
         mut creator: TypeCreator,
     ) -> Layout {
-        let Instance { base, args } = creator.typec[inst];
+        let Instance { base, args } = creator.types[inst];
         // remap the instance parameters so we can compute the layout correctly
         let params = creator.instantiate_slice(args, params);
         match base {
@@ -112,10 +113,10 @@ impl GenLayouts {
         params: &[Ty],
         mut creator: TypeCreator,
     ) -> Layout {
-        let Struct { fields, .. } = creator.typec[r#struct];
+        let Struct { fields, .. } = creator.types[r#struct];
         let mut offsets = bumpvec![cap fields.len()];
 
-        let layouts = creator.typec[fields]
+        let layouts = creator.types[fields]
             .to_bumpvec()
             .into_iter()
             .map(|field| self.ty_layout(field.ty, params, type_creator!(creator)));
@@ -150,11 +151,11 @@ impl GenLayouts {
         let repr = match bt {
             Unit | Mutable | Immutable | Terminal => return Layout::EMPTY,
             Uint => self.ptr_ty,
-            Char | U32 => types::I32,
-            U16 => types::I16,
-            Bool | U8 => types::I8,
-            F32 => types::F32,
-            F64 => types::F64,
+            Char | U32 => ir::types::I32,
+            U16 => ir::types::I16,
+            Bool | U8 => ir::types::I8,
+            F32 => ir::types::F32,
+            F64 => ir::types::F64,
             Short | Cint | Long | LongLong => self.c_type_repr(bt),
         };
 
@@ -175,10 +176,10 @@ impl GenLayouts {
         };
 
         match size {
-            target_lexicon::Size::U8 => types::I8,
-            target_lexicon::Size::U16 => types::I16,
-            target_lexicon::Size::U32 => types::I32,
-            target_lexicon::Size::U64 => types::I64,
+            target_lexicon::Size::U8 => ir::types::I8,
+            target_lexicon::Size::U16 => ir::types::I16,
+            target_lexicon::Size::U32 => ir::types::I32,
+            target_lexicon::Size::U64 => ir::types::I64,
         }
     }
 
@@ -188,10 +189,10 @@ impl GenLayouts {
         }
 
         let repr = match size {
-            8.. => types::I64,
-            4.. => types::I32,
-            2.. => types::I16,
-            0.. => types::I8,
+            8.. => ir::types::I64,
+            4.. => ir::types::I32,
+            2.. => ir::types::I16,
+            0.. => ir::types::I8,
         };
 
         (repr, false)
@@ -227,7 +228,7 @@ impl Layout {
         size: 0,
         align: unsafe { NonZeroU8::new_unchecked(1) },
         offsets: VSlice::empty(),
-        repr: types::INVALID,
+        repr: ir::types::INVALID,
         flags: LayoutFlags::empty(),
     };
 

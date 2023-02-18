@@ -175,16 +175,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in library 'typec-t'",
+            "name": "Debug unit tests in library 'types'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
                     "--lib",
-                    "--package=typec-t"
+                    "--package=types"
                 ],
                 "filter": {
-                    "name": "typec-t",
+                    "name": "types",
                     "kind": "lib"
                 }
             },

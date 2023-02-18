@@ -55,7 +55,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                 }.add(self.ext.workspace)?;
             };
 
-            let Ty::Enum(enum_ty) = expected.base(self.ext.typec) else {
+            let Ty::Enum(enum_ty) = expected.base(self.ext.types) else {
                 UnexpectedInferenceType {
                     expected: "enum",
                     found: self.ext.creator().display(expected),
@@ -116,7 +116,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         ty: Ty,
         path @ PathAst { slash, start, .. }: PathAst,
     ) -> Option<DotPathResult> {
-        let (Ty::Struct(struct_ty), params) = ty.base_with_params(self.ext.typec) else {
+        let (Ty::Struct(struct_ty), params) = ty.base_with_params(self.ext.types) else {
             FieldAccessOnNonStruct {
                 found: self.ext.creator().display(ty),
                 loc: self.meta.loc(path.span()),
@@ -268,7 +268,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     )> {
         self.assert_no_slash(slash)?;
 
-        let lty = ty.caller(self.ext.typec);
+        let lty = ty.caller(self.ext.types);
         let PathSegmentAst::Name(ident) = start else {
             InvalidPathSegment {
                 loc: self.meta.loc(start.span()),
@@ -325,9 +325,9 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                     .map(|&p| self.parser().ty(p))
                     .nsc_collect::<Option<BumpVec<_>>>()?;
 
-                if params.len() != self.ext.typec[spec_base].generics.len() {
+                if params.len() != self.ext.types[spec_base].generics.len() {
                     WrongGenericParamCount {
-                        expected: self.ext.typec[spec_base].generics.len(),
+                        expected: self.ext.types[spec_base].generics.len(),
                         found: params.len(),
                         loc: self.meta.loc(ast_params.span()),
                     }
@@ -352,17 +352,17 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
 
         let Some((method_index, method)) = self
             .ext
-            .typec
+            .types
             .cache
             .spec_funcs
-            .indexed(self.ext.typec[spec_base].methods)
+            .indexed(self.ext.types[spec_base].methods)
             .enumerate()
             .find_map(|(i, (key, func))| (method_ident.ident == func.name).then_some((i, key)))
             else {
                 ComponentNotFound {
                     ty: self.ext.creator().display(spec),
                     loc: self.meta.loc(method_ident.span),
-                    suggestions: self.ext.typec[self.ext.typec[spec_base].methods]
+                    suggestions: self.ext.types[self.ext.types[spec_base].methods]
                         .iter()
                         .map(|func| func.name.get(self.ext.interner))
                         .intersperse(", ")
@@ -378,7 +378,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                 .find_implementation(ty, spec, self.ctx.generics(), &mut None)
         {
             if let Some((r#impl, _)) = r#impl {
-                let func = self.ext.typec[self.ext.typec[r#impl].methods][method_index];
+                let func = self.ext.types[self.ext.types[r#impl].methods][method_index];
                 return Some((
                     FuncLookupResult::Func(func),
                     Some(ty),
@@ -429,7 +429,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                 }.add(self.ext.workspace)?;
             };
 
-            match inferred.base(self.ext.typec) {
+            match inferred.base(self.ext.types) {
                 Ty::Enum(..) => {
                     return self.enum_ctor(EnumCtorAst { path, value: None }, inference)
                 }
@@ -489,7 +489,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                 .add(self.ext.workspace)?,
             },
             ScopeItem::Const(r#const) => TirNode::with_flags(
-                self.ext.typec[r#const].ty,
+                self.ext.types[r#const].ty,
                 TirKind::ConstAccess(r#const),
                 TirFlags::IMMUTABLE,
                 path.span(),
@@ -512,7 +512,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     ) -> OptFragRef<Func> {
         let base_id = op.ident;
         let id = self.ext.interner.intern_with(|s, t| {
-            typec_u::display_bin_op(self.ext.typec, s, base_id, lhs_ty, rhs_ty, t)
+            typec_u::display_bin_op(self.ext.types, s, base_id, lhs_ty, rhs_ty, t)
         });
         Some(lookup!(Func self, id, op.span))
     }
@@ -531,7 +531,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                 self.ext.workspace.push(ComponentNotFound {
                     loc: self.meta.loc(name.span),
                     ty,
-                    suggestions: self.ext.typec[self.ext.typec[struct_ty].fields]
+                    suggestions: self.ext.types[self.ext.types[struct_ty].fields]
                         .iter()
                         .map(|f| f.name.get(self.ext.interner))
                         .intersperse(", ")
@@ -541,14 +541,14 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             })
             .and_then(|(field_id, field, field_ty)| {
                 self.can_access(
-                    self.ext.typec[struct_ty].loc,
-                    self.ext.typec[field].vis,
+                    self.ext.types[struct_ty].loc,
+                    self.ext.types[field].vis,
                     name.span,
-                    self.ext.typec[field].span,
+                    self.ext.types[field].span,
                 )
                 .then_some((
                     field_id,
-                    self.ext.typec[field].flags.contains(FieldFlags::MUTABLE),
+                    self.ext.types[field].flags.contains(FieldFlags::MUTABLE),
                     field_ty,
                 ))
             })

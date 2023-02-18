@@ -3,7 +3,7 @@ use std::{default::default, iter, mem, ops::Deref, sync::Arc, usize};
 use lexing_t::*;
 use rkyv::{Archive, Deserialize, Serialize};
 use storage::*;
-use typec_t::*;
+use types::*;
 use typec_u::TypeCreator;
 
 #[derive(Serialize, Deserialize, Archive)]
