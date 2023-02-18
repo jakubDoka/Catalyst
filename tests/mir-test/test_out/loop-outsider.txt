@@ -1,5 +1,5 @@
 info: mir repr of functions:
-fn [] main() -> ()  { () ret var0
+fn [] main() -> () { () ret var0
     block0 {
         var3 ={}
         var4 = var3
@@ -32,14 +32,14 @@ fn [] main() -> ()  { () ret var0
 
 }
 
-fn [] drop(var0: ^mut 0\W) -> ()  { (var3: ^mut 0\W) ret var0
+fn [] drop(^mut 3\W) -> () { (var3: ^mut 3\W) ret var0
     block0 {
         return var1
     }
 
 }
 
-fn [] do_something(var0: ^mut 0\W) -> ()  { (var3: ^mut 0\W) ret var0
+fn [] do_something(^mut 3\W) -> () { (var3: ^mut 3\W) ret var0
     block0 {
         return var1
     }

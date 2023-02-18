@@ -1,5 +1,5 @@
 info: mir repr of functions:
-fn [] main() -> uint  { () ret var0
+fn [] main() -> uint { () ret var0
     block0 {
         var3 = new[uint]()
         var4 = var3
@@ -12,13 +12,13 @@ fn [] main() -> uint  { () ret var0
         var9 = &var4
         var10 = 2
         var1 = push[uint](val9, val10)
-        var11 = new[0\Vec[uint]]()
+        var11 = new[4\Vec[uint]]()
         var12 = var11
         var13 = &var12
-        var1 = push[0\Vec[uint]](val13, val4)
+        var1 = push[4\Vec[uint]](val13, val4)
         var15 = &var12
         var16 = 0
-        var14 = get_mut_ptr[0\Vec[uint]](val15, val16)
+        var14 = get_mut_ptr[4\Vec[uint]](val15, val16)
         var17 = 3
         var1 = push[uint](val14, val17)
         var0 = 0
