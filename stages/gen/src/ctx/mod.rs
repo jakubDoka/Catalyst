@@ -573,7 +573,7 @@ pub struct GenBuilder<'a, 'b> {
     pub body: FuncMirView<'a>,
     pub struct_ret: Option<ir::Value>,
     pub ret_pass_mode: Option<PassMode>,
-    pub dependant_types: &'a PushMapView<MirTy>,
+    pub dependant_types: &'a PushMapView<TyMir>,
     pub inner: FunctionBuilder<'b>,
 }
 
@@ -583,7 +583,7 @@ impl<'a, 'b> GenBuilder<'a, 'b> {
         mir_func: FuncMir,
         module: &'a ModuleMir,
         func: &'b mut ir::Function,
-        dependant_types: &'a PushMapView<MirTy>,
+        dependant_types: &'a PushMapView<TyMir>,
         ctx: &'b mut FunctionBuilderContext,
     ) -> Self {
         Self {

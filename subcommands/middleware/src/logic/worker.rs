@@ -742,7 +742,7 @@ struct ConstFolderImpl<'arena, 'ctx> {
     module_ref: FragRef<ModuleMir>,
 
     arena: &'arena Arena,
-    reused: &'ctx mut ReusedMirCtx,
+    reused: &'ctx mut BorrowcCtx,
     module_ent: &'ctx mut ModuleMir,
     interpreter: &'ctx mut InterpreterCtx,
     mir: &'ctx mut Mir,
@@ -759,7 +759,7 @@ impl<'arena, 'ctx> ConstFolderImpl<'arena, 'ctx> {
             arena: self.arena,
             resources: ctx.resources,
         };
-        let meta = MirBuildMeta {
+        let meta = BorrowcMeta {
             source: ctx.resources.modules[self.module].source,
             module: self.module,
             no_moves: false,
@@ -844,11 +844,11 @@ impl ConstFolder for ConstFolderImpl<'_, '_> {
 pub struct WorkerState {
     typec_ctx: TypecCtx,
     typec_transfere: TypecTransfere<'static>,
-    mir_ctx: ReusedMirCtx,
+    mir_ctx: BorrowcCtx,
     module: ModuleMir,
     // pub token_macros: Map<FragRef<Impl>, TokenMacroOwnedSpec>,
     // pub macro_ctx: MacroCtx<'static>,
-    temp_dependant_types: PushMap<MirTy>,
+    temp_dependant_types: PushMap<TyMir>,
     gen_resources: GenResources,
     jit_layouts: GenLayouts,
     gen_layouts: GenLayouts,

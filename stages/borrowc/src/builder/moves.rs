@@ -705,7 +705,7 @@ pub(crate) enum Owner {
 }
 
 impl Owner {
-    fn indirect_or_default(self, func: &FuncMirCtx) -> IndirectOwner {
+    fn indirect_or_default(self, func: &FuncBorrowcCtx) -> IndirectOwner {
         match self {
             Owner::Indirect(owner) => owner,
             Owner::Direct { .. } => IndirectOwner {

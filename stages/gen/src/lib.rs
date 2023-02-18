@@ -7,7 +7,7 @@
 #![feature(allocator_api)]
 #![feature(slice_ptr_get)]
 
-mod context;
+mod ctx;
 mod generate;
 mod interpreter;
 mod jit;
@@ -15,7 +15,7 @@ mod native;
 mod state_gen;
 
 pub use {
-    context::{
+    ctx::{
         layout::{GenLayouts, Layout, Offset},
         CodeSaveError, CompileRequest, CompileRequestChild, CompileRequests, CompiledFunc,
         CompiledFuncInner, CompiledFuncRef, ComputedValue, Gen, GenBase, GenBlock, GenBuilder,

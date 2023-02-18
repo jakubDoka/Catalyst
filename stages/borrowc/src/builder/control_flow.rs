@@ -494,7 +494,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
     fn call_inst(
         &mut self,
         callable: impl Into<CallableMir>,
-        params: VRefSlice<MirTy>,
+        params: VRefSlice<TyMir>,
         args: impl IntoIterator<Item = VRef<ValueMir>>,
         ret: Ty,
         span: Span,

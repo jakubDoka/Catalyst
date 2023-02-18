@@ -22,13 +22,13 @@ macro_rules! lookup {
     };
 }
 
-mod context;
+mod ctx;
 mod func_builder;
 mod tir_display;
 mod ty_parser;
 
 pub use {
-    context::{TypecCtx, TypecExternalCtx, TypecMeta, TypecTransfere},
+    ctx::{TypecCtx, TypecExternalCtx, TypecMeta, TypecTransfere},
     func_builder::TirBuilder,
     ty_parser::TypecParser,
 };

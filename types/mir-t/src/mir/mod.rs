@@ -69,7 +69,7 @@ impl Default for Mir {
 pub struct FuncMir {
     args: VRefSlice<ValueMir>,
     ret: VRef<ValueMir>,
-    generics: VRefSlice<MirTy>,
+    generics: VRefSlice<TyMir>,
     entry: VRef<BlockMir>,
     module: FragRef<ModuleMir>,
     entities: FuncMirEntities,
@@ -79,7 +79,7 @@ impl FuncMir {
     pub fn new(
         args: impl IntoIterator<Item = VRef<ValueMir>>,
         ret: VRef<ValueMir>,
-        generics: impl IntoIterator<Item = VRef<MirTy>>,
+        generics: impl IntoIterator<Item = VRef<TyMir>>,
         entry: VRef<BlockMir>,
         module: FragRef<ModuleMir>,
         mut entities: ModuleMirCheck,
@@ -119,7 +119,7 @@ pub struct FuncMirView<'a> {
     pub args: &'a [VRef<ValueMir>],
     pub ret: VRef<ValueMir>,
     pub entry: VRef<BlockMir>,
-    pub generic_types: &'a [VRef<MirTy>],
+    pub generic_types: &'a [VRef<TyMir>],
     pub entities: FuncMirEntitiesView<'a>,
 }
 
@@ -220,10 +220,10 @@ gen_module! {
     insts: InstMir,
     values: ValueMir,
     value_args: VRef<ValueMir>,
-    ty_params: VRef<MirTy>,
+    ty_params: VRef<TyMir>,
     calls: CallMir,
     drops: DropMir,
-    types: MirTy,
+    types: TyMir,
 }
 
 derive_relocated!(struct ModuleMir { calls types });
@@ -237,7 +237,7 @@ impl ModuleMir {
     ) -> FuncMir {
         let mut entities = self.check();
         let ret_value = entities.values.push(ValueMir {
-            ty: entities.types.push(MirTy { ty: ret }),
+            ty: entities.types.push(TyMir { ty: ret }),
         });
         let entry = entities.blocks.push(BlockMir {
             passed: None,
@@ -250,7 +250,7 @@ impl ModuleMir {
             args.into_iter()
                 .map(|ty| {
                     entities.values.push(ValueMir {
-                        ty: entities.types.push(MirTy { ty }),
+                        ty: entities.types.push(TyMir { ty }),
                     })
                 })
                 .collect::<BumpVec<_>>(),
@@ -275,11 +275,11 @@ pub struct DropMir {
 
 #[derive(Serialize, Deserialize, Archive, Clone, Copy, Debug)]
 
-pub struct MirTy {
+pub struct TyMir {
     pub ty: Ty,
 }
 
-derive_relocated!(struct MirTy { ty });
+derive_relocated!(struct TyMir { ty });
 
 #[derive(Serialize, Deserialize, Archive, Clone, Copy)]
 pub struct BlockMir {
@@ -337,7 +337,7 @@ pub enum InstMir {
 
 pub struct CallMir {
     pub callable: CallableMir,
-    pub params: VRefSlice<MirTy>,
+    pub params: VRefSlice<TyMir>,
     pub args: VRefSlice<ValueMir>,
 }
 
@@ -414,7 +414,7 @@ fn test_value_flags() {
 #[derive(Serialize, Deserialize, Archive, Clone, Copy)]
 #[repr(transparent)]
 pub struct ValueMir {
-    ty: VRef<MirTy>,
+    ty: VRef<TyMir>,
 }
 
 impl ValueMir {
@@ -425,18 +425,18 @@ impl ValueMir {
         var mark_var
     }
 
-    pub fn ty(&self) -> VRef<MirTy> {
+    pub fn ty(&self) -> VRef<TyMir> {
         VRef::new(self.ty.as_u32() as usize & ((1 << (Self::DATA_WIDTH - Self::FLAGS_LEN)) - 1))
     }
 
-    pub fn new(ty: VRef<MirTy>) -> Self {
+    pub fn new(ty: VRef<TyMir>) -> Self {
         Self { ty }
     }
 }
 
 pub fn swap_mir_types(
     view: &FuncMirView,
-    dependant_types: &mut PushMap<MirTy>,
+    dependant_types: &mut PushMap<TyMir>,
     params: &[Ty],
     mut creator: TypeCreator,
 ) {

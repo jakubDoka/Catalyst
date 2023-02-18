@@ -1,6 +1,6 @@
 use std::mem;
 
-use crate::{context::*, TirBuilder};
+use crate::{ctx::*, TirBuilder};
 
 use {diags::*, span::*, ast::*, std::iter, storage::*, types::*};
 

@@ -22,7 +22,7 @@ struct TestState {
     package_graph: PackageGraph,
     typec_ctx: TypecCtx,
     typec_transfere: TypecTransfere<'static>,
-    mir_ctx: ReusedMirCtx,
+    mir_ctx: BorrowcCtx,
     arena: Arena,
     functions: String,
     mir: Mir,

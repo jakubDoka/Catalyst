@@ -5,6 +5,6 @@ mod mir;
 
 pub use mir::{
     swap_mir_types, BlockMir, BodyOwner, CallMir, CallableMir, ControlFlowMir, DebugData, DropMir,
-    FuncMir, FuncMirEntities, FuncMirEntitiesView, FuncMirView, InstMir, Mir, MirBase, MirTy,
+    FuncMir, FuncMirEntities, FuncMirEntitiesView, FuncMirView, InstMir, Mir, MirBase, TyMir,
     ModuleMir, ModuleMirCheck, ValueMir,
 };

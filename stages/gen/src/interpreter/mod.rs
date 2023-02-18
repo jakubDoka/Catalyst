@@ -60,7 +60,7 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
         &mut self,
         view: &FuncMirView,
         func: FragRef<Func>,
-        params: VRefSlice<MirTy>,
+        params: VRefSlice<TyMir>,
         args: VRefSlice<ValueMir>,
         return_value: VRef<ValueMir>,
     ) -> Result<(), StepError> {
@@ -202,7 +202,7 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
     fn call_builtin(
         &mut self,
         func: FragRef<Func>,
-        params: VRefSlice<MirTy>,
+        params: VRefSlice<TyMir>,
         args: VRefSlice<ValueMir>,
         view: &FuncMirView,
     ) -> Result<Option<ISlot>, StepError> {
@@ -553,7 +553,7 @@ pub struct StackFrame {
     pub block: VRef<BlockMir>,
     pub values: ShadowMap<ValueMir, Option<ISlot>>,
     pub offsets: ShadowMap<ValueMir, u32>,
-    pub types: PushMap<MirTy>,
+    pub types: PushMap<TyMir>,
     pub instr: u32,
     pub frame_base: u32,
     pub func: FuncMir,

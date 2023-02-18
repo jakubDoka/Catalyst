@@ -13,7 +13,7 @@ use type_creator::TypeCreator;
 
 use crate::builder::moves::MoveCtx;
 
-pub(crate) struct FuncMirCtx<'m, 'i> {
+pub(crate) struct FuncBorrowcCtx<'m, 'i> {
     pub(crate) generics: &'i [FragSlice<Spec>],
     pub(crate) ret: VRef<ValueMir>,
     pub(crate) unit: VRef<ValueMir>,
@@ -22,13 +22,13 @@ pub(crate) struct FuncMirCtx<'m, 'i> {
     pub(crate) module_ref: FragRef<ModuleMir>,
 }
 
-impl<'m, 'i> FuncMirCtx<'m, 'i> {
+impl<'m, 'i> FuncBorrowcCtx<'m, 'i> {
     pub(crate) fn new(
         ret: Ty,
         generics: &'i [FragSlice<Spec>],
         module_ref: FragRef<ModuleMir>,
         module: &'m mut ModuleMir,
-        reused: &mut ReusedMirCtx,
+        reused: &mut BorrowcCtx,
         types: &Types,
     ) -> Self {
         let mut check = module.check();
@@ -51,7 +51,7 @@ impl<'m, 'i> FuncMirCtx<'m, 'i> {
     pub(crate) fn create_value(
         &mut self,
         of: Ty,
-        reused: &mut ReusedMirCtx,
+        reused: &mut BorrowcCtx,
         types: &Types,
     ) -> VRef<ValueMir> {
         if of == Ty::UNIT {
@@ -70,9 +70,9 @@ impl<'m, 'i> FuncMirCtx<'m, 'i> {
     pub(crate) fn create_params(
         &mut self,
         params: &[Ty],
-        reused: &mut ReusedMirCtx,
+        reused: &mut BorrowcCtx,
         types: &Types,
-    ) -> VSlice<VRef<MirTy>> {
+    ) -> VSlice<VRef<TyMir>> {
         let iter = params
             .iter()
             .map(|&of| reused.intern_ty(of, &mut self.module.types, types));
@@ -97,7 +97,7 @@ impl<'m, 'i> FuncMirCtx<'m, 'i> {
     pub(crate) fn create_var_from_value(
         &mut self,
         value: VRef<ValueMir>,
-        reused: &mut ReusedMirCtx,
+        reused: &mut BorrowcCtx,
     ) {
         self.module.values[value].mark_var();
         reused.store_in_var(value);
@@ -107,7 +107,7 @@ impl<'m, 'i> FuncMirCtx<'m, 'i> {
     pub(crate) fn create_var(
         &mut self,
         ty: Ty,
-        reused: &mut ReusedMirCtx,
+        reused: &mut BorrowcCtx,
         types: &Types,
     ) -> VRef<ValueMir> {
         let value = self.create_value(ty, reused, types);
@@ -119,7 +119,7 @@ impl<'m, 'i> FuncMirCtx<'m, 'i> {
         self,
         args: impl IntoIterator<Item = VRef<ValueMir>>,
         entry: VRef<BlockMir>,
-        reused: &mut ReusedMirCtx,
+        reused: &mut BorrowcCtx,
     ) -> FuncMir {
         let res = FuncMir::new(
             args,
@@ -144,7 +144,7 @@ impl<'m, 'i> FuncMirCtx<'m, 'i> {
         current: VRef<BlockMir>,
         _span: Span,
         flow: ControlFlowMir,
-        reused: &mut ReusedMirCtx,
+        reused: &mut BorrowcCtx,
     ) {
         let insts = self
             .module
@@ -162,7 +162,7 @@ impl<'m, 'i> FuncMirCtx<'m, 'i> {
     pub(crate) fn call_inst(
         &mut self,
         callable: CallableMir,
-        params: VSlice<VRef<MirTy>>,
+        params: VSlice<VRef<TyMir>>,
         args: impl IntoIterator<Item = VRef<ValueMir>>,
         dest: VRef<ValueMir>,
     ) -> InstMir {
@@ -214,13 +214,13 @@ impl<'i, 'm> ExternalMirCtx<'m, 'i> {
 }
 
 #[derive(Clone, Copy)]
-pub struct MirBuildMeta {
+pub struct BorrowcMeta {
     pub source: VRef<Source>,
     pub module: VRef<Module>,
     pub no_moves: bool,
 }
 
-impl MirBuildMeta {
+impl BorrowcMeta {
     pub fn source_loc(&self, span: Span) -> SourceLoc {
         SourceLoc {
             origin: self.source,
@@ -230,9 +230,9 @@ impl MirBuildMeta {
 }
 
 #[derive(Default)]
-pub struct ReusedMirCtx {
-    used_types: Map<Ty, VRef<MirTy>>,
-    generic_types: Vec<VRef<MirTy>>,
+pub struct BorrowcCtx {
+    used_types: Map<Ty, VRef<TyMir>>,
+    generic_types: Vec<VRef<TyMir>>,
     vars: Vec<VRef<ValueMir>>,
     to_drop: Vec<VRef<ValueMir>>,
     insts: Vec<(InstMir, Span)>,
@@ -241,10 +241,10 @@ pub struct ReusedMirCtx {
     pub(crate) moves: MoveCtx,
 }
 
-impl ReusedMirCtx {
-    fn intern_ty(&mut self, ty: Ty, mir_types: &mut PushMapCheck<MirTy>, types: &Types) -> VRef<MirTy> {
+impl BorrowcCtx {
+    fn intern_ty(&mut self, ty: Ty, mir_types: &mut PushMapCheck<TyMir>, types: &Types) -> VRef<TyMir> {
         *self.used_types.entry(ty).or_insert_with(|| {
-            let res = mir_types.push(MirTy { ty });
+            let res = mir_types.push(TyMir { ty });
             if types.contains_params(ty) {
                 self.generic_types.push(res)
             }
@@ -314,7 +314,7 @@ impl ReusedMirCtx {
     }
 }
 
-impl Index<VRef<LoopHeaderTir>> for ReusedMirCtx {
+impl Index<VRef<LoopHeaderTir>> for BorrowcCtx {
     type Output = LoopMir;
 
     fn index(&self, index: VRef<LoopHeaderTir>) -> &Self::Output {
@@ -322,7 +322,7 @@ impl Index<VRef<LoopHeaderTir>> for ReusedMirCtx {
     }
 }
 
-impl IndexMut<VRef<LoopHeaderTir>> for ReusedMirCtx {
+impl IndexMut<VRef<LoopHeaderTir>> for BorrowcCtx {
     fn index_mut(&mut self, index: VRef<LoopHeaderTir>) -> &mut Self::Output {
         &mut self.loops[index.index()]
     }

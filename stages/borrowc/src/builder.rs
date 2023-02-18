@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use crate::{
-    ctx::{DropFrame, FuncMirCtx},
+    ctx::{DropFrame, FuncBorrowcCtx},
     *,
 };
 use diags::*;
@@ -44,7 +44,7 @@ impl Dest {
 
 pub struct MirCompilationCtx<'i, 'm> {
     pub module_ent: &'m mut ModuleMir,
-    pub reused: &'m mut ReusedMirCtx,
+    pub reused: &'m mut BorrowcCtx,
     pub mir: &'m mut Mir,
     pub types: &'m mut Types,
     pub interner: &'m mut Interner,
@@ -66,7 +66,7 @@ pub fn compile_functions(
             ..
         } = ctx.types[func];
 
-        let meta = MirBuildMeta {
+        let meta = BorrowcMeta {
             source: ctx.resources.modules[module].source,
             module,
             no_moves: flags.contains(FuncFlags::NO_MOVES),
@@ -101,9 +101,9 @@ pub struct MirBuilder<'i, 'm> {
     block: OptVRef<BlockMir>,
     depth: u32,
     ext: ExternalMirCtx<'m, 'i>,
-    meta: MirBuildMeta,
-    reused: &'m mut ReusedMirCtx,
-    func: FuncMirCtx<'m, 'i>,
+    meta: BorrowcMeta,
+    reused: &'m mut BorrowcCtx,
+    func: FuncBorrowcCtx<'m, 'i>,
 }
 
 impl<'i, 'm> MirBuilder<'i, 'm> {
@@ -111,15 +111,15 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
         ret: Ty,
         generics: &'i [FragSlice<Spec>],
         ext: ExternalMirCtx<'m, 'i>,
-        meta: MirBuildMeta,
+        meta: BorrowcMeta,
         module: &'m mut ModuleMir,
         module_ref: FragRef<ModuleMir>,
-        reused: &'m mut ReusedMirCtx,
+        reused: &'m mut BorrowcCtx,
     ) -> Self {
         Self {
             block: None,
             depth: 0,
-            func: FuncMirCtx::new(ret, generics, module_ref, module, reused, ext.types),
+            func: FuncBorrowcCtx::new(ret, generics, module_ref, module, reused, ext.types),
             ext,
             meta,
             reused,
@@ -220,7 +220,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
         self.reused.disard_drop_frame(frame);
     }
 
-    fn create_params(&mut self, params: &[Ty]) -> VSlice<VRef<MirTy>> {
+    fn create_params(&mut self, params: &[Ty]) -> VSlice<VRef<TyMir>> {
         self.func.create_params(params, self.reused, self.ext.types)
     }
 
