@@ -1,5 +1,5 @@
 use crate::{
-    context::{TypecCtx, TypecExternalCtx, TypecMeta},
+    ctx::{TypecCtx, TypecExternalCtx, TypecMeta},
     ty_parser::TypecParser,
 };
 

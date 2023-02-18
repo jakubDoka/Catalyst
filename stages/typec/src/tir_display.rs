@@ -1,7 +1,7 @@
 use resources::Source;
 use type_creator::TypeDisplay;
 
-use crate::context::TypecExternalCtx;
+use crate::ctx::TypecExternalCtx;
 
 use {
     std::{

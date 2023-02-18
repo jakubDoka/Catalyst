@@ -2,7 +2,7 @@ use std::{iter, mem};
 
 use diags::AddCtlError;
 
-use crate::{context::MissingSpecInherits, ty_parser::TypecParser};
+use crate::{ctx::MissingSpecInherits, ty_parser::TypecParser};
 
 use super::collecting::CollectGroup;
 
