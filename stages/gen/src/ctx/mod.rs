@@ -14,7 +14,7 @@ use {
         settings, CodegenError, Context,
     },
     cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable},
-    mir_t::*,
+    mir::*,
     rkyv::{
         ser::{ScratchSpace, Serializer},
         with::{ArchiveWith, DeserializeWith, SerializeWith},

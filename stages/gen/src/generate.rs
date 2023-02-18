@@ -6,14 +6,14 @@ use cranelift_codegen::ir::{
     condcodes::{FloatCC, IntCC},
     InstBuilder, MemFlags, Type,
 };
-use mir_t::*;
+use mir::*;
 use storage::*;
 
 use types::*;
 use type_creator::type_creator;
 
 use crate::{
-    context::ComputedValue,
+    ctx::ComputedValue,
     //interpreter::{ISlot, IValue},
     *,
 };

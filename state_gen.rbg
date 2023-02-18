@@ -35,7 +35,7 @@ file "stages/borrowc/src/state_gen.rs" {
     use "diags"
     use "types"
     use "resources"
-    use "mir_t"
+    use "mir"
     use "crate"
 
 

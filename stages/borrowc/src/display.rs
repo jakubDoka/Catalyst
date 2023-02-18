@@ -3,7 +3,7 @@ use std::{
     iter,
 };
 
-use mir_t::*;
+use mir::*;
 use resources::Resources;
 use storage::*;
 use types::*;

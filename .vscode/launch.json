@@ -156,16 +156,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in library 'mir-t'",
+            "name": "Debug unit tests in library 'mir'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
                     "--lib",
-                    "--package=mir-t"
+                    "--package=mir"
                 ],
                 "filter": {
-                    "name": "mir-t",
+                    "name": "mir",
                     "kind": "lib"
                 }
             },

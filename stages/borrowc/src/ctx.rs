@@ -5,7 +5,7 @@ use std::{
 
 use diags::*;
 use span::*;
-use mir_t::*;
+use mir::*;
 use resources::*;
 use storage::*;
 use types::*;

@@ -9,7 +9,7 @@ use object::{
 use storage::*;
 use types::*;
 
-use crate::{context::Isa, *};
+use crate::{ctx::Isa, *};
 
 #[derive(Clone, Copy)]
 struct ObjectFunction {

@@ -24,7 +24,7 @@ pub use {
         MiddlewareArgsError, MiddlewareOutput, PackageTask, QuickTimer, Shared,
     },
     borrowc::*,
-    mir_t::*,
+    mir::*,
     packaging::*,
     resources::*,
     parsing::*,

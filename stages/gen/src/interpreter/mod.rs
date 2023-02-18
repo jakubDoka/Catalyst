@@ -5,7 +5,7 @@ use std::{
     ptr::copy_nonoverlapping,
 };
 
-use mir_t::*;
+use mir::*;
 use storage::{FragRef, Interner, PushMap, ShadowMap, SmallVec, VRef, VRefSlice};
 use types::*;
 use type_creator::type_creator;
@@ -87,7 +87,7 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
             func: body,
         };
 
-        mir_t::swap_mir_types(
+        mir::swap_mir_types(
             &next_view,
             &mut frame.types,
             &frame.params,

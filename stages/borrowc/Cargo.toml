@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 diags = { version = "0.1.0", path = "../../types/diags" }
 span = { version = "0.1.0", path = "../../types/span" }
-mir-t = { version = "0.1.0", path = "../../types/mir-t" }
+mir = { version = "0.1.0", path = "../../types/mir" }
 resources = { version = "0.1.0", path = "../../types/resources" }
 storage = { version = "0.1.0", path = "../../utils/storage" }
 types = { version = "0.1.0", path = "../../types/types" }

@@ -2,7 +2,7 @@ use std::{mem, path::Path};
 
 use diags::*;
 use borrowc::*;
-use mir_t::*;
+use mir::*;
 use packaging::*;
 use resources::*;
 use parsing::*;

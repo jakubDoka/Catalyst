@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 diags = { version = "0.1.0", path = "../../types/diags" }
 borrowc = { version = "0.1.0", path = "../../stages/borrowc" }
-mir-t = { version = "0.1.0", path = "../../types/mir-t" }
+mir = { version = "0.1.0", path = "../../types/mir" }
 packaging = { version = "0.1.0", path = "../../stages/packaging" }
 resources = { version = "0.1.0", path = "../../types/resources" }
 parsing = { version = "0.1.0", path = "../../stages/parsing" }

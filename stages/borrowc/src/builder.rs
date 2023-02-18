@@ -6,7 +6,7 @@ use crate::{
 };
 use diags::*;
 use span::*;
-use mir_t::*;
+use mir::*;
 use resources::{Module, Resources};
 use storage::*;
 use types::*;
