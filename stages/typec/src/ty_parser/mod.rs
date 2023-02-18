@@ -2,7 +2,7 @@ use std::mem;
 
 use crate::{ctx::*, TirBuilder};
 
-use {diags::*, span::*, ast::*, std::iter, storage::*, types::*};
+use {ast::*, diags::*, span::*, std::iter, storage::*, types::*};
 
 mod building;
 mod collecting;

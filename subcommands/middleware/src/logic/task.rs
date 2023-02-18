@@ -230,32 +230,16 @@ impl Task {
                 frontier.push(self.load_call(CallableMir::Func(func), params, task_id, isa, seen));
             }
 
-            match ty {
-                Ty::Struct(s) => {
-                    self.types[self.types[s].fields]
-                        .iter()
-                        // we do rev to preserve recursive order of fields
-                        .rev()
-                        .map(|f| f.ty)
-                        .collect_into(&mut **type_frontier);
-                }
-                Ty::Enum(e) => {
-                    self.types[self.types[e].variants]
-                        .iter()
-                        .rev()
-                        .map(|v| v.ty)
-                        .collect_into(&mut **type_frontier);
-                }
-                Ty::Instance(i) => {
-                    let Instance { base, args } = self.types[i];
+            match ty.to_base_and_params(&self.types) {
+                Ok((base, params)) => {
                     let types = match base {
-                        GenericTy::Struct(s) => type_creator!(self).instantiate_fields(s, args),
-                        GenericTy::Enum(e) => type_creator!(self).instantiate_variants(e, args),
+                        BaseTy::Struct(s) => type_creator!(self).instantiate_fields(s, params),
+                        BaseTy::Enum(e) => type_creator!(self).instantiate_variants(e, params),
                     };
                     type_frontier.extend(types);
                 }
-                Ty::Pointer(..) | Ty::Param(..) | Ty::Builtin(..) => (),
-                Ty::Array(..) => todo!(),
+                Err(NonBaseTy::Array(..)) => todo!(),
+                _ => (),
             }
         }
     }

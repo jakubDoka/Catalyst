@@ -2,14 +2,14 @@ use std::{mem, path::Path};
 
 use diags::*;
 use packaging::*;
-use resources::*;
 use parsing::*;
+use resources::*;
 
 use storage::*;
 use testing::*;
-use types::*;
-use typec::*;
 use type_creator::type_creator;
+use typec::*;
+use types::*;
 
 #[derive(Default)]
 struct TestState {

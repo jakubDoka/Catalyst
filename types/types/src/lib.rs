@@ -15,8 +15,6 @@
 #![feature(never_type)]
 #![feature(trivial_bounds)]
 
-use storage::gen_v_ref_constants;
-
 macro_rules! gen_water_drops {
     (
         $target:ident
@@ -62,13 +60,19 @@ macro_rules! gen_water_drops {
     };
 }
 
+mod cache;
 mod func;
 mod scope;
 mod tir;
 mod ty;
-mod cache;
 
 pub use {
+    cache::{
+        lookup_water_drop, sorted_water_drops, ConstFolder, ConstFolderContext, FolderValue,
+        GuaranteedLoc, ImplList, ImplLookup, Implemented, Loc, MacroImpl, Macros, Mapping,
+        MayNeedDrop, ModuleItems, ParamPresence, SpecCmpError, TypeCache, TypecBase,
+        TypecCacheBase, TypecCtxSlice, TypecLookup, Types,
+    },
     func::{Func, FuncFlags, FuncSlices, FuncVisibility, Funcs, Signature},
     graphs::ProjectedCycleDetector,
     scope::{
@@ -82,14 +86,10 @@ pub use {
         VarHeaderTir,
     },
     ty::{
-        Array, ArraySize, Builtin, ComputedTypecItem, Const, Enum, Field, FieldFlags, GenericTy,
-        Generics, Humid, Impl, ImplKey, Instance, Mutability, Pointer, RawMutability, Spec,
-        SpecBase, SpecFunc, SpecInstance, SpecSet, Struct, Ty, TyFlags, Variant,
-    },
-    cache::{
-        lookup_water_drop, sorted_water_drops, ConstFolder, ConstFolderContext, FolderValue,
-        GuaranteedLoc, ImplList, ImplLookup, Implemented, Loc, MacroImpl, Macros, Mapping,
-        MayNeedDrop, ModuleItems, ParamPresence, SpecCmpError, Types, TypecBase, TypeCache,
-        TypecCacheBase, TypecCtxSlice, TypecLookup,
+        data::{Array, ArraySize, Const, Enum, Field, FieldFlags, Instance, Struct, Variant},
+        pointer::{Mutability, Pointer, RawMutability},
+        spec::{Impl, ImplKey, SpecBase, SpecFunc, SpecInstance},
+        BaseTy, Builtin, ComputedTypecItem, Generics, Humid, NonBaseTy, ParamRepr, Spec, SpecSet,
+        Ty, TyFlags,
     },
 };

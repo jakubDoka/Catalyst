@@ -55,7 +55,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                 }.add(self.ext.workspace)?;
             };
 
-            let Ty::Enum(enum_ty) = expected.base(self.ext.types) else {
+            let Ty::Base(BaseTy::Enum(enum_ty)) = expected.base(self.ext.types) else {
                 UnexpectedInferenceType {
                     expected: "enum",
                     found: self.ext.creator().display(expected),
@@ -85,7 +85,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         };
 
         let module = match self.lookup(name.ident, name.span, "module or enum")? {
-            ScopeItem::Ty(Ty::Enum(enum_ty)) => {
+            ScopeItem::Ty(Ty::Base(BaseTy::Enum(enum_ty))) => {
                 return resolve(self, enum_ty, path.segments, name.span);
             }
             ScopeItem::Module(module) => module,
@@ -104,7 +104,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             .interner
             .intern_scoped(module.index(), r#enum.ident);
         let enum_ty = match self.lookup(id, r#enum.span, "enum")? {
-            ScopeItem::Ty(Ty::Enum(enum_ty)) => enum_ty,
+            ScopeItem::Ty(Ty::Base(BaseTy::Enum(enum_ty))) => enum_ty,
             item => self.invalid_symbol_type(item, r#enum.span, "enum")?,
         };
 
@@ -116,7 +116,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         ty: Ty,
         path @ PathAst { slash, start, .. }: PathAst,
     ) -> Option<DotPathResult> {
-        let (Ty::Struct(struct_ty), params) = ty.base_with_params(self.ext.types) else {
+        let (Ty::Base(BaseTy::Struct(struct_ty)), params) = ty.base_with_params(self.ext.types) else {
             FieldAccessOnNonStruct {
                 found: self.ext.creator().display(ty),
                 loc: self.meta.loc(path.span()),
@@ -430,10 +430,10 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             };
 
             match inferred.base(self.ext.types) {
-                Ty::Enum(..) => {
+                Ty::Base(BaseTy::Enum(..)) => {
                     return self.enum_ctor(EnumCtorAst { path, value: None }, inference)
                 }
-                Ty::Struct(..)
+                Ty::Base(..)
                 | Ty::Array(..)
                 | Ty::Instance(..)
                 | Ty::Pointer(..)
@@ -473,10 +473,10 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
 
         Some(match item {
             ScopeItem::Ty(ty) => match ty {
-                Ty::Enum(..) => {
+                Ty::Base(BaseTy::Enum(..)) => {
                     return self.enum_ctor(EnumCtorAst { path, value: None }, inference);
                 }
-                Ty::Struct(..)
+                Ty::Base(..)
                 | Ty::Instance(..)
                 | Ty::Pointer(..)
                 | Ty::Param(..)
@@ -527,7 +527,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             .creator()
             .find_struct_field(struct_ty, params, name.ident)
             .or_else(|| {
-                let ty = self.ext.creator().display(Ty::Struct(struct_ty));
+                let ty = self.ext.creator().display(BaseTy::Struct(struct_ty));
                 self.ext.workspace.push(ComponentNotFound {
                     loc: self.meta.loc(name.span),
                     ty,

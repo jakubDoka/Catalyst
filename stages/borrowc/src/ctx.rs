@@ -4,12 +4,12 @@ use std::{
 };
 
 use diags::*;
-use span::*;
 use mir::*;
 use resources::*;
+use span::*;
 use storage::*;
-use types::*;
 use type_creator::TypeCreator;
+use types::*;
 
 use crate::builder::moves::MoveCtx;
 
@@ -94,11 +94,7 @@ impl<'m, 'i> FuncBorrowcCtx<'m, 'i> {
         self.create_block_with_pass(None)
     }
 
-    pub(crate) fn create_var_from_value(
-        &mut self,
-        value: VRef<ValueMir>,
-        reused: &mut BorrowcCtx,
-    ) {
+    pub(crate) fn create_var_from_value(&mut self, value: VRef<ValueMir>, reused: &mut BorrowcCtx) {
         self.module.values[value].mark_var();
         reused.store_in_var(value);
         reused.vars.push(value);
@@ -242,7 +238,12 @@ pub struct BorrowcCtx {
 }
 
 impl BorrowcCtx {
-    fn intern_ty(&mut self, ty: Ty, mir_types: &mut PushMapCheck<TyMir>, types: &Types) -> VRef<TyMir> {
+    fn intern_ty(
+        &mut self,
+        ty: Ty,
+        mir_types: &mut PushMapCheck<TyMir>,
+        types: &Types,
+    ) -> VRef<TyMir> {
         *self.used_types.entry(ty).or_insert_with(|| {
             let res = mir_types.push(TyMir { ty });
             if types.contains_params(ty) {

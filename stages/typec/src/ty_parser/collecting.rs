@@ -3,9 +3,9 @@ use crate::ctx::TypecTransfere;
 use super::TypecParser;
 
 use {
+    ast::*,
     diags::*,
     span::*,
-    ast::*,
     std::{default::default, iter},
     storage::*,
     types::*,

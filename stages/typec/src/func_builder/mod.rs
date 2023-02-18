@@ -7,9 +7,9 @@ use self::lookup::CannotInferExpression;
 
 use {
     crate::ty_parser::TyPathResult,
+    ast::*,
     diags::*,
     span::*,
-    ast::*,
     std::{cmp::Ordering, default::default, iter},
     storage::*,
     types::*,
@@ -238,7 +238,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                 })
             }
             PatAst::StructCtor(StructCtorPatAst { fields, .. }) => {
-                let (Ty::Struct(struct_ty), params) = ty.caller_with_params(self.ext.types) else {
+                let (Ty::Base(BaseTy::Struct(struct_ty)), params) = ty.caller_with_params(self.ext.types) else {
                     UnexpectedPatternType {
                         loc: self.meta.loc(fields.span()),
                         ty: self.ext.creator().display(ty),
@@ -324,7 +324,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             }),
             PatAst::EnumCtor(ctor) => {
                 let ty_base = ty.ptr_base(self.ext.types);
-                let Ty::Enum(enum_ty) = ty_base.base(self.ext.types) else {
+                let Ty::Base(BaseTy::Enum(enum_ty)) = ty_base.base(self.ext.types) else {
                     UnexpectedPatternType {
                         loc: self.meta.loc(ctor.span()),
                         ty: self.ext.creator().display(ty),
@@ -340,7 +340,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                     .or_else(|| {
                         ComponentNotFound {
                             loc: self.meta.loc(ctor.span()),
-                            ty: self.ext.creator().display(Ty::Enum(enum_ty)),
+                            ty: self.ext.creator().display(BaseTy::Enum(enum_ty)),
                             suggestions: self.ext.types[self.ext.types[enum_ty].variants]
                                 .iter()
                                 .map(|v| v.name.get(self.ext.interner))

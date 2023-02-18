@@ -10,11 +10,12 @@
 mod logic;
 
 pub use {
+    ast::*,
+    borrowc::*,
     cli,
     diags::*,
     gen::*,
     lexing::*,
-    span::*,
     logic::{
         task::{Task, TaskGraph},
         worker::{
@@ -23,13 +24,12 @@ pub use {
         CommandInfo, DiagnosticView, GenTask, Incremental, Middleware, MiddlewareArgs,
         MiddlewareArgsError, MiddlewareOutput, PackageTask, QuickTimer, Shared,
     },
-    borrowc::*,
     mir::*,
     packaging::*,
-    resources::*,
     parsing::*,
-    ast::*,
+    resources::*,
     snippet_display::*,
+    span::*,
     storage::*,
     types::*,
     types::*,

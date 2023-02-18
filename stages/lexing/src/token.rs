@@ -1,5 +1,5 @@
-use span::*;
 use logos::Logos;
+use span::*;
 use std::fmt;
 
 use crate::Lexer;

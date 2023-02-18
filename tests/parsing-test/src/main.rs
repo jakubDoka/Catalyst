@@ -3,9 +3,9 @@
 use std::default::default;
 
 use diags::*;
-use span::*;
 use packaging::*;
 use resources::*;
+use span::*;
 use storage::*;
 use testing::*;
 

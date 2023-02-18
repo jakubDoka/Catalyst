@@ -25,12 +25,11 @@ impl GenLayouts {
 
         let cr = type_creator!(creator);
         let res = match ty {
-            Ty::Struct(s) => self.struct_layout(s, params, cr),
+            Ty::Base(base) => self.base_layout(base, params, cr),
             Ty::Pointer(..) => Layout::from_type(self.ptr_ty),
             Ty::Builtin(bt) => self.builtin_layout(bt),
             Ty::Param(index) => self.ty_layout(params[index as usize], &[], cr),
             Ty::Instance(inst) => self.instance_layout(inst, params, cr),
-            Ty::Enum(ty) => self.enum_layout(ty, params, cr),
             Ty::Array(a) => self.array_layout(a, params, cr),
         };
 
@@ -101,9 +100,13 @@ impl GenLayouts {
         let Instance { base, args } = creator.types[inst];
         // remap the instance parameters so we can compute the layout correctly
         let params = creator.instantiate_slice(args, params);
+        self.base_layout(base, &params, creator)
+    }
+
+    fn base_layout(&mut self, base: BaseTy, params: &[Ty], creator: TypeCreator) -> Layout {
         match base {
-            GenericTy::Struct(s) => self.struct_layout(s, &params, creator),
-            GenericTy::Enum(e) => self.enum_layout(e, &params, creator),
+            BaseTy::Struct(s) => self.struct_layout(s, params, creator),
+            BaseTy::Enum(e) => self.enum_layout(e, params, creator),
         }
     }
 

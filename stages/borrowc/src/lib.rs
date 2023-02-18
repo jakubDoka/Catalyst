@@ -20,7 +20,7 @@ mod state_gen;
 
 pub use {
     builder::{compile_functions, MirBuilder, MirCompilationCtx},
-    ctx::{ExternalMirCtx, BorrowcMeta, BorrowcCtx},
+    ctx::{BorrowcCtx, BorrowcMeta, ExternalMirCtx},
     display::{display_function, MirDisplayCtx},
 };
 

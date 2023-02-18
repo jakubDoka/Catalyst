@@ -7,8 +7,8 @@ use std::{
 
 use mir::*;
 use storage::{FragRef, Interner, PushMap, ShadowMap, SmallVec, VRef, VRefSlice};
-use types::*;
 use type_creator::type_creator;
+use types::*;
 
 use crate::{Gen, GenLayouts, Layout};
 

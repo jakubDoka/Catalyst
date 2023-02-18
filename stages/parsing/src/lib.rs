@@ -107,7 +107,7 @@ macro_rules! branch {
 mod parser;
 
 pub use {
+    ast::*,
     parser::items::ItemsAstResult,
     parser::{Parser, ParserCtx},
-    ast::*,
 };

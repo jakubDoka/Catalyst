@@ -289,9 +289,10 @@ fn display_pat_low(
         *frontier = others;
         first
     };
+
     use Builtin::*;
     match ty {
-        Ty::Struct(s) => {
+        Ty::Base(BaseTy::Struct(s)) => {
             let Struct { fields, .. } = ext.types[s];
             res.push_str("\\{ ");
             if let Some((&first, rest)) = ext.types[fields].split_first() {
@@ -337,7 +338,7 @@ fn display_pat_low(
             }
             F32 | F64 => unreachable!(),
         },
-        Ty::Enum(r#enum) => {
+        Ty::Base(BaseTy::Enum(r#enum)) => {
             let Enum { variants, .. } = ext.types[r#enum];
             let variant = if ext.types.enum_flag_ty(r#enum) != Uint {
                 let flag = advance();

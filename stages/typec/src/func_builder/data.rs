@@ -38,7 +38,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             (ty, Some((default(), self.ext.types[params].to_bumpvec())))
         };
 
-        let Ty::Struct(struct_ty) = ty else {
+        let Ty::Base(BaseTy::Struct(struct_ty)) = ty else {
             UnexpectedType {
                 expected: "struct",
                 found: self.ext.creator().display(ty),
@@ -127,12 +127,12 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         }
 
         let final_ty = if params.is_empty() {
-            Ty::Struct(struct_ty)
+            struct_ty.into()
         } else {
             Ty::Instance(
                 self.ext
                     .creator()
-                    .instance(GenericTy::Struct(struct_ty), params),
+                    .instance(BaseTy::Struct(struct_ty), params),
             )
         };
 

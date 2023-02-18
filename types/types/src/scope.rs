@@ -1,9 +1,9 @@
 use std::collections::hash_map;
 
 use diags::SourceLoc;
-use span::*;
 use resources::{Resources, Source};
 use rkyv::{Archive, Deserialize, Serialize};
+use span::*;
 use storage::*;
 
 use crate::*;

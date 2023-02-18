@@ -6,8 +6,8 @@ use std::{
 use mir::*;
 use resources::Resources;
 use storage::*;
-use types::*;
 use type_creator::TypeDisplay;
+use types::*;
 
 pub fn display_function(
     funcs: impl IntoIterator<Item = FragRef<Func>>,

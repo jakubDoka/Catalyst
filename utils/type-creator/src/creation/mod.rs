@@ -17,38 +17,27 @@ impl<'ctx> TypeCreator<'ctx> {
             Ty::Param(..) => return (true, true),
             Ty::Pointer(..) | Ty::Builtin(..) => return (false, false),
             ty if let Some(is) = self.types.may_need_drop.get(&ty) => return (*is, false),
-            Ty::Struct(..) |
-            Ty::Enum(..) |
+            Ty::Base(..) |
             Ty::Array(..) |
             Ty::Instance(..) => (),
         };
         // its split since map entry handle must be dropped.
-        let (is, param) = match ty {
-            Ty::Struct(s) => self.types[s]
-                .fields
-                .keys()
-                .map(|f| {
-                    let ty = self.types[f].ty;
-                    self.may_need_drop_low(ty, params)
-                })
-                .reduce(|(a, b), (c, d)| (a | c, b | d))
-                .unwrap_or((false, false)),
-            Ty::Enum(e) => self.types[e]
-                .variants
-                .keys()
-                .map(|f| {
-                    let ty = self.types[f].ty;
-                    self.may_need_drop_low(ty, params)
-                })
-                .reduce(|(a, b), (c, d)| (a | c, b | d))
-                .unwrap_or((false, false)),
-            Ty::Instance(i) => {
-                let Instance { base, args } = self.types[i];
-                let params = self.instantiate_slice(args, params);
-                self.may_need_drop_low(base.as_ty(), &params)
+        let (is, param) = match ty.to_base_and_params(self.types) {
+            Ok((base, params)) => {
+                let params = self.instantiate_slice(params, params);
+                let params = &params[..];
+                let types = match base {
+                    BaseTy::Struct(s) => self.instantiate_fields(s, params),
+                    BaseTy::Enum(e) => self.instantiate_variants(e, params),
+                };
+                types
+                    .into_iter()
+                    .map(|ty| self.may_need_drop_low(ty, params))
+                    .reduce(|(a, b), (c, d)| (a | c, b | d))
+                    .unwrap_or((false, false))
             }
-            Ty::Array(a) => self.may_need_drop_low(self.types[a].item, params),
-            Ty::Param(..) | Ty::Pointer(..) | Ty::Builtin(..) => unreachable!(),
+            Err(NonBaseTy::Array(a)) => self.may_need_drop_low(self.types[a].item, params),
+            _ => unreachable!(),
         };
         if !param {
             self.types.may_need_drop.insert(ty, is);
@@ -116,7 +105,7 @@ impl<'ctx> TypeCreator<'ctx> {
                 .put_behind_pointer(),
             Ty::Array(array) => self.contains_params_low(self.types[array].item),
             Ty::Param(..) => Present,
-            Ty::Struct(..) | Ty::Builtin(..) | Ty::Enum(..) => Absent,
+            Ty::Base(..) | Ty::Builtin(..) => Absent,
         }
     }
 
@@ -254,7 +243,7 @@ impl<'ctx> TypeCreator<'ctx> {
         Pointer::new(ty, mutability, depth)
     }
 
-    pub fn instance(&mut self, base: GenericTy, args: &[Ty]) -> FragRef<Instance> {
+    pub fn instance(&mut self, base: BaseTy, args: &[Ty]) -> FragRef<Instance> {
         let id = self
             .interner
             .intern_with(|s, t| display_instance(self.types, s, base, args, t));
@@ -507,7 +496,7 @@ impl<'ctx> TypeCreator<'ctx> {
 
     pub fn instantiate(&mut self, ty: Ty, params: impl TypecCtxSlice<Ty>) -> Ty {
         match ty {
-            Ty::Struct(..) | Ty::Builtin(..) | Ty::Enum(..) => ty,
+            Ty::Base(..) | Ty::Builtin(..) => ty,
             ty if params.is_empty() => ty,
             Ty::Instance(instance) => {
                 let Instance { base, args } = self.types[instance];
@@ -534,7 +523,7 @@ impl<'ctx> TypeCreator<'ctx> {
 
     pub fn try_instantiate(&mut self, ty: Ty, params: &[Option<Ty>]) -> Option<Ty> {
         Some(match ty {
-            Ty::Struct(..) | Ty::Builtin(..) | Ty::Enum(..) => ty,
+            Ty::Base(..) | Ty::Builtin(..) => ty,
             ty if params.is_empty() => ty,
             Ty::Instance(instance) => {
                 let Instance { base, args } = self.types[instance];
@@ -603,15 +592,15 @@ impl<'ctx> TypeCreator<'ctx> {
 
     pub fn component_ty(&mut self, ty: Ty, index: usize) -> Option<Ty> {
         let Self { types, .. } = self;
+        let getter = |ty| match ty {
+            BaseTy::Struct(s) => types[types[s].fields][index].ty,
+            BaseTy::Enum(e) => types[types[e].variants][index].ty,
+        };
         Some(match ty {
-            Ty::Struct(s) => types[types[s].fields][index].ty,
-            Ty::Enum(e) => types[types[e].variants][index].ty,
+            Ty::Base(base) => getter(base),
             Ty::Instance(i) => {
                 let Instance { base, args } = types[i];
-                let ty = match base {
-                    GenericTy::Struct(s) => types[types[s].fields][index].ty,
-                    GenericTy::Enum(e) => types[types[e].variants][index].ty,
-                };
+                let ty = getter(base);
                 self.instantiate(ty, args)
             }
             _ => return None,
@@ -620,17 +609,15 @@ impl<'ctx> TypeCreator<'ctx> {
 
     pub fn find_component(&mut self, ty: Ty, name: Ident) -> Option<(usize, Ty)> {
         let Self { types, .. } = self;
+        let finder = |ty| match ty {
+            BaseTy::Struct(s) => Struct::find_field(s, name, types),
+            BaseTy::Enum(e) => Enum::find_variant(e, name, types),
+        };
         match ty {
-            Ty::Struct(s) => Struct::find_field(s, name, types).map(|(i, f)| (i, f.ty)),
-            Ty::Enum(e) => Enum::find_variant(e, name, types),
+            Ty::Base(base) => finder(base),
             Ty::Instance(i) => {
                 let Instance { base, args } = types[i];
-                let (index, ty) = match base {
-                    GenericTy::Struct(s) => {
-                        Struct::find_field(s, name, types).map(|(i, f)| (i, f.ty))
-                    }
-                    GenericTy::Enum(e) => Enum::find_variant(e, name, types),
-                }?;
+                let (index, ty) = finder(base)?;
                 Some((index, self.instantiate(ty, args)))
             }
             _ => None,
@@ -656,7 +643,7 @@ impl<'ctx> TypeCreator<'ctx> {
                 params,
                 &mut None,
             ),
-            Ty::Struct(..) | Ty::Enum(..) | Ty::Instance(..) => Some(
+            Ty::Base(..) | Ty::Instance(..) => Some(
                 self.find_implementation(ty, Spec::Base(SpecBase::DROP), params, &mut None)
                     .flatten(),
             ),
@@ -674,7 +661,7 @@ impl<'ctx> TypeCreator<'ctx> {
                     &mut None,
                 )
                 .is_some(),
-            Ty::Struct(_) | Ty::Enum(_) | Ty::Instance(_) | Ty::Param(_) => self
+            Ty::Base(..) | Ty::Instance(..) | Ty::Param(..) => self
                 .find_implementation(ty, Spec::Base(SpecBase::COPY), params, &mut None)
                 .is_some(),
         }

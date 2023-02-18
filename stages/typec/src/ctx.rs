@@ -3,13 +3,13 @@ use std::{
     ops::{Index, IndexMut},
 };
 
+use ast::*;
 use diags::*;
 use lexing::*;
 use resources::*;
-use ast::*;
 use storage::*;
-use types::*;
 use type_creator::TypeCreator;
+use types::*;
 
 pub struct TypecExternalCtx<'arena, 'ctx> {
     pub types: &'ctx mut Types,
@@ -311,7 +311,7 @@ ctl_errors! {
 
 #[derive(Default)]
 pub struct TypecCtx {
-    ty_graph: ProjectedCycleDetector<NewTy>,
+    ty_graph: ProjectedCycleDetector<BaseTy>,
     scope: Scope,
     vars: Vec<VarHeaderTir>,
     generics: Vec<FragSlice<Spec>>,
@@ -345,7 +345,7 @@ impl TypecCtx {
 
     fn insert_param(&mut self, index: usize, name: NameAst) {
         self.scope
-            .push(name.ident, Ty::Param(index as u8), name.span);
+            .push(name.ident, Ty::Param(index as ParamRepr), name.span);
     }
 
     pub fn generics(&self) -> &[FragSlice<Spec>] {
@@ -438,15 +438,15 @@ impl TypecCtx {
 
         for ty in nodes.clone() {
             let (fields, variants) = match ty {
-                NewTy::Struct(s) => (&types[types[s].fields], &[][..]),
-                NewTy::Enum(e) => (&[][..], &types[types[e].variants]),
+                BaseTy::Struct(s) => (&types[types[s].fields], &[][..]),
+                BaseTy::Enum(e) => (&[][..], &types[types[e].variants]),
             };
 
             let iter = fields
                 .iter()
                 .map(|field| field.ty)
                 .chain(variants.iter().map(|variant| variant.ty))
-                .filter_map(|ty| NewTy::new(ty, types));
+                .filter_map(|ty| BaseTy::from_ty(ty, types));
 
             self.ty_graph.new_node(ty).add_edges(iter);
         }
@@ -540,7 +540,7 @@ impl TypecCtx {
         let functions = types[spec_base].methods;
 
         for (key, &func) in functions.keys().zip(&types[functions]) {
-            let id = interner.intern_scoped(Ty::Param(index as u8), func.name);
+            let id = interner.intern_scoped(Ty::Param(index as ParamRepr), func.name);
             self.scope.push(id, key, func.span);
         }
     }
@@ -825,7 +825,7 @@ impl<'a> TypecTransfere<'a> {
         self.impl_frames.push((ast, r#impl, self.impl_funcs.len()));
     }
 
-    pub fn new_types(&self) -> impl Iterator<Item = NewTy> + Clone + '_ {
+    pub fn new_types(&self) -> impl Iterator<Item = BaseTy> + Clone + '_ {
         self.structs
             .iter()
             .map(|&(_, ty)| ty.into())
@@ -834,35 +834,6 @@ impl<'a> TypecTransfere<'a> {
 
     pub fn checked_funcs(&self) -> &[(FragRef<Func>, TirFunc<'a>)] {
         &self.checked_funcs
-    }
-}
-
-wrapper_enum! {
-    #[derive(Hash, PartialEq, Eq, Clone, Copy)]
-    enum NewTy: {
-        Struct: FragRef<Struct>,
-        Enum: FragRef<Enum>,
-    }
-}
-
-impl NewTy {
-    pub fn new(ty: Ty, types: &Types) -> Option<Self> {
-        match ty {
-            Ty::Struct(s) => Some(Self::Struct(s)),
-            Ty::Enum(e) => Some(Self::Enum(e)),
-            Ty::Instance(i) => match types[i].base {
-                GenericTy::Struct(s) => Some(Self::Struct(s)),
-                GenericTy::Enum(e) => Some(Self::Enum(e)),
-            },
-            _ => None,
-        }
-    }
-
-    pub fn as_ty(self) -> Ty {
-        match self {
-            Self::Struct(s) => Ty::Struct(s),
-            Self::Enum(e) => Ty::Enum(e),
-        }
     }
 }
 

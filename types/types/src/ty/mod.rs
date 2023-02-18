@@ -9,279 +9,11 @@ use span::*;
 use rkyv::{Archive, Deserialize, Serialize};
 use storage::*;
 
-#[derive(Archive, Serialize, Deserialize)]
-pub struct Const {
-    pub name: Ident,
-    pub ty: Ty,
-    pub value: FolderValue,
-    pub loc: Loc,
-}
-
-derive_relocated!(struct Const { ty });
-
-#[derive(Clone, Copy, Serialize, Deserialize, Archive)]
-
-pub struct Impl {
-    pub generics: Generics,
-    pub key: ImplKey,
-    pub methods: FragRefSlice<Func>,
-    pub loc: GuaranteedLoc,
-}
-
-derive_relocated!(struct Impl { generics key methods });
-
-impl Impl {
-    gen_v_ref_constants!(ANY);
-}
+pub mod data;
+pub mod pointer;
+pub mod spec;
 
 pub type Generics = FragSlice<FragSlice<Spec>>;
-
-#[derive(
-    Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord, Serialize, Deserialize, Archive,
-)]
-#[archive_attr(derive(PartialEq, Eq, Hash))]
-pub struct ImplKey {
-    pub ty: Ty,
-    pub spec: Spec,
-}
-
-derive_relocated!(struct ImplKey { ty spec });
-
-#[derive(Clone, Copy, Serialize, Deserialize, Archive)]
-
-pub struct Instance {
-    pub base: GenericTy,
-    pub args: FragSlice<Ty>,
-}
-
-derive_relocated!(struct Instance { base args });
-
-#[derive(Clone, Copy, Default, Serialize, Deserialize, Archive)]
-
-pub struct Struct {
-    pub name: Ident,
-    pub generics: Generics,
-    pub fields: FragSlice<Field>,
-    pub loc: Loc,
-}
-
-derive_relocated!(struct Struct { generics fields });
-
-impl Struct {
-    pub fn find_field(s: FragRef<Self>, name: Ident, types: &Types) -> Option<(usize, Field)> {
-        types[types[s].fields]
-            .iter()
-            .enumerate()
-            .find_map(|(i, &v)| (v.name == name).then_some((i, v)))
-    }
-}
-
-gen_water_drops! {
-    Struct
-    structs
-    LEXER => "Lexer",
-}
-
-#[derive(Clone, Copy, Default, Serialize, Deserialize, Archive)]
-
-pub struct Enum {
-    pub name: Ident,
-    pub generics: Generics,
-    pub variants: FragSlice<Variant>,
-    pub loc: Loc,
-}
-
-derive_relocated!(struct Enum { generics variants });
-
-impl Enum {
-    pub fn find_variant(e: FragRef<Self>, name: Ident, types: &Types) -> Option<(usize, Ty)> {
-        types[types[e].variants]
-            .iter()
-            .enumerate()
-            .find_map(|(i, v)| (v.name == name).then_some((i, v.ty)))
-    }
-}
-
-gen_water_drops! {
-    Enum
-    enums
-    OPTION => "Option",
-    TOKEN_KIND => "TokenKind",
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize, Archive)]
-
-pub struct Variant {
-    pub name: Ident,
-    pub ty: Ty,
-    pub span: Option<Span>,
-}
-
-derive_relocated!(struct Variant { ty });
-
-#[derive(
-    Clone, Serialize, Deserialize, Archive, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug,
-)]
-#[archive_attr(derive(PartialEq, Eq, Hash))]
-pub struct Pointer {
-    index: u32,
-    thread: u8,
-    pub mutability: RawMutability,
-    pub depth: u8,
-}
-
-impl Pointer {
-    pub fn new(ty: FragRef<Ty>, mutability: RawMutability, depth: u8) -> Self {
-        let FragAddr { index, thread, .. } = ty.addr();
-        Self {
-            index,
-            thread,
-            mutability,
-            depth,
-        }
-    }
-
-    pub fn ty(self) -> FragRef<Ty> {
-        FragRef::new(FragAddr::new(self.index, self.thread))
-    }
-
-    pub fn compatible(self, other: Self) -> bool {
-        self.index == other.index
-            && self.thread == other.thread
-            && self.mutability.compatible(other.mutability)
-    }
-}
-
-impl Relocated for Pointer {
-    fn mark(&self, marker: &mut FragRelocMarker) {
-        marker.mark(self.ty());
-    }
-
-    fn remap(&mut self, ctx: &FragMarks) -> Option<()> {
-        let FragSliceAddr { index, thread, .. } = ctx.project(self.ty().as_slice())?.addr();
-        self.index = index;
-        self.thread = thread;
-        Some(())
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Mutability {
-    Mutable,
-    Immutable,
-    Param(u8),
-}
-
-impl Mutability {
-    pub fn as_ty(self) -> Ty {
-        match self {
-            Mutability::Mutable => Ty::MUTABLE,
-            Mutability::Immutable => Ty::IMMUTABLE,
-            Mutability::Param(i) => Ty::Param(i),
-        }
-    }
-}
-
-impl fmt::Display for Mutability {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Mutability::Mutable => write!(f, "mut "),
-            Mutability::Immutable => write!(f, ""),
-            Mutability::Param(i) => write!(f, "param{i} "),
-        }
-    }
-}
-
-#[derive(
-    Clone, Deserialize, Archive, Serialize, Copy, Debug, PartialEq, Eq, Ord, PartialOrd, Hash,
-)]
-#[archive_attr(derive(PartialEq, Eq, Hash))]
-pub struct RawMutability(u8);
-
-impl RawMutability {
-    pub const MUTABLE: Self = Self(0);
-    pub const IMMUTABLE: Self = Self(1);
-    pub const PARAM_OFFSET: u8 = 2;
-    pub fn new(mutability: Mutability) -> Option<Self> {
-        Some(match mutability {
-            Mutability::Mutable => Self::MUTABLE,
-            Mutability::Immutable => Self::IMMUTABLE,
-            Mutability::Param(i) => Self(i.checked_add(Self::PARAM_OFFSET)?),
-        })
-    }
-
-    pub fn compatible(self, other: Self) -> bool {
-        self == other || other == Self::IMMUTABLE
-    }
-
-    pub fn from_ty(ty: Ty) -> Self {
-        match ty {
-            Ty::Builtin(Builtin::Mutable) => Self::MUTABLE,
-            Ty::Param(i) => Self(i + Self::PARAM_OFFSET),
-            _ => Self::IMMUTABLE,
-        }
-    }
-
-    pub fn to_mutability(self) -> Mutability {
-        match self {
-            Self::IMMUTABLE => Mutability::Immutable,
-            Self::MUTABLE => Mutability::Mutable,
-            Self(i) => Mutability::Param(i - Self::PARAM_OFFSET),
-        }
-    }
-
-    pub fn instantiate(self, params: &[Ty]) -> RawMutability {
-        match self {
-            Self::IMMUTABLE => Self::IMMUTABLE,
-            Self::MUTABLE => Self::MUTABLE,
-            Self(i) => Self::from_ty(params[(i - Self::PARAM_OFFSET) as usize]),
-        }
-    }
-
-    pub fn try_instantiate(self, params: &[Option<Ty>]) -> Option<RawMutability> {
-        Some(match self {
-            Self::IMMUTABLE => Self::IMMUTABLE,
-            Self::MUTABLE => Self::MUTABLE,
-            Self(i) => Self::from_ty(params[(i - Self::PARAM_OFFSET) as usize]?),
-        })
-    }
-}
-
-#[derive(Clone, Copy, Default, Deserialize, Archive, Serialize)]
-
-pub struct SpecBase {
-    pub name: Ident,
-    pub generics: Generics,
-    pub inherits: FragSlice<Spec>,
-    pub methods: FragSlice<SpecFunc>,
-    pub loc: Loc,
-}
-
-derive_relocated!(struct SpecBase { generics inherits methods });
-
-impl SpecBase {
-    pub fn is_macro(_s: FragRef<Self>) -> bool {
-        false
-    }
-}
-
-gen_water_drops! {
-    SpecBase
-    base_specs
-    DROP => "Drop",
-    COPY => "Copy",
-}
-
-#[derive(Clone, Copy, Deserialize, Archive, Serialize)]
-
-pub struct SpecInstance {
-    pub base: FragRef<SpecBase>,
-    pub args: FragSlice<Ty>,
-}
-
-derive_relocated! {
-    struct SpecInstance { base args }
-}
 
 wrapper_enum! {
     #[derive(
@@ -302,45 +34,53 @@ impl Spec {
         }
     }
 }
-
 wrapper_enum! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Archive, Serialize)]
-    enum GenericTy: relocated {
+    #[derive(
+        Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Archive,
+    )]
+    #[archive_attr(derive(PartialEq, Eq, Hash))]
+    enum BaseTy: relocated {
         Struct: FragRef<Struct>,
         Enum: FragRef<Enum>,
     }
 }
 
-impl GenericTy {
-    pub fn as_ty(self) -> Ty {
+impl fmt::Display for BaseTy {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            GenericTy::Struct(s) => Ty::Struct(s),
-            GenericTy::Enum(e) => Ty::Enum(e),
+            BaseTy::Struct(s) => write!(f, "struct{:x}", s.bits()),
+            BaseTy::Enum(e) => write!(f, "enum{:x}", e.bits()),
         }
+    }
+}
+
+impl BaseTy {
+    pub fn as_ty(self) -> Ty {
+        self.into()
     }
 
     pub fn is_generic(self, types: &Types) -> bool {
         !match self {
-            GenericTy::Struct(s) => types[s].generics.is_empty(),
-            GenericTy::Enum(e) => types[e].generics.is_empty(),
+            BaseTy::Struct(s) => types[s].generics.is_empty(),
+            BaseTy::Enum(e) => types[e].generics.is_empty(),
+        }
+    }
+
+    pub fn span(self, types: &Types) -> Option<Span> {
+        match self {
+            Self::Struct(s) => Some(types[s].loc.source_loc(types)?.span),
+            Self::Enum(e) => Some(types[e].loc.source_loc(types)?.span),
+        }
+    }
+
+    pub fn from_ty(ty: Ty, types: &Types) -> Option<Self> {
+        match ty {
+            Ty::Base(b) => Some(b),
+            Ty::Instance(i) => Some(types[i].base.into()),
+            Ty::Pointer(..) | Ty::Array(..) | Ty::Param(..) | Ty::Builtin(..) => None,
         }
     }
 }
-
-pub type ArraySize = u32;
-
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Archive, Serialize,
-)]
-#[archive_attr(derive(PartialEq, Eq, Hash))]
-pub struct Array {
-    pub item: Ty,
-    pub len: ArraySize,
-}
-
-derive_relocated!(
-    struct Array {}
-);
 
 wrapper_enum! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Archive)]
@@ -353,26 +93,45 @@ wrapper_enum! {
     }
 }
 
+pub type ParamRepr = u16;
+
+pub enum NonBaseTy {
+    Pointer(Pointer),
+    Array(FragRef<Array>),
+    Param(ParamRepr),
+    Builtin(Builtin),
+}
+
 wrapper_enum! {
     #[derive(
         Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Archive,
     )]
     #[archive_attr(derive(PartialEq, Eq, Hash))]
     enum Ty: {
-        Struct: FragRef<Struct>,
-        Enum: FragRef<Enum>,
+        Base: BaseTy,
         Instance: FragRef<Instance>,
         Pointer: Pointer,
         Array: FragRef<Array>,
-        Param: u8,
+        Param: ParamRepr,
         Builtin: Builtin,
+    }
+}
+
+impl From<FragRef<Struct>> for Ty {
+    fn from(ty: FragRef<Struct>) -> Self {
+        Self::Base(ty.into())
+    }
+}
+
+impl From<FragRef<Enum>> for Ty {
+    fn from(ty: FragRef<Enum>) -> Self {
+        Self::Base(ty.into())
     }
 }
 
 derive_relocated! {
     enum Ty {
-        Struct(s) => s,
-        Enum(e) => e,
+        Base(b) => b,
         Instance(i) => i,
         Pointer(p) => p,
         Array(a) => a,
@@ -384,8 +143,7 @@ derive_relocated! {
 impl Display for Ty {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Ty::Struct(s) => write!(f, "struct{:x}", s.bits()),
-            Ty::Enum(e) => write!(f, "enum{:x}", e.bits()),
+            Ty::Base(b) => write!(f, "{b}"),
             Ty::Instance(i) => write!(f, "inst{:x}", i.bits()),
             Ty::Pointer(p) => {
                 write!(f, "{} ptr{:x}", p.mutability.to_mutability(), p.ty().bits())
@@ -399,7 +157,7 @@ impl Display for Ty {
 
 impl Ty {
     pub fn is_aggregate(self) -> bool {
-        matches!(self, Self::Struct(..) | Self::Enum(..) | Self::Instance(..))
+        matches!(self, Self::Base(..) | Self::Instance(..))
     }
 
     pub fn int_eq(self) -> Option<FragRef<Func>> {
@@ -413,6 +171,17 @@ impl Ty {
                 _ => return None,
             },
             _ => return None,
+        })
+    }
+
+    pub fn to_base_and_params(self, types: &Types) -> Result<(BaseTy, FragSlice<Ty>), NonBaseTy> {
+        Err(match self {
+            Ty::Base(b) => return Ok((b, FragSlice::empty())),
+            Ty::Instance(i) => return Ok((types[i].base, types[i].args)),
+            Ty::Pointer(p) => NonBaseTy::Pointer(p),
+            Ty::Array(a) => NonBaseTy::Array(a),
+            Ty::Param(p) => NonBaseTy::Param(p),
+            Ty::Builtin(b) => NonBaseTy::Builtin(b),
         })
     }
 
@@ -434,12 +203,11 @@ impl Ty {
             )
     }
 
-    pub fn as_generic(self) -> Option<GenericTy> {
-        Some(match self {
-            Self::Struct(s) => GenericTy::Struct(s),
-            Self::Enum(e) => GenericTy::Enum(e),
-            _ => return None,
-        })
+    pub fn as_generic(self) -> Option<BaseTy> {
+        match self {
+            Self::Base(b) => Some(b),
+            _ => None,
+        }
     }
 
     pub fn base_with_params(self, types: &Types) -> (Self, FragSlice<Ty>) {
@@ -502,15 +270,7 @@ impl Ty {
     }
 
     pub fn span(self, types: &Types) -> Option<Span> {
-        match self {
-            Self::Struct(s) => Some(types[s].loc.source_loc(types)?.span),
-            Self::Enum(e) => Some(types[e].loc.source_loc(types)?.span),
-            Self::Instance(..)
-            | Self::Pointer(..)
-            | Self::Param(..)
-            | Self::Builtin(..)
-            | Self::Array(..) => None,
-        }
+        self.as_generic()?.span(types)
     }
 }
 
@@ -609,43 +369,6 @@ impl Builtin {
 impl Default for Ty {
     fn default() -> Self {
         Ty::UNIT
-    }
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize, Archive)]
-
-pub struct SpecFunc {
-    pub generics: Generics,
-    pub signature: Signature,
-    pub name: Ident,
-    pub span: Span,
-    pub parent: FragRef<SpecBase>,
-}
-
-derive_relocated!(struct SpecFunc { generics signature parent });
-
-impl SpecFunc {
-    pub fn is_generic(&self) -> bool {
-        !self.generics.is_empty()
-    }
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize, Archive)]
-
-pub struct Field {
-    pub vis: Option<Vis>,
-    pub ty: Ty,
-    pub flags: FieldFlags,
-    pub span: Span,
-    pub name: Ident,
-}
-
-derive_relocated!(struct Field { ty });
-
-bitflags! {
-    FieldFlags: u8 {
-        MUTABLE
-        USED
     }
 }
 

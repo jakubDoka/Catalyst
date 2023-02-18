@@ -1,5 +1,5 @@
 use core::slice;
-use std::{cmp::Ordering, default::default};
+use std::cmp::Ordering;
 
 use cranelift_codegen::ir::{
     self,
@@ -9,8 +9,8 @@ use cranelift_codegen::ir::{
 use mir::*;
 use storage::*;
 
-use types::*;
 use type_creator::type_creator;
+use types::*;
 
 use crate::{
     ctx::ComputedValue,
@@ -261,12 +261,14 @@ impl Generator<'_> {
                 builder.ins().call(func, &[value]);
             }
 
+            let layout = self.ty_layout(ty);
+
             let mut enum_expander = |s: &mut Self, params: FragSlice<Ty>, e: FragRef<Enum>| {
-                let layout = s.ty_layout(ty);
                 let variants = s.types[e].variants;
                 let flag_ty = s.types.enum_flag_ty(e);
                 let flag_repr = s.ty_repr(Ty::Builtin(flag_ty));
                 let [flag_offset, value_offset] = [0, layout.align.get() as u32];
+
                 let dest = builder.create_block();
                 let mut current = Some(dest);
                 let mut flag_value = None;
@@ -295,36 +297,21 @@ impl Generator<'_> {
                 }
             };
 
-            match ty {
-                Ty::Struct(s) => {
-                    let layout = self.ty_layout(ty);
-                    layout
-                        .offsets(&self.layouts.offsets)
-                        .map(|of| of + offset)
-                        .rev()
-                        .zip(self.types[self.types[s].fields].iter().map(|f| f.ty).rev())
-                        .map(DropFrame::Drop)
-                        .collect_into(&mut *frontier);
-                }
-                Ty::Enum(e) => enum_expander(self, default(), e),
-                Ty::Instance(i) => {
-                    let Instance { base, args } = self.types[i];
-                    match base {
-                        GenericTy::Struct(s) => {
-                            let layout = self.ty_layout(ty);
-                            layout
-                                .offsets(&self.layouts.offsets)
-                                .map(|of| of + offset)
-                                .rev()
-                                .zip(type_creator!(self).instantiate_fields(s, args))
-                                .map(DropFrame::Drop)
-                                .collect_into(&mut *frontier);
-                        }
-                        GenericTy::Enum(e) => enum_expander(self, args, e),
+            match ty.to_base_and_params(&self.types) {
+                Ok((base, params)) => match base {
+                    BaseTy::Struct(s) => {
+                        layout
+                            .offsets(&self.layouts.offsets)
+                            .map(|of| of + offset)
+                            .rev()
+                            .zip(type_creator!(self).instantiate_fields(s, params))
+                            .map(DropFrame::Drop)
+                            .collect_into(&mut *frontier);
                     }
-                }
-                Ty::Pointer(..) | Ty::Param(..) | Ty::Builtin(..) => (),
-                Ty::Array(_) => todo!(),
+                    BaseTy::Enum(e) => enum_expander(self, params, e),
+                },
+                Err(NonBaseTy::Array(..)) => todo!(),
+                Err(..) => (),
             }
         }
     }

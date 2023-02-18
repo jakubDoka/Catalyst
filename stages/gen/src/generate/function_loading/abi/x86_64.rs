@@ -3,8 +3,8 @@
 
 use cranelift_codegen::ir::{self, ArgumentExtension, Type};
 use storage::*;
-use types::*;
 use type_creator::type_creator;
+use types::*;
 
 use crate::*;
 
@@ -44,8 +44,7 @@ fn classify_arg_low(
             F32 | F64 => Class::Sse,
             Unit | Terminal | Mutable | Immutable => return Ok(()),
         },
-        Ty::Struct(s) => return classify_struct_arg(generator, s, params, layout, classes, offset),
-        Ty::Enum(e) => return classify_enum_arg(generator, e, layout, params, classes, offset),
+        Ty::Base(b) => return classify_base_ty_arg(generator, b, params, layout, classes, offset),
         Ty::Instance(i) => {
             return classify_instance_arg(generator, i, params, layout, classes, offset)
         }
@@ -127,9 +126,20 @@ fn classify_instance_arg(
 ) -> Result<(), Memory> {
     let Instance { base, args } = generator.types[instance];
     let params = type_creator!(generator).instantiate_slice(args, params);
+    classify_base_ty_arg(generator, base, &params, layout, classes, offset)
+}
+
+fn classify_base_ty_arg(
+    generator: &mut Generator,
+    base: BaseTy,
+    params: &[Ty],
+    layout: Layout,
+    classes: &mut [Option<Class>],
+    offset: u32,
+) -> Result<(), Memory> {
     match base {
-        GenericTy::Struct(s) => classify_struct_arg(generator, s, &params, layout, classes, offset),
-        GenericTy::Enum(e) => classify_enum_arg(generator, e, layout, &params, classes, offset),
+        BaseTy::Struct(s) => classify_struct_arg(generator, s, &params, layout, classes, offset),
+        BaseTy::Enum(e) => classify_enum_arg(generator, e, layout, &params, classes, offset),
     }
 }
 

@@ -6,8 +6,8 @@ use std::{
 use crate::*;
 use diags::*;
 use lexing::*;
-use resources::*;
 use parsing::*;
+use resources::*;
 use storage::*;
 
 const DEP_ROOT_VAR: &str = "CATALYST_DEP_ROOT";

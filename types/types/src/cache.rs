@@ -30,7 +30,6 @@ pub struct ImplList {
 derive_relocated!(struct ImplList { inner });
 
 #[derive(Default, Serialize, Deserialize, Archive)]
-
 pub struct Mapping {
     pub lookup: TypecLookup,
     pub impl_lookup: ImplLookup,
@@ -42,7 +41,6 @@ pub struct Mapping {
 derive_relocated!(struct Mapping { lookup impl_lookup implemented macros may_need_drop });
 
 #[derive(Serialize, Deserialize, Archive)]
-
 pub struct TypecBase {
     pub cache: TypecCacheBase,
     pub mapping: Arc<Mapping>,
@@ -300,8 +298,8 @@ impl Types {
             Ty::Instance(i) => {
                 let Instance { base, args } = self[i];
                 let params = match base {
-                    GenericTy::Struct(s) => self[s].generics,
-                    GenericTy::Enum(e) => self[e].generics,
+                    BaseTy::Struct(s) => self[s].generics,
+                    BaseTy::Enum(e) => self[e].generics,
                 };
 
                 for (&param, &arg) in self[params].iter().zip(self[args].iter()) {
@@ -313,7 +311,7 @@ impl Types {
                 self.register_ty_generics_low(self[p.ty()], generic, spec_set)
             }
             Ty::Array(a) => self.register_ty_generics_low(self[a].item, generic, spec_set),
-            Ty::Struct(..) | Ty::Enum(..) | Ty::Builtin(..) => (),
+            Ty::Base(..) | Ty::Builtin(..) => (),
         }
     }
 
@@ -356,7 +354,7 @@ impl Types {
                 .put_behind_pointer(),
             Ty::Array(array) => self.contains_params_low(self[array].item),
             Ty::Param(..) => Present,
-            Ty::Struct(..) | Ty::Builtin(..) | Ty::Enum(..) => Absent,
+            Ty::Base(..) | Ty::Builtin(..) => Absent,
         }
     }
 

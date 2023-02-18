@@ -1,7 +1,7 @@
 use std::{mem, path::Path};
 
-use resources::{Module, ResourceDb};
 use parsing::*;
+use resources::{Module, ResourceDb};
 use storage::*;
 
 use crate::{packages::ResourceLoaderCtx, *};

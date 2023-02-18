@@ -5,9 +5,9 @@ use crate::{
     *,
 };
 use diags::*;
-use span::*;
 use mir::*;
 use resources::{Module, Resources};
+use span::*;
 use storage::*;
 use types::*;
 

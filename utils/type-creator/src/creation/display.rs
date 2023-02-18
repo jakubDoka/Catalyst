@@ -139,17 +139,26 @@ pub fn display_func_name(
     Ok(())
 }
 
-impl TypeDisplay for Ty {
+impl TypeDisplay for BaseTy {
     fn display(self, types: &Types, interner: &Interner, out: &mut String) -> fmt::Result {
         match self {
-            Ty::Struct(r#struct) => {
+            BaseTy::Struct(r#struct) => {
                 write!(out, "{}\\", types[r#struct].loc.source().index())?;
                 out.push_str(types[r#struct].name.get(interner))
             }
-            Ty::Enum(r#enum) => {
+            BaseTy::Enum(r#enum) => {
                 write!(out, "{}\\", types[r#enum].loc.source().index())?;
                 out.push_str(types[r#enum].name.get(interner))
             }
+        }
+        Ok(())
+    }
+}
+
+impl TypeDisplay for Ty {
+    fn display(self, types: &Types, interner: &Interner, out: &mut String) -> fmt::Result {
+        match self {
+            Ty::Base(base) => base.display(types, interner, out)?,
             Ty::Instance(instance) => types[instance].display(types, interner, out)?,
             Ty::Pointer(ptr) => {
                 let base = types[ptr.ty()];
@@ -190,7 +199,7 @@ impl TypeDisplay for Instance {
 pub fn display_instance(
     types: &Types,
     interner: &Interner,
-    base: GenericTy,
+    base: BaseTy,
     args: &[Ty],
     out: &mut String,
 ) -> fmt::Result {

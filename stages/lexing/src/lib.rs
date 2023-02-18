@@ -12,8 +12,8 @@ mod token;
 pub use {
     ctl::ctl_lexer_next,
     lexer::Lexer,
-    span::*,
     logos::Logos,
+    span::*,
     token::{
         NoTokenMeta, SkippedToken, SourceInfo, Token, TokenKind, TokenMeta, EQUAL_SIGN_PRECEDENCE,
     },

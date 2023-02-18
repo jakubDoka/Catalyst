@@ -224,15 +224,15 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
             // Param is always considered drop if its not copy
             // Both conditions are covered by guards above
             Ty::Param(..) => unreachable!(),
-            Ty::Struct(s) => self.partial_struct_drop(s, &[][..], value, key, span),
-            // previous branches imply, enum needs drop and we know enums are newer
-            // partially moved, thus we can drop the whole thing
-            Ty::Enum(..) => dropper(self),
+            Ty::Base(base) => match base {
+                BaseTy::Struct(s) => self.partial_struct_drop(s, &[][..], value, key, span),
+                BaseTy::Enum(..) => dropper(self),
+            },
             Ty::Instance(i) => {
                 let Instance { base, args } = self.ext.types[i];
                 match base {
-                    GenericTy::Struct(s) => self.partial_struct_drop(s, args, value, key, span),
-                    GenericTy::Enum(..) => dropper(self),
+                    BaseTy::Struct(s) => self.partial_struct_drop(s, args, value, key, span),
+                    BaseTy::Enum(..) => dropper(self),
                 }
             }
             Ty::Array(_) => todo!(),

@@ -1,8 +1,8 @@
-use span::*;
 use rkyv::{
     with::{AsString, Skip, UnixTimestamp},
     Archive, Deserialize, Serialize,
 };
+use span::*;
 
 use std::{default::default, io, path::*, time::SystemTime};
 use storage::*;

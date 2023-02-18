@@ -1,7 +1,7 @@
 use std::mem;
 
-use span::*;
 use resources::*;
+use span::*;
 use storage::*;
 
 pub trait SnippetDisplay {
