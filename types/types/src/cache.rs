@@ -9,7 +9,7 @@ use std::{mem, ops::Deref};
 use crate::*;
 
 use diags::{SourceLoc, Workspace};
-use packaging_t::{Resources, Source};
+use resources::{Resources, Source};
 
 use rkyv::{Archive, Deserialize, Serialize};
 use storage::*;

@@ -1,10 +1,10 @@
 use std::{default::default, iter, mem, ops::Deref, sync::Arc, usize};
 
-use lexing_t::*;
+use span::*;
 use rkyv::{Archive, Deserialize, Serialize};
 use storage::*;
 use types::*;
-use typec_u::TypeCreator;
+use type_creator::TypeCreator;
 
 #[derive(Serialize, Deserialize, Archive)]
 

@@ -148,7 +148,7 @@ ctl_errors! {
 #[allow(unused)]
 #[cfg(test)]
 mod tests {
-    use lexing_t::Span;
+    use span::Span;
     use storage::*;
 
     use super::*;

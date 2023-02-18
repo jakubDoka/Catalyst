@@ -132,8 +132,8 @@ impl Generator<'_> {
         interner.intern_with_compressed(|s, t| {
             t.push_str(prefix);
             write!(t, "{triple}")?;
-            typec_u::display_func_name(types, s, func_id, t)?;
-            typec_u::display_list(types, s, params.by_ref(), t, ['[', ',', ']'])
+            type_creator::display_func_name(types, s, func_id, t)?;
+            type_creator::display_list(types, s, params.by_ref(), t, ['[', ',', ']'])
         })
     }
 

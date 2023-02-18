@@ -11,12 +11,12 @@ gen = { version = "0.1.0", path = "../../stages/gen" }
 mir = { version = "0.1.0", path = "../../stages/mir" }
 mir-t = { version = "0.1.0", path = "../../types/mir-t" }
 packaging = { version = "0.1.0", path = "../../stages/packaging" }
-packaging-t = { version = "0.1.0", path = "../../types/packaging-t" }
+resources = { version = "0.1.0", path = "../../types/resources" }
 parsing = { version = "0.1.0", path = "../../stages/parsing" }
 parsing-t = { version = "0.1.0", path = "../../types/parsing-t" }
 lexing = { version = "0.1.0", path = "../../stages/lexing" }
 graphs = { version = "0.1.0", path = "../../utils/graphs" }
-lexing-t = { version = "0.1.0", path = "../../types/lexing-t" }
+span = { version = "0.1.0", path = "../../types/span" }
 snippet-display = { version = "0.1.0", path = "../../utils/snippet-display" }
 cli = { version = "0.1.0", path = "../../utils/cli" }
 
@@ -28,4 +28,4 @@ cranelift-frontend = "0.92.0"
 target-lexicon = "0.12.4"
 
 rkyv = { version = "0.7.39", features = ["copy", "alloc"] }
-typec-u = { version = "0.1.0", path = "../../utils/typec-u" }
+type-creator = { version = "0.1.0", path = "../../utils/type-creator" }

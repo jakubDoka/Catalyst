@@ -10,7 +10,7 @@ use mir_t::*;
 use storage::*;
 
 use types::*;
-use typec_u::type_creator;
+use type_creator::type_creator;
 
 use crate::{
     context::ComputedValue,

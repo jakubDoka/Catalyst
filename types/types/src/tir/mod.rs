@@ -1,6 +1,6 @@
 use std::default::default;
 
-use lexing_t::*;
+use span::*;
 use storage::*;
 
 use crate::*;

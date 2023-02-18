@@ -7,10 +7,10 @@ edition = "2021"
 
 [dependencies]
 diags = { path = "../../types/diags" }
-packaging-t = { path = "../../types/packaging-t" }
+resources = { path = "../../types/resources" }
 
 fmt = { path = "../../subcommands/fmt" }
 storage = { path = "../../utils/storage" }
 snippet-display = { path = "../../utils/snippet-display" }
 packaging = { path = "../../stages/packaging" }
-lexing-t = { path = "../../types/lexing-t" }
+span = { path = "../../types/span" }

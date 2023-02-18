@@ -4,10 +4,10 @@ use std::{
 };
 
 use mir_t::*;
-use packaging_t::Resources;
+use resources::Resources;
 use storage::*;
 use types::*;
-use typec_u::TypeDisplay;
+use type_creator::TypeDisplay;
 
 pub fn display_function(
     funcs: impl IntoIterator<Item = FragRef<Func>>,
@@ -60,7 +60,7 @@ impl MirDisplayCtx<'_> {
                 .map(|&arg| format!(
                     "var{}: {}",
                     arg.index(),
-                    typec_u::display(self.types, self.interner, mir.value_ty(arg))
+                    type_creator::display(self.types, self.interner, mir.value_ty(arg))
                 ))
                 .collect::<Vec<_>>()
                 .join(", "),
@@ -178,7 +178,7 @@ impl MirDisplayCtx<'_> {
                     CallableMir::SpecFunc(bound_func) => {
                         let SpecFunc { name, parent, .. } = self.types[bound_func];
                         let bound_id =
-                            typec_u::display(self.types, self.interner, Spec::Base(parent));
+                            type_creator::display(self.types, self.interner, Spec::Base(parent));
                         write!(buffer, "{}\\{}", bound_id, name.get(self.interner))?;
                     }
                     CallableMir::Pointer(ptr) => write!(buffer, "val{}", ptr.index())?,
@@ -189,7 +189,7 @@ impl MirDisplayCtx<'_> {
                     let iter = mir.ty_params[params]
                         .iter()
                         .map(|&ty| mir.types[ty].ty)
-                        .map(|ty| typec_u::display(self.types, self.interner, ty))
+                        .map(|ty| type_creator::display(self.types, self.interner, ty))
                         .intersperse(", ".into())
                         .collect::<String>();
                     buffer.push_str(&iter);

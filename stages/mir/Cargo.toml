@@ -7,10 +7,10 @@ edition = "2021"
 
 [dependencies]
 diags = { version = "0.1.0", path = "../../types/diags" }
-lexing-t = { version = "0.1.0", path = "../../types/lexing-t" }
+span = { version = "0.1.0", path = "../../types/span" }
 mir-t = { version = "0.1.0", path = "../../types/mir-t" }
-packaging-t = { version = "0.1.0", path = "../../types/packaging-t" }
+resources = { version = "0.1.0", path = "../../types/resources" }
 storage = { version = "0.1.0", path = "../../utils/storage" }
 types = { version = "0.1.0", path = "../../types/types" }
-typec-u = { version = "0.1.0", path = "../../utils/typec-u" }
+type-creator = { version = "0.1.0", path = "../../utils/type-creator" }
 

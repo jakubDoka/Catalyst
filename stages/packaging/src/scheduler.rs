@@ -1,6 +1,6 @@
 use std::{mem, path::Path};
 
-use packaging_t::{Module, ResourceDb};
+use resources::{Module, ResourceDb};
 use parsing::*;
 use storage::*;
 

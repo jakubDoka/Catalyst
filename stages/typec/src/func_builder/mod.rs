@@ -8,7 +8,7 @@ use self::lookup::CannotInferExpression;
 use {
     crate::ty_parser::TyPathResult,
     diags::*,
-    lexing_t::*,
+    span::*,
     parsing_t::*,
     std::{cmp::Ordering, default::default, iter},
     storage::*,

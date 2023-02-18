@@ -1,5 +1,5 @@
 [package]
-name = "packaging-t"
+name = "resources"
 version = "0.1.0"
 edition = "2021"
 
@@ -9,6 +9,6 @@ edition = "2021"
 storage = { path = "../../utils/storage" }
 graphs = { path = "../../utils/graphs" }
 
-lexing-t = { path = "../lexing-t" }
+span = { path = "../span" }
 
 rkyv = { version = "0.7.39", features = ["copy"] }

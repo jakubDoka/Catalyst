@@ -1,8 +1,8 @@
 use std::collections::hash_map;
 
 use diags::SourceLoc;
-use lexing_t::*;
-use packaging_t::{Resources, Source};
+use span::*;
+use resources::{Resources, Source};
 use rkyv::{Archive, Deserialize, Serialize};
 use storage::*;
 

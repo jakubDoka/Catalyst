@@ -8,6 +8,6 @@ edition = "2021"
 [dependencies]
 annotate-snippets = { version = "0.9.1", features = ["color"] }
 diags = { version = "0.1.0", path = "../../types/diags" }
-packaging-t = { version = "0.1.0", path = "../../types/packaging-t" }
-lexing-t = { version = "0.1.0", path = "../../types/lexing-t" }
+resources = { version = "0.1.0", path = "../../types/resources" }
+span = { version = "0.1.0", path = "../../types/span" }
 storage = { version = "0.1.0", path = "../storage" }

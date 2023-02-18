@@ -6,9 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-lexing-t = { version = "0.1.0", path = "../../types/lexing-t" }
+span = { version = "0.1.0", path = "../../types/span" }
 mir-t = { version = "0.1.0", path = "../../types/mir-t" }
-packaging-t = { version = "0.1.0", path = "../../types/packaging-t" }
+resources = { version = "0.1.0", path = "../../types/resources" }
 storage = { version = "0.1.0", path = "../../utils/storage" }
 diags = { version = "0.1.0", path = "../../types/diags" }
 types = { version = "0.1.0", path = "../../types/types" }
@@ -24,4 +24,4 @@ windows-sys = { version = "0.42.0", features = ["Win32", "Win32_Foundation", "Wi
 cranelift-codegen = { version = "0.92.0" }
 cranelift-frontend = "0.92.0"
 libc = "0.2.139"
-typec-u = { version = "0.1.0", path = "../../utils/typec-u" }
+type-creator = { version = "0.1.0", path = "../../utils/type-creator" }

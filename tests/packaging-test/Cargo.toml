@@ -10,4 +10,4 @@ testing = { path = "../../utils/testing" }
 storage = { path = "../../utils/storage" }
 packaging = { path = "../../stages/packaging" }
 diags = { path = "../../types/diags" }
-packaging-t = { path = "../../types/packaging-t" }
+resources = { path = "../../types/resources" }

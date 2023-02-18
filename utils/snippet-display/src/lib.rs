@@ -8,8 +8,8 @@ use annotate_snippets::{
     snippet::*,
 };
 use diags::CtlSnippet;
-use lexing_t::Span;
-use packaging_t::Resources;
+use span::Span;
+use resources::Resources;
 use std::fmt::Write;
 
 pub use annotate_snippets;

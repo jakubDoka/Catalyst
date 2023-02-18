@@ -8,8 +8,8 @@ edition = "2021"
 [dependencies]
 storage = { path = "../../utils/storage" }
 graphs = { version = "0.1.0", path = "../../utils/graphs" }
-lexing-t = { path = "../lexing-t" }
-packaging-t = { path = "../packaging-t" }
+span = { path = "../span" }
+resources = { path = "../resources" }
 diags = { version = "0.1.0", path = "../diags" }
 
 rkyv = { version = "0.7.39", features = ["copy"] }

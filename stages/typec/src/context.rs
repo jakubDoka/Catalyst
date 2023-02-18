@@ -5,11 +5,11 @@ use std::{
 
 use diags::*;
 use lexing::*;
-use packaging_t::*;
+use resources::*;
 use parsing_t::*;
 use storage::*;
 use types::*;
-use typec_u::TypeCreator;
+use type_creator::TypeCreator;
 
 pub struct TypecExternalCtx<'arena, 'ctx> {
     pub types: &'ctx mut Types,
@@ -454,7 +454,7 @@ impl TypecCtx {
         if let Err(cycle) = self.ty_graph.ordering(nodes, &mut bumpvec![]) {
             let cycle_chart = cycle
                 .iter()
-                .map(|&ty| typec_u::display(types, interner, ty.as_ty()))
+                .map(|&ty| type_creator::display(types, interner, ty.as_ty()))
                 .intersperse(" -> ".into())
                 .collect::<String>();
 

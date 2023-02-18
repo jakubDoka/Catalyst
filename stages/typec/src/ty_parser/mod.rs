@@ -2,7 +2,7 @@ use std::mem;
 
 use crate::{context::*, TirBuilder};
 
-use {diags::*, lexing_t::*, parsing_t::*, std::iter, storage::*, types::*};
+use {diags::*, span::*, parsing_t::*, std::iter, storage::*, types::*};
 
 mod building;
 mod collecting;

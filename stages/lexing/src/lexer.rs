@@ -1,5 +1,5 @@
 use crate::{token::TokenMeta, *};
-use lexing_t::*;
+use span::*;
 
 /// Tight wrapper around logos lexer that provides specific tokens
 /// instead.

@@ -512,7 +512,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     ) -> OptFragRef<Func> {
         let base_id = op.ident;
         let id = self.ext.interner.intern_with(|s, t| {
-            typec_u::display_bin_op(self.ext.types, s, base_id, lhs_ty, rhs_ty, t)
+            type_creator::display_bin_op(self.ext.types, s, base_id, lhs_ty, rhs_ty, t)
         });
         Some(lookup!(Func self, id, op.span))
     }

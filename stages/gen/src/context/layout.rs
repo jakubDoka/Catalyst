@@ -3,7 +3,7 @@ use std::{
     slice::Iter,
 };
 
-use typec_u::{type_creator, TypeCreator};
+use type_creator::{type_creator, TypeCreator};
 use types::*;
 
 use super::*;

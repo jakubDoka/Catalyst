@@ -8,5 +8,5 @@ edition = "2021"
 [dependencies]
 storage = { path = "../../utils/storage" }
 
-lexing-t = { path = "../lexing-t" }
-packaging-t = { path = "../packaging-t" }
+span = { path = "../span" }
+resources = { path = "../resources" }

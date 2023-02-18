@@ -10,8 +10,8 @@ storage = { path = "../../utils/storage" }
 
 parsing = { path = "../parsing" }
 
-lexing-t = { path = "../../types/lexing-t" }
+span = { path = "../../types/span" }
 lexing = { path = "../../stages/lexing" }
 parsing-t = { path = "../../types/parsing-t" }
-packaging-t = { path = "../../types/packaging-t" }
+resources = { path = "../../types/resources" }
 diags = { path = "../../types/diags" }

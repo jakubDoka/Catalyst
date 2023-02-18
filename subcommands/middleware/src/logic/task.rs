@@ -1,7 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
 use rkyv::{Archive, Deserialize, Serialize};
-use typec_u::type_creator;
+use type_creator::type_creator;
 
 use super::*;
 

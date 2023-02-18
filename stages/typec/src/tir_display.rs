@@ -1,5 +1,5 @@
-use packaging_t::Source;
-use typec_u::TypeDisplay;
+use resources::Source;
+use type_creator::TypeDisplay;
 
 use crate::context::TypecExternalCtx;
 

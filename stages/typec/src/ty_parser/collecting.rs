@@ -4,7 +4,7 @@ use super::TypecParser;
 
 use {
     diags::*,
-    lexing_t::*,
+    span::*,
     parsing_t::*,
     std::{default::default, iter},
     storage::*,

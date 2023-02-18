@@ -4,7 +4,7 @@
 use cranelift_codegen::ir::{self, ArgumentExtension, Type};
 use storage::*;
 use types::*;
-use typec_u::type_creator;
+use type_creator::type_creator;
 
 use crate::*;
 

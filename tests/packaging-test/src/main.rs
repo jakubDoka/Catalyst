@@ -4,7 +4,7 @@ use std::{default::default, path::Path};
 
 use diags::*;
 use packaging::*;
-use packaging_t::*;
+use resources::*;
 use storage::*;
 use testing::{items::TestResources, *};
 

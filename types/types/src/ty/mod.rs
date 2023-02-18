@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::*;
-use lexing_t::*;
+use span::*;
 
 use rkyv::{Archive, Deserialize, Serialize};
 use storage::*;

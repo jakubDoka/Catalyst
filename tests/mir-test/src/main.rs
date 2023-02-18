@@ -4,14 +4,14 @@ use diags::*;
 use mir::*;
 use mir_t::*;
 use packaging::*;
-use packaging_t::*;
+use resources::*;
 use parsing::*;
 
 use storage::*;
 use testing::*;
 use types::*;
 use typec::*;
-use typec_u::type_creator;
+use type_creator::type_creator;
 
 #[derive(Default)]
 struct TestState {

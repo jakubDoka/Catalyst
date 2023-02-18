@@ -5,9 +5,9 @@ use crate::{
     *,
 };
 use diags::*;
-use lexing_t::*;
+use span::*;
 use mir_t::*;
-use packaging_t::{Module, Resources};
+use resources::{Module, Resources};
 use storage::*;
 use types::*;
 

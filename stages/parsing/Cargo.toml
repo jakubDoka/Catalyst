@@ -13,6 +13,6 @@ storage = { path = "../../utils/storage" }
 
 
 diags = { path = "../../types/diags" }
-lexing-t = { path = "../../types/lexing-t" }
+span = { path = "../../types/span" }
 parsing-t = { path = "../../types/parsing-t" }
-packaging-t = { path = "../../types/packaging-t" }
+resources = { path = "../../types/resources" }

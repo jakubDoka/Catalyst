@@ -4,12 +4,12 @@ use std::{
 };
 
 use diags::*;
-use lexing_t::*;
+use span::*;
 use mir_t::*;
-use packaging_t::*;
+use resources::*;
 use storage::*;
 use types::*;
-use typec_u::TypeCreator;
+use type_creator::TypeCreator;
 
 use crate::builder::moves::MoveCtx;
 

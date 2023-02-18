@@ -1,4 +1,4 @@
-use lexing_t::*;
+use span::*;
 use logos::Logos;
 use std::fmt;
 

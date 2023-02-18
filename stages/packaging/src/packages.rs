@@ -6,7 +6,7 @@ use std::{
 use crate::*;
 use diags::*;
 use lexing::*;
-use packaging_t::*;
+use resources::*;
 use parsing::*;
 use storage::*;
 

@@ -1,7 +1,7 @@
 use std::mem;
 
-use lexing_t::*;
-use packaging_t::*;
+use span::*;
+use resources::*;
 use storage::*;
 
 pub trait SnippetDisplay {

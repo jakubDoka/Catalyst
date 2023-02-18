@@ -2,7 +2,7 @@ pub mod control_flow;
 pub mod pat;
 
 use diags::*;
-use packaging_t::Source;
+use resources::Source;
 
 use super::*;
 

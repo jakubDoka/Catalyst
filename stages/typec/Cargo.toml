@@ -10,7 +10,7 @@ storage = { path = "../../utils/storage" }
 diags = { path = "../../types/diags" }
 types = { path = "../../types/types" }
 parsing-t = { path = "../../types/parsing-t" }
-packaging-t = { path = "../../types/packaging-t" }
-lexing-t = { path = "../../types/lexing-t" }
+resources = { path = "../../types/resources" }
+span = { path = "../../types/span" }
 lexing = { path = "../../stages/lexing" }
-typec-u = { version = "0.1.0", path = "../../utils/typec-u" }
+type-creator = { version = "0.1.0", path = "../../utils/type-creator" }

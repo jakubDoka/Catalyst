@@ -15,7 +15,7 @@ use std::{
 use crate::*;
 use diags::*;
 use lexing::*;
-use packaging_t::*;
+use resources::*;
 use storage::*;
 
 use lexing::TokenKind as Tk;

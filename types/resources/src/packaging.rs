@@ -1,4 +1,4 @@
-use lexing_t::*;
+use span::*;
 use rkyv::{
     with::{AsString, Skip, UnixTimestamp},
     Archive, Deserialize, Serialize,

@@ -42,16 +42,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in library 'lexing-t'",
+            "name": "Debug unit tests in library 'span'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
                     "--lib",
-                    "--package=lexing-t"
+                    "--package=span"
                 ],
                 "filter": {
-                    "name": "lexing-t",
+                    "name": "span",
                     "kind": "lib"
                 }
             },
@@ -99,16 +99,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in library 'packaging-t'",
+            "name": "Debug unit tests in library 'resources'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
                     "--lib",
-                    "--package=packaging-t"
+                    "--package=resources"
                 ],
                 "filter": {
-                    "name": "packaging-t",
+                    "name": "resources",
                     "kind": "lib"
                 }
             },

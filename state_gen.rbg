@@ -1,5 +1,5 @@
 file "stages/packaging/src/state_gen.rs" {
-    use "packaging_t"
+    use "resources"
     use "diags"
     use "storage"
 
@@ -16,7 +16,7 @@ file "stages/typec/src/state_gen.rs" {
     use "storage"
     use "diags"
     use "types"
-    use "packaging_t"
+    use "resources"
 
     struct TyChecker {
         owned module: `VRef<Module>`
@@ -34,7 +34,7 @@ file "stages/mir/src/state_gen.rs" {
     use "storage"
     use "diags"
     use "types"
-    use "packaging_t"
+    use "resources"
     use "mir_t"
     use "crate"
 
@@ -57,7 +57,7 @@ file "stages/gen/src/state_gen.rs" {
     use "crate"
     use "storage"
     use "types"
-    use "packaging_t"
+    use "resources"
 
     struct Generator {
         mut GenLayouts

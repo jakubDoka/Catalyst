@@ -1,6 +1,6 @@
 use std::sync::mpsc::SendError;
 
-use typec_u::type_creator;
+use type_creator::type_creator;
 
 use super::*;
 use typec::*;

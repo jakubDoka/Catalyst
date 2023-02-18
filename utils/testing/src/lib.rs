@@ -111,7 +111,7 @@ pub use {fmt, items::Testable};
 pub mod items {
     use diags::*;
     use packaging::Scheduler;
-    use packaging_t::*;
+    use resources::*;
     use snippet_display::SnippetDisplayImpl;
     use std::{mem, thread::Scope, time::SystemTime};
 

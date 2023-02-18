@@ -14,7 +14,7 @@ pub use {
     diags::*,
     gen::*,
     lexing::*,
-    lexing_t::*,
+    span::*,
     logic::{
         task::{Task, TaskGraph},
         worker::{
@@ -26,7 +26,7 @@ pub use {
     mir::*,
     mir_t::*,
     packaging::*,
-    packaging_t::*,
+    resources::*,
     parsing::*,
     parsing_t::*,
     snippet_display::*,

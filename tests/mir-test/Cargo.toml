@@ -10,7 +10,7 @@ diags = { version = "0.1.0", path = "../../types/diags" }
 mir = { version = "0.1.0", path = "../../stages/mir" }
 mir-t = { version = "0.1.0", path = "../../types/mir-t" }
 packaging = { version = "0.1.0", path = "../../stages/packaging" }
-packaging-t = { version = "0.1.0", path = "../../types/packaging-t" }
+resources = { version = "0.1.0", path = "../../types/resources" }
 parsing = { version = "0.1.0", path = "../../stages/parsing" }
 parsing-t = { version = "0.1.0", path = "../../types/parsing-t" }
 
@@ -18,4 +18,4 @@ storage = { version = "0.1.0", path = "../../utils/storage" }
 testing = { version = "0.1.0", path = "../../utils/testing" }
 typec = { version = "0.1.0", path = "../../stages/typec" }
 types = { version = "0.1.0", path = "../../types/types" }
-typec-u = { version = "0.1.0", path = "../../utils/typec-u" }
+type-creator = { version = "0.1.0", path = "../../utils/type-creator" }
