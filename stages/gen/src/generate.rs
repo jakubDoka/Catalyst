@@ -206,6 +206,7 @@ impl Generator<'_> {
 
         self.save_value(ret, value, 0, false, builder);
     }
+
     fn drop(&mut self, drop: VRef<DropMir>, builder: &mut GenBuilder, dest_block: &mut ir::Block) {
         let value = builder.body.drops[drop].value;
         let ty = builder.value_ty(value);

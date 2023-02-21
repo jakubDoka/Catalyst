@@ -1,9 +1,5 @@
 STATE_GEN="./target/release/state"
 
-cd scripts/state
-cargo build --release
-cd ../..
-
 TESTER="./target/release/tester"
 
 cd scripts/tester

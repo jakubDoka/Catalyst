@@ -11,19 +11,13 @@ impl<'ctx> TypeCreator<'ctx> {
     }
 
     fn may_need_drop_low(&mut self, ty: Ty, params: &[Ty]) -> (bool, bool) {
-        match ty {
-            Ty::Param(index) if let Some(&param) = params.get(index as usize) =>
-                return self.may_need_drop_low(param, &[]),
-            Ty::Param(..) => return (true, true),
-            Ty::Pointer(..) | Ty::Builtin(..) => return (false, false),
-            ty if let Some(is) = self.types.may_need_drop.get(&ty) => return (*is, false),
-            Ty::Base(..) |
-            Ty::Array(..) |
-            Ty::Instance(..) => (),
-        };
         // its split since map entry handle must be dropped.
         let (is, param) = match ty.to_base_and_params(self.types) {
             Ok((base, params)) => {
+                if let Some(is) = self.types.may_need_drop.get(&ty) {
+                    return (*is, false);
+                }
+
                 let params = self.instantiate_slice(params, params);
                 let params = &params[..];
                 let types = match base {
@@ -37,11 +31,14 @@ impl<'ctx> TypeCreator<'ctx> {
                     .unwrap_or((false, false))
             }
             Err(NonBaseTy::Array(a)) => self.may_need_drop_low(self.types[a].item, params),
-            _ => unreachable!(),
+            Err(NonBaseTy::Pointer(..) | NonBaseTy::Builtin(..)) => return (true, false),
+            Err(NonBaseTy::Param(..)) => return (true, true),
         };
+
         if !param {
             self.types.may_need_drop.insert(ty, is);
         }
+
         (is, param)
     }
 

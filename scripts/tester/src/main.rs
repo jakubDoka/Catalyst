@@ -34,7 +34,7 @@ fn main() {
             h.spawn(move || {
                 println!("Running test: {name}");
                 Command::new(
-                    Path::new(&format!("target/debug/{name}"))
+                    Path::new(&format!("target/release/{name}"))
                         .canonicalize()
                         .unwrap(),
                 )

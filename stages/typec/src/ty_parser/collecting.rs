@@ -129,6 +129,10 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         let spec_base = spec.base(self.ext.types);
         let ty_base = ty.base(self.ext.types);
 
+        if SpecBase::DROP == spec_base {
+            self.ext.types.may_need_drop.insert(ty_base, true);
+        }
+
         // check for collisions in implementations,
         // we just check if spec is already implemented
         if let Some(Some((already, ..))) = self
