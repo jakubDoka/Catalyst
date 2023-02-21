@@ -11,4 +11,4 @@ mod packages;
 mod scheduler;
 mod state_gen;
 
-pub use {packages::ResourceLoaderCtx, scheduler::Scheduler, state_gen::PackageLoader};
+pub use {packages::PackageLoader, packages::ResourceLoaderCtx, scheduler::Scheduler};

@@ -155,13 +155,13 @@ impl Middleware {
             .split()
             .next()
             .expect("we already clamped threads between 1 and 255");
-        let changed = PackageLoader::new(
+        let changed = PackageLoader {
             resources,
-            &mut self.workspace,
-            &mut interner,
-            &mut self.package_graph,
+            workspace: &mut self.workspace,
+            interner: &mut interner,
+            package_graph: &mut self.package_graph,
             db,
-        )
+        }
         .reload(path, &mut self.resource_loading_ctx);
         changed
     }

@@ -7,6 +7,7 @@ use cranelift_codegen::ir::{
     InstBuilder, MemFlags, Type,
 };
 use mir::*;
+use resources::Resources;
 use storage::*;
 
 use type_creator::type_creator;
@@ -20,6 +21,16 @@ use crate::{
 
 pub mod function_loading;
 pub mod size_calc;
+
+pub struct Generator<'ctx> {
+    pub layouts: &'ctx mut GenLayouts,
+    pub gen: &'ctx mut Gen,
+    pub gen_resources: &'ctx mut GenResources,
+    pub interner: &'ctx mut Interner,
+    pub types: &'ctx mut Types,
+    pub compile_requests: &'ctx CompileRequests,
+    pub resources: &'ctx Resources,
+}
 
 impl Generator<'_> {
     pub fn generate(

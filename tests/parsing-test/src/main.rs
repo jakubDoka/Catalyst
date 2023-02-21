@@ -38,8 +38,14 @@ impl Scheduler for TestState {
         });
     }
 
-    fn loader<'a>(&'a mut self, resources: &'a mut dyn ResourceDb) -> PackageLoader<'a> {
-        package_loader!(self, *resources)
+    fn loader<'a>(&'a mut self, db: &'a mut dyn ResourceDb) -> PackageLoader<'a> {
+        PackageLoader {
+            resources: &mut self.resources,
+            workspace: &mut self.workspace,
+            interner: &mut self.interner,
+            package_graph: &mut self.package_graph,
+            db,
+        }
     }
 }
 

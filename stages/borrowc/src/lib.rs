@@ -16,7 +16,6 @@ mod builder;
 mod ctx;
 mod display;
 mod patterns;
-mod state_gen;
 
 pub use {
     builder::{compile_functions, MirBuilder, MirCompilationCtx},

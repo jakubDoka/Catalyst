@@ -12,7 +12,6 @@ mod generate;
 mod interpreter;
 mod jit;
 mod native;
-mod state_gen;
 
 pub use {
     ctx::{
@@ -22,10 +21,10 @@ pub use {
         GenFuncConstant, GenItemName, GenReloc, GenResources, GenValue, Isa, IsaCreationError,
     },
     generate::function_loading::abi::{PassMode, PassSignature},
+    generate::Generator,
     interpreter::{IRegister, IValue, Interpreter, InterpreterCtx, InterpreterError, StackFrame},
     jit::{JitContext, JitRelocError},
     native::{ObjectContext, ObjectCreationError, ObjectRelocationError},
-    state_gen::Generator,
 };
 
 pub const ENTRY_POINT_NAME: &str = "main";

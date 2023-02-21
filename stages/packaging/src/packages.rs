@@ -3,7 +3,6 @@ use std::{
     iter, mem, path::*, process::Command, time::SystemTime,
 };
 
-use crate::*;
 use diags::*;
 use lexing::*;
 use parsing::*;
@@ -69,7 +68,15 @@ struct DummyModule {
     ordering: usize,
 }
 
-impl<'a> PackageLoader<'a> {
+pub struct PackageLoader<'ctx> {
+    pub resources: &'ctx mut Resources,
+    pub workspace: &'ctx mut Workspace,
+    pub interner: &'ctx mut Interner,
+    pub package_graph: &'ctx mut PackageGraph,
+    pub db: &'ctx mut dyn ResourceDb,
+}
+
+impl<'ctx> PackageLoader<'ctx> {
     /// Loads the project into graph of manifests and source files.
     pub fn reload(
         &mut self,

@@ -17,9 +17,16 @@ struct TestState {
 }
 
 impl Testable for TestState {
-    fn exec(mut self, name: &str, resources: &mut TestResources) -> (Workspace, Resources) {
+    fn exec(mut self, name: &str, db: &mut TestResources) -> (Workspace, Resources) {
         let mut ctx = default();
-        package_loader!(self, *resources).reload(Path::new(name), &mut ctx);
+        PackageLoader {
+            resources: &mut self.resources,
+            workspace: &mut self.workspace,
+            interner: &mut self.interner,
+            package_graph: &mut self.package_graph,
+            db,
+        }
+        .reload(Path::new(name), &mut ctx);
         (self.workspace, self.resources)
     }
 }

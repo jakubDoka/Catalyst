@@ -68,15 +68,15 @@ impl Worker {
             .returns
             .push(ir::AbiParam::new(ir::types::I32));
 
-        let mut generator = Generator::new(
-            &mut self.state.gen_layouts,
-            &mut task.gen,
-            &mut self.state.gen_resources,
-            &mut task.interner,
-            &mut task.types,
-            &task.resources.compile_requests,
-            shared.resources,
-        );
+        let mut generator = Generator {
+            layouts: &mut self.state.gen_layouts,
+            gen: &mut task.gen,
+            gen_resources: &mut self.state.gen_resources,
+            interner: &mut task.interner,
+            types: &mut task.types,
+            compile_requests: &task.resources.compile_requests,
+            resources: shared.resources,
+        };
 
         let mut module = ModuleMir::default();
         let mir_func = module.dummy_func(iter::empty(), task.mir.modules.next(), Ty::U32);
@@ -482,15 +482,15 @@ impl Worker {
                     .drops
                     .push(prev..self.state.gen_resources.calls.len());
             }
-            Generator::new(
-                gen_layouts,
-                &mut task.gen,
-                &mut self.state.gen_resources,
-                &mut task.interner,
-                &mut task.types,
-                &task.resources.compile_requests,
-                shared.resources,
-            )
+            Generator {
+                layouts: gen_layouts,
+                gen: &mut task.gen,
+                gen_resources: &mut self.state.gen_resources,
+                interner: &mut task.interner,
+                types: &mut task.types,
+                compile_requests: &task.resources.compile_requests,
+                resources: shared.resources,
+            }
             .generate(signature, view.ret, view.args, &params, root, builder);
 
             let name = task.interner.get(id.ident());
