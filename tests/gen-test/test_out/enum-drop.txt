@@ -14,85 +14,109 @@ block0:
     v2 = stack_addr.i64 ss0
     v3 = load.i8 v2
     v4 = icmp_imm eq v3, 0
-    brnz v4, block3
-    jump block2
+    brnz v4, block4
+    jump block3
 
-block3:
+block4:
     v5 = iadd_imm.i64 v2, 4
     call fn0(v5)
     jump block1
 
-block2:
+block3:
     v6 = icmp_imm.i8 eq v3, 1
-    brnz v6, block4
-    jump block1
+    brnz v6, block5
+    jump block2
 
-block4:
+block5:
     v7 = iadd_imm.i64 v2, 4
     call fn0(v7)
     v8 = iadd_imm.i64 v2, 8
     call fn0(v8)
     jump block1
 
-block1:
-    v9 = iconst.i8 1
-    stack_store v9, ss1  ; v9 = 1
-    v10 = iconst.i32 98
-    stack_store v10, ss1+4  ; v10 = 98
-    v11 = iconst.i32 99
-    stack_store v11, ss1+8  ; v11 = 99
-    v12 = stack_addr.i64 ss1
-    v13 = load.i8 v12
-    v14 = icmp_imm eq v13, 0
-    brnz v14, block7
-    jump block6
-
-block7:
-    v15 = iadd_imm.i64 v12, 4
-    call fn0(v15)
-    jump block5
+block2:
+    v9 = icmp_imm.i8 eq v3, 2
+    brnz v9, block6
+    jump block1
 
 block6:
-    v16 = icmp_imm.i8 eq v13, 1
-    brnz v16, block8
-    jump block5
+    jump block1
 
-block8:
-    v17 = iadd_imm.i64 v12, 4
-    call fn0(v17)
-    v18 = iadd_imm.i64 v12, 8
-    call fn0(v18)
-    jump block5
-
-block5:
-    v19 = iconst.i8 2
-    stack_store v19, ss2  ; v19 = 2
-    v20 = stack_addr.i64 ss2
-    v21 = load.i8 v20
-    v22 = icmp_imm eq v21, 0
-    brnz v22, block11
-    jump block10
-
-block11:
-    v23 = iadd_imm.i64 v20, 4
-    call fn0(v23)
+block1:
+    v10 = iconst.i8 1
+    stack_store v10, ss1  ; v10 = 1
+    v11 = iconst.i32 98
+    stack_store v11, ss1+4  ; v11 = 98
+    v12 = iconst.i32 99
+    stack_store v12, ss1+8  ; v12 = 99
+    v13 = stack_addr.i64 ss1
+    v14 = load.i8 v13
+    v15 = icmp_imm eq v14, 0
+    brnz v15, block10
     jump block9
 
 block10:
-    v24 = icmp_imm.i8 eq v21, 1
-    brnz v24, block12
-    jump block9
-
-block12:
-    v25 = iadd_imm.i64 v20, 4
-    call fn0(v25)
-    v26 = iadd_imm.i64 v20, 8
-    call fn0(v26)
-    jump block9
+    v16 = iadd_imm.i64 v13, 4
+    call fn0(v16)
+    jump block7
 
 block9:
-    v27 = iconst.i64 0
-    return v27  ; v27 = 0
+    v17 = icmp_imm.i8 eq v14, 1
+    brnz v17, block11
+    jump block8
+
+block11:
+    v18 = iadd_imm.i64 v13, 4
+    call fn0(v18)
+    v19 = iadd_imm.i64 v13, 8
+    call fn0(v19)
+    jump block7
+
+block8:
+    v20 = icmp_imm.i8 eq v14, 2
+    brnz v20, block12
+    jump block7
+
+block12:
+    jump block7
+
+block7:
+    v21 = iconst.i8 2
+    stack_store v21, ss2  ; v21 = 2
+    v22 = stack_addr.i64 ss2
+    v23 = load.i8 v22
+    v24 = icmp_imm eq v23, 0
+    brnz v24, block16
+    jump block15
+
+block16:
+    v25 = iadd_imm.i64 v22, 4
+    call fn0(v25)
+    jump block13
+
+block15:
+    v26 = icmp_imm.i8 eq v23, 1
+    brnz v26, block17
+    jump block14
+
+block17:
+    v27 = iadd_imm.i64 v22, 4
+    call fn0(v27)
+    v28 = iadd_imm.i64 v22, 8
+    call fn0(v28)
+    jump block13
+
+block14:
+    v29 = icmp_imm.i8 eq v23, 2
+    brnz v29, block18
+    jump block13
+
+block18:
+    jump block13
+
+block13:
+    v30 = iconst.i64 0
+    return v30  ; v30 = 0
 }
 native-x86_64-unknown-linux-gnu3\3\A\drop[] function u0:0(i64) fast {
     sig0 = (i32) -> i32 uext fast
