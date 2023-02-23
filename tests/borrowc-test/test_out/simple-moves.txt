@@ -243,17 +243,11 @@ fn [] enum_whole_move() -> () { () ret var0
     }
 
     block1 {
-        goto block4
+        goto block3 with var1
     }
 
     block2 {
         var11 = var6
-        drop var11
-        goto block3 with var1
-    }
-
-    block4 {
-        drop var6
         goto block3 with var1
     }
 
