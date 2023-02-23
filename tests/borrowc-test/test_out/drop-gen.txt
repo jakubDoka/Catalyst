@@ -1,0 +1,150 @@
+info: borrowc repr of functions:
+fn [: ] drop(param0) -> () { (var3: param0) ret var0
+    block0 {
+        drop var3
+        return var1
+    }
+
+}
+
+fn [] drop_unused() -> () { () ret var0
+    block0 {
+        var4 = 97
+        var3 = new(val4)
+        drop var3
+        return var1
+    }
+
+}
+
+fn [] drop_referenced() -> () { () ret var0
+    block0 {
+        var5 = 97
+        var4 = new(val5)
+        var3 = &var4
+        var6 = 98
+        var1 = set_char(val3, val6)
+        drop var4
+        return var1
+    }
+
+}
+
+fn [] drop_variable() -> () { () ret var0
+    block0 {
+        var4 = 97
+        var3 = new(val4)
+        var5 = var3
+        var6 = &var5
+        var7 = 99
+        var1 = set_char(val6, val7)
+        drop var5
+        return var1
+    }
+
+}
+
+fn [] drop_refed_variable() -> () { () ret var0
+    block0 {
+        var5 = 97
+        var4 = new(val5)
+        var3 = &var4
+        var6 = var3
+        var7 = 100
+        var1 = set_char(val6, val7)
+        drop var4
+        return var1
+    }
+
+}
+
+fn [] move_in_drop() -> () { () ret var0
+    block0 {
+        var4 = 101
+        var3 = new(val4)
+        var5 = var3
+        drop var5
+        var6 = 102
+        var5 = new(val6)
+        drop var5
+        return var1
+    }
+
+}
+
+fn [] drop_cond() -> () { () ret var0
+    block0 {
+        var4 = 103
+        var3 = new(val4)
+        var5 = var3
+        var6 = 1
+        split var6 block1 block2
+    }
+
+    block1 {
+        var1 = drop[3\A](val5)
+        goto block3 with var1
+    }
+
+    block2 {
+        goto block4
+    }
+
+    block3 {
+        return var1
+    }
+
+    block4 {
+        drop var5
+        goto block3
+    }
+
+}
+
+fn [] main() -> uint { () ret var0
+    block0 {
+        var1 = drop_unused()
+        var1 = drop_referenced()
+        var1 = drop_variable()
+        var1 = drop_refed_variable()
+        var1 = move_in_drop()
+        var1 = drop_cond()
+        var0 = 0
+        return var0
+    }
+
+}
+
+fn [] new(char) -> 3\A { (var3: char) ret var0
+    block0 {
+        var0 ={var4}
+        var4 = var3
+        return var0
+    }
+
+}
+
+fn [] set_char(^mut 3\A,char) -> () { (var3: ^mut 3\A, var4: char) ret var0
+    block0 {
+        var5 = *var3
+        var6 = var5.0
+        var6 = var4
+        return var1
+    }
+
+}
+
+fn [] drop(^mut 3\A) -> () { (var3: ^mut 3\A) ret var0
+    block0 {
+        var5 = *var3
+        var6 = var5.0
+        var4 = putchar(val6)
+        var8 = 32
+        var7 = putchar(val8)
+        return var1
+    }
+
+}
+
+
+

@@ -1,0 +1,127 @@
+info: borrowc repr of functions:
+fn [] next(var0: ^1\MacroLexer) -> 1\MacroToken  { ret var3
+    block0(var2: ^1\MacroLexer) {
+        access var2
+        var3 = ctl_lexer_next(val2)
+        return var3
+    }
+
+}
+
+fn [] write(var0: ^mut param0, var1: param0) -> ()  { ret var0
+    block0(var2: ^mut param0, var3: param0) {
+        access var2
+        var4 = *var2
+        var4 = access var3
+        return var0
+    }
+
+}
+
+fn [] read(var0: ^param0) -> param0  { ret var3
+    block0(var2: ^param0) {
+        access var2
+        var3 = *var2
+        return var3
+    }
+
+}
+
+fn "default" [] new(var0: ^2\Swap, var1: 1\MacroLexer) -> ()  { ret var0
+    block0(var2: ^2\Swap, var3: 1\MacroLexer) {
+        access var2
+        var6 ={var4, var5}
+        var4 ={var7, var8}
+        var7 = 0
+        var8 ={var9, var10}
+        access var3
+        var11 = &var3
+        var9 = next(val11)
+        access var3
+        var12 = &var3
+        var10 = next(val12)
+        var5 = access var3
+        var0 = write[2\Swap](val2, val6)
+        return var0
+    }
+
+}
+
+fn "default" [] next(var0: ^2\Swap) -> 4\Option[1\MacroToken]  { ret var3
+    block0(var2: ^2\Swap) {
+        var3 ={var4, var5}
+        var4 = 1
+        access var2
+        var7 = *var2
+        var6 = var7.0
+        var8 = var6.0
+        var9 = 0
+        var10 = u8 == u8(val8, val9)
+        var11 = var6.1
+        split var10 block1 block2
+    }
+
+    block1() {
+        var12 = var6.1
+        var13 = var12.0
+        var14 = var13
+        var15 = var12.1
+        var16 = var15
+        access var2
+        var18 = *var2
+        var17 = var18.0
+        var17 ={var19, var20}
+        var19 = 1
+        var20 ={var21}
+        var21 = access var14
+        var5 = access var16
+        goto block3 with var5
+    }
+
+    block2() {
+        var22 = var6.0
+        var23 = 1
+        var24 = u8 == u8(val22, val23)
+        var25 = var6.1
+        split var24 block4 block5
+    }
+
+    block3(var5: 1\MacroToken) {
+        return var3
+    }
+
+    block4() {
+        var26 = var6.1
+        var27 = var26.0
+        var28 = var27
+        access var2
+        var30 = *var2
+        var29 = var30.0
+        var29 ={var31}
+        var31 = 2
+        var5 = access var28
+        goto block3 with var5
+    }
+
+    block5() {
+        var3 ={var32}
+        var32 = 0
+        return var3
+    }
+
+}
+
+fn "default" [] drop(var0: ^2\Swap) -> 1\MacroLexer  { ret var3
+    block0(var2: ^2\Swap) {
+        access var2
+        var6 = *var2
+        var5 = var6.1
+        var4 = &var5
+        var3 = read[1\MacroLexer](val4)
+        return var3
+    }
+
+}
+
+
+

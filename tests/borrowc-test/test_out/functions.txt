@@ -1,0 +1,19 @@
+info: borrowc repr of functions:
+fn [] main() -> uint { () ret var0
+    block0 {
+        var0 = 0
+        return var0
+    }
+
+}
+
+fn [] pass(uint) -> uint { (var3: uint) ret var0
+    block0 {
+        var0 = var3
+        return var0
+    }
+
+}
+
+
+

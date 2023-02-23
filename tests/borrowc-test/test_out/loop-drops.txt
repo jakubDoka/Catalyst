@@ -1,0 +1,176 @@
+error: value is possibly moved more then once
+  --> loop-drops/root.ctl:8:5
+   |
+ 8 |       loop {
+   |  _____-
+ 9 | |         drop(a)
+   |                ^ here
+10 | |     }
+   | |_____- info: the loop
+   |
+   = note: you can disable move semantics with '#[no_moves]' function attribute
+   = note: nonlocal value remains moved even after loop jumps back
+   = help: 'break' after the move or move the value beck before next iteration
+
+error: move out of already moved value
+  --> loop-drops/root.ctl:24:25
+   |
+24 |         if true => drop(a)
+   |                         - info: previous move of value
+25 |         else => continue
+26 |         break
+27 |     }
+28 |     drop(a)
+   |          ^ here
+   |
+   = note: you can disable move semantics with '#[no_moves]' function attribute
+
+error: value is possibly moved more then once
+  --> loop-drops/root.ctl:33:5
+   |
+33 |       loop {
+   |  _____-
+34 | |         if true => drop(a)
+   |                           ^ here
+35 | |         else => break
+36 | |     }
+   | |_____- info: the loop
+   |
+   = note: you can disable move semantics with '#[no_moves]' function attribute
+   = note: nonlocal value remains moved even after loop jumps back
+   = help: 'break' after the move or move the value beck before next iteration
+
+info: borrowc repr of functions:
+fn [: ] drop(param0) -> () { (var3: param0) ret var0
+    block0 {
+        drop var3
+        return var1
+    }
+
+}
+
+fn [] loop_drop() -> () { () ret var0
+    block0 {
+        var3 ={}
+        var4 = var3
+        goto block1
+    }
+
+    block1 {
+        var1 = drop[3\A](val4)
+        goto block1
+    }
+
+}
+
+fn [] loop_break_drop() -> () { () ret var0
+    block0 {
+        var3 ={}
+        var4 = var3
+        goto block1
+    }
+
+    block1 {
+        var1 = drop[3\A](val4)
+        goto block2
+    }
+
+    block2 {
+        return var1
+    }
+
+}
+
+fn [] linear_loop_branch_drop() -> () { () ret var0
+    block0 {
+        var3 ={}
+        var4 = var3
+        goto block1
+    }
+
+    block1 {
+        var5 = 1
+        split var5 block2 block3
+    }
+
+    block2 {
+        var1 = drop[3\A](val4)
+        goto block4 with var1
+    }
+
+    block3 {
+        goto block1
+    }
+
+    block4 {
+        goto block5
+    }
+
+    block5 {
+        var1 = drop[3\A](val4)
+        return var1
+    }
+
+}
+
+fn [] loop_branch_drop() -> () { () ret var0
+    block0 {
+        var3 ={}
+        var4 = var3
+        goto block1
+    }
+
+    block1 {
+        var5 = 1
+        split var5 block2 block3
+    }
+
+    block2 {
+        var1 = drop[3\A](val4)
+        goto block4 with var1
+    }
+
+    block3 {
+        goto block5
+    }
+
+    block4 {
+        goto block1
+    }
+
+    block5 {
+        return var1
+    }
+
+}
+
+fn [] loop_drop_and_move_in() -> () { () ret var0
+    block0 {
+        var3 ={}
+        var4 = var3
+        goto block1
+    }
+
+    block1 {
+        var5 = 1
+        split var5 block2 block3
+    }
+
+    block2 {
+        var1 = drop[3\A](val4)
+        goto block4 with var1
+    }
+
+    block3 {
+        goto block4
+    }
+
+    block4 {
+        var4 ={}
+        goto block1
+    }
+
+}
+
+
+

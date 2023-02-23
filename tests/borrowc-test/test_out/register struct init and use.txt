@@ -1,0 +1,20 @@
+info: borrowc repr of functions:
+fn [] main() -> u32 { () ret var0
+    block0 {
+        var5 ={var4}
+        var4 = 3
+        var6 = var5.0
+        var9 ={var7, var8}
+        var7 = 1
+        var8 = 3
+        var10 = var9.1
+        var3 = u32 + u32(val6, val10)
+        var11 = 6
+        var0 = u32 - u32(val3, val11)
+        return var0
+    }
+
+}
+
+
+
