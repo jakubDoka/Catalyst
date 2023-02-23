@@ -44,9 +44,9 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
 
         self.ctx.detect_infinite_types(&mut self.ext, &self.meta);
 
-        let funcs = mem::take(&mut self.ext.transfere.funcs);
+        let funcs = mem::take(&mut self.ext.transfer.funcs);
         self.build_funcs(&funcs, 0);
-        self.ext.transfere.funcs = funcs;
+        self.ext.transfer.funcs = funcs;
 
         self.build_impl_funcs();
     }

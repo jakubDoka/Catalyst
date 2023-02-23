@@ -16,7 +16,7 @@ pub struct TypecExternalCtx<'arena, 'ctx> {
     pub interner: &'ctx mut Interner,
     pub workspace: &'ctx mut Workspace,
     pub resources: &'ctx Resources,
-    pub transfere: &'ctx mut Active<TypecTransfere<'arena>>,
+    pub transfer: &'ctx mut Active<TypecTransfer<'arena>>,
     pub folder: &'ctx mut (dyn ConstFolder + 'ctx),
 }
 
@@ -27,7 +27,7 @@ impl<'arena, 'ctx> TypecExternalCtx<'arena, 'ctx> {
             interner: self.interner,
             workspace: self.workspace,
             resources: self.resources,
-            transfere: self.transfere,
+            transfer: self.transfer,
             folder: self.folder,
         }
     }
@@ -423,12 +423,12 @@ impl TypecCtx {
             types,
             interner,
             workspace,
-            transfere,
+            transfer,
             ..
         }: &mut TypecExternalCtx,
         meta: &TypecMeta,
     ) {
-        let nodes = transfere.new_types();
+        let nodes = transfer.new_types();
 
         if nodes.clone().next().is_none() {
             return;
@@ -806,7 +806,7 @@ impl TypecMeta {
 
 gen_erasable! {
     #[derive(Default)]
-    pub struct TypecTransfere<'a> {
+    pub struct TypecTransfer<'a> {
         pub(crate) structs: TypecOutput<StructAst<'a>, Struct>,
         pub(crate) funcs: TypecOutput<FuncDefAst<'a>, Func>,
         pub(crate) specs: TypecOutput<SpecAst<'a>, SpecBase>,
@@ -820,7 +820,7 @@ gen_erasable! {
 }
 pub type ImplFrames<'a> = Vec<(ImplAst<'a>, Option<FragRef<Impl>>, usize)>;
 
-impl<'a> TypecTransfere<'a> {
+impl<'a> TypecTransfer<'a> {
     pub fn close_impl_frame(&mut self, ast: ImplAst<'a>, r#impl: Option<FragRef<Impl>>) {
         self.impl_frames.push((ast, r#impl, self.impl_funcs.len()));
     }

@@ -236,9 +236,9 @@ impl Task {
                         BaseTy::Struct(s) => type_creator!(self).instantiate_fields(s, params),
                         BaseTy::Enum(e) => type_creator!(self).instantiate_variants(e, params),
                     };
-                    type_frontier.extend(types);
+                    type_frontier.extend(types.into_iter().rev());
                 }
-                Err(NonBaseTy::Array(..)) => todo!(),
+                Err(NonBaseTy::Array(a)) => type_frontier.push(self.types[a].item),
                 _ => (),
             }
         }

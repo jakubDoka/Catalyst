@@ -208,6 +208,30 @@ impl Generator<'_> {
     }
 
     fn drop(&mut self, drop: VRef<DropMir>, builder: &mut GenBuilder, dest_block: &mut ir::Block) {
+        // we use tuples so that we can easily wrap the iterator items
+        enum DropFrame {
+            Drop {
+                offset: u32,
+                ty: Ty,
+                dyn_offset: Option<ir::Value>,
+            },
+            Check {
+                flag: ir::Value,
+                cond: usize,
+                next: ir::Block,
+            },
+            Goto {
+                dest: ir::Block,
+                next: ir::Block,
+            },
+            Loop {
+                counter: ir::Value,
+                max: usize,
+                repeat: ir::Block,
+                br: ir::Block,
+            },
+        }
+
         let value = builder.body.drops[drop].value;
         let ty = builder.value_ty(value);
         let mut funcs = self.gen_resources.drops[drop.index()].clone();
@@ -230,28 +254,53 @@ impl Generator<'_> {
 
         // [BE INFORMED]: we push everything in reverse order so that we
         // iterate in chronological order
-        let mut frontier = bumpvec![DropFrame::Drop((0, ty))];
+        let mut frontier = bumpvec![DropFrame::Drop {
+            offset: 0,
+            ty,
+            dyn_offset: None
+        }];
         while let Some(node) = frontier.pop() {
-            let (offset, ty) = match node {
-                DropFrame::Drop(drop) => drop,
-                DropFrame::Check((val, flag, else_block)) => {
-                    let equal = builder.ins().icmp_imm(IntCC::Equal, val, flag as i64);
+            let (offset, ty, dyn_offset) = match node {
+                DropFrame::Drop {
+                    offset,
+                    ty,
+                    dyn_offset,
+                } => (offset, ty, dyn_offset),
+                DropFrame::Check {
+                    flag: cond,
+                    cond: flag,
+                    next: dest,
+                } => {
+                    let equal = builder.ins().icmp_imm(IntCC::Equal, cond, flag as i64);
                     let cond_block = builder.create_block();
                     builder.ins().brnz(equal, cond_block, &[]);
-                    builder.ins().jump(else_block, &[]);
+                    builder.ins().jump(dest, &[]);
                     let current_block = builder.current_block().expect("seems impossible");
                     builder.seal_block(current_block);
                     builder.switch_to_block(cond_block);
                     continue;
                 }
-                DropFrame::Goto((final_block, next_block)) => {
-                    builder.ins().jump(final_block, &[]);
+                DropFrame::Goto { dest, next } => {
+                    builder.ins().jump(dest, &[]);
                     let current_block = builder.current_block().expect("seems impossible");
                     builder.seal_block(current_block);
-                    builder.switch_to_block(next_block);
-                    if final_block == next_block {
-                        *dest_block = next_block;
+                    builder.switch_to_block(next);
+                    if dest == next {
+                        *dest_block = next;
                     }
+                    continue;
+                }
+                DropFrame::Loop {
+                    counter,
+                    max,
+                    repeat,
+                    br,
+                } => {
+                    let finished = builder.ins().icmp_imm(IntCC::Equal, counter, max as i64);
+                    builder.ins().brnz(finished, br, &[]);
+                    builder.ins().jump(repeat, &[counter]);
+                    builder.seal_block(repeat);
+                    builder.switch_to_block(br);
                     continue;
                 }
             };
@@ -270,6 +319,10 @@ impl Generator<'_> {
                     true => value,
                     false => builder.ins().iadd_imm(value, offset as i64),
                 };
+                let value = match dyn_offset {
+                    Some(offset) => builder.ins().iadd(value, offset),
+                    None => value,
+                };
                 builder.ins().call(func, &[value]);
             }
 
@@ -279,33 +332,37 @@ impl Generator<'_> {
                 let variants = s.types[e].variants;
                 let flag_ty = s.types.enum_flag_ty(e);
                 let flag_repr = s.ty_repr(Ty::Builtin(flag_ty));
+                // in the future, flag offset can vary between enums
                 let [flag_offset, value_offset] = [0, layout.align.get() as u32];
 
                 let dest = builder.create_block();
                 let mut current = Some(dest);
                 let mut flag_value = None;
-                for (i, variant) in variants.keys().enumerate().rev() {
+                for (cond, variant) in variants.keys().enumerate().rev() {
                     let ty = s.types[variant].ty;
                     let ty = type_creator!(s).instantiate(ty, params);
                     if !type_creator!(s).may_need_drop(ty) {
                         continue;
                     }
 
-                    let &mut cur = current.get_or_insert_with(|| builder.create_block());
-                    current = None;
+                    let next = current.take().unwrap_or_else(|| builder.create_block());
 
-                    let &mut flag_value = flag_value.get_or_insert_with(|| {
+                    let &mut flag = flag_value.get_or_insert_with(|| {
                         builder.ins().load(
                             flag_repr,
                             MemFlags::new(),
                             value,
-                            (flag_offset + offset) as i32,
+                            (offset + flag_offset) as i32,
                         )
                     });
 
-                    frontier.push(DropFrame::Goto((dest, cur)));
-                    frontier.push(DropFrame::Drop((value_offset + offset, ty)));
-                    frontier.push(DropFrame::Check((flag_value, i, cur)));
+                    frontier.push(DropFrame::Goto { dest, next });
+                    frontier.push(DropFrame::Drop {
+                        offset: offset + value_offset,
+                        ty,
+                        dyn_offset: None,
+                    });
+                    frontier.push(DropFrame::Check { flag, cond, next });
                 }
             };
 
@@ -317,12 +374,40 @@ impl Generator<'_> {
                             .map(|of| of + offset)
                             .rev()
                             .zip(type_creator!(self).instantiate_fields(s, params))
-                            .map(DropFrame::Drop)
+                            .map(|(offset, ty)| DropFrame::Drop {
+                                offset,
+                                ty,
+                                dyn_offset: None,
+                            })
                             .collect_into(&mut *frontier);
                     }
                     BaseTy::Enum(e) => enum_expander(self, params, e),
                 },
-                Err(NonBaseTy::Array(..)) => todo!(),
+                Err(NonBaseTy::Array(a)) => {
+                    let loop_counter_init = builder.ins().iconst(ir::types::I32, 0);
+                    let loop_block = builder.create_block();
+                    let loop_counter = builder.append_block_param(loop_block, ir::types::I32);
+                    let exit_block = builder.create_block();
+
+                    builder.ins().jump(loop_block, &[loop_counter_init]);
+                    let current_block = builder.current_block().expect("seems impossible");
+                    builder.seal_block(current_block);
+                    builder.switch_to_block(loop_block);
+
+                    let loop_counter = builder.ins().iadd_imm(loop_counter, 1);
+
+                    frontier.push(DropFrame::Loop {
+                        counter: loop_counter,
+                        max: self.types[a].len as usize,
+                        repeat: loop_block,
+                        br: exit_block,
+                    });
+                    frontier.push(DropFrame::Drop {
+                        dyn_offset: Some(loop_counter),
+                        offset,
+                        ty: self.types[a].item,
+                    });
+                }
                 Err(..) => (),
             }
         }
@@ -1111,10 +1196,4 @@ impl Generator<'_> {
         let target = builder.ins().band_imm(target, insert_mask);
         builder.ins().bor(target, shifted)
     }
-}
-
-enum DropFrame {
-    Drop((u32, Ty)),
-    Check((ir::Value, usize, ir::Block)),
-    Goto((ir::Block, ir::Block)),
 }

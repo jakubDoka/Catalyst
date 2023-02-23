@@ -60,7 +60,7 @@ impl Default for Mir {
         MirBase::new(1)
             .split()
             .next()
-            .expect("since we pass 1 this always resultis into some")
+            .expect("since we pass 1 this always results into some")
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::ctx::TypecTransfere;
+use crate::ctx::TypecTransfer;
 
 use super::TypecParser;
 
@@ -23,7 +23,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
                 continue;
             };
 
-            T::output(self.ext.transfere).push((item_ast, id));
+            T::output(self.ext.transfer).push((item_ast, id));
         }
 
         self
@@ -86,7 +86,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
 
                         let id = self.collect_func_low(func, &[], &mut spec_set, scope_data)?;
 
-                        self.ext.transfere.impl_funcs.push((func, id));
+                        self.ext.transfer.impl_funcs.push((func, id));
                         Some((id, func.signature.name.span))
                     })
                     .collect::<BumpVec<_>>()
@@ -111,7 +111,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             })
             .transpose()?;
 
-        self.ext.transfere.close_impl_frame(r#impl, impl_id);
+        self.ext.transfer.close_impl_frame(r#impl, impl_id);
 
         self.ctx.end_frame(frame);
 
@@ -693,7 +693,7 @@ pub trait CollectGroup<'arena>: Copy {
     type Output;
 
     fn output<'a>(
-        transfere: &'a mut Active<TypecTransfere<'arena>>,
+        transfer: &'a mut Active<TypecTransfer<'arena>>,
     ) -> &'a mut TypecOutput<Self, Self::Output>;
 }
 
@@ -706,9 +706,9 @@ macro_rules! gen_group {
                 type Output = $out;
 
                 fn output<'_a>(
-                    transfere: &'_a mut Active<TypecTransfere<$lt>>,
+                    transfer: &'_a mut Active<TypecTransfer<$lt>>,
                 ) -> &'_a mut TypecOutput<Self, Self::Output> {
-                    &mut transfere.$field
+                    &mut transfer.$field
                 }
             }
         )*

@@ -10,8 +10,8 @@ use {ast::*, std::default::default, storage::*, types::*};
 
 impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
     pub(super) fn build_impl_funcs(&mut self) -> &mut Self {
-        let impl_frames = mem::take(&mut self.ext.transfere.impl_frames);
-        let impl_funcs = mem::take(&mut self.ext.transfere.impl_funcs);
+        let impl_frames = mem::take(&mut self.ext.transfer.impl_frames);
+        let impl_funcs = mem::take(&mut self.ext.transfer.impl_funcs);
         let iter = iter::once(0)
             .chain(impl_frames.iter().map(|&(.., i)| i))
             .zip(impl_frames.iter().copied());
@@ -104,11 +104,11 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         &mut self,
         builder: fn(&mut Self, FragRef<T::Output>, T),
     ) -> &mut Self {
-        let output = mem::take(T::output(self.ext.transfere));
+        let output = mem::take(T::output(self.ext.transfer));
         for &(ast, ty) in output.iter() {
             builder(self, ty, ast);
         }
-        *T::output(self.ext.transfere) = output;
+        *T::output(self.ext.transfer) = output;
         self
     }
 
@@ -117,10 +117,10 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             let Func { signature, .. } = self.ext.types[func];
             match self.builder(signature.ret).build_func(ast, func, offset) {
                 Some(Some(body)) => {
-                    self.ext.transfere.checked_funcs.push((func, body));
+                    self.ext.transfer.checked_funcs.push((func, body));
                 }
                 Some(None) => {
-                    self.ext.transfere.extern_funcs.push(func);
+                    self.ext.transfer.extern_funcs.push(func);
                 }
                 None => (),
             };

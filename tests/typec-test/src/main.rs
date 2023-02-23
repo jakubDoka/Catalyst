@@ -19,7 +19,7 @@ struct TestState {
     resources: Resources,
     package_graph: PackageGraph,
     typec_ctx: TypecCtx,
-    typec_transfere: TypecTransfere<'static>,
+    typec_transfer: TypecTransfer<'static>,
     arena: Arena,
     functions: String,
     builtin_funcs: Vec<FragRef<Func>>,
@@ -41,24 +41,24 @@ impl Scheduler for TestState {
     }
 
     fn parse_segment(&mut self, module: storage::VRef<Module>, items: GroupedItemsAst) {
-        let mut active = Active::take(&mut self.typec_transfere);
+        let mut active = Active::take(&mut self.typec_transfer);
         let mut ext = TypecExternalCtx {
             types: &mut self.types,
             interner: &mut self.interner,
             workspace: &mut self.workspace,
             resources: &self.resources,
-            transfere: &mut active,
+            transfer: &mut active,
             folder: &mut ConstFolderImpl {},
         };
         let meta = TypecMeta::new(&self.resources, module);
 
         TypecParser::new(&self.arena, &mut self.typec_ctx, ext.clone_borrow(), meta).execute(items);
         if !self.resources.is_external(module) {
-            let funcs = ext.transfere.checked_funcs().to_bumpvec();
+            let funcs = ext.transfer.checked_funcs().to_bumpvec();
             ext.display_funcs(&funcs, &mut self.functions).unwrap();
         }
 
-        self.typec_transfere = active.erase();
+        self.typec_transfer = active.erase();
         self.arena.clear();
         self.typec_ctx.cast_checks().for_each(drop);
     }

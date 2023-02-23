@@ -11,10 +11,9 @@ impl<'ctx> TypeCreator<'ctx> {
     }
 
     fn may_need_drop_low(&mut self, ty: Ty, params: &[Ty]) -> (bool, bool) {
-        // its split since map entry handle must be dropped.
         let (is, param) = match ty.to_base_and_params(self.types) {
             Ok((base, params)) => {
-                if let Some(is) = self.types.may_need_drop.get(&ty) {
+                if let Some(is) = self.types.may_need_drop.get(&base.as_ty()) {
                     return (*is, false);
                 }
 
@@ -30,8 +29,15 @@ impl<'ctx> TypeCreator<'ctx> {
                     .reduce(|(a, b), (c, d)| (a | c, b | d))
                     .unwrap_or((false, false))
             }
-            Err(NonBaseTy::Array(a)) => self.may_need_drop_low(self.types[a].item, params),
-            Err(NonBaseTy::Pointer(..) | NonBaseTy::Builtin(..)) => return (true, false),
+            Err(NonBaseTy::Array(a)) if self.types[a].len != 0 => {
+                self.may_need_drop_low(self.types[a].item, params)
+            }
+            Err(NonBaseTy::Pointer(..) | NonBaseTy::Builtin(..) | NonBaseTy::Array(..)) => {
+                return (false, false);
+            }
+            Err(NonBaseTy::Param(i)) if let Some(ty) = params.get(i as usize) => {
+                self.may_need_drop_low(*ty, params)
+            }
             Err(NonBaseTy::Param(..)) => return (true, true),
         };
 

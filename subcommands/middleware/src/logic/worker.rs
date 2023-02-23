@@ -635,13 +635,13 @@ impl Worker {
         task: &mut Task,
         shared: &Shared,
     ) {
-        let mut active = Active::take(&mut self.state.typec_transfere);
+        let mut active = Active::take(&mut self.state.typec_transfer);
         let ext = TypecExternalCtx {
             types: &mut task.types,
             interner: &mut task.interner,
             workspace: &mut task.resources.workspace,
             resources: shared.resources,
-            transfere: &mut active,
+            transfer: &mut active,
             folder: &mut ConstFolderImpl {
                 module,
                 module_ref,
@@ -685,7 +685,7 @@ impl Worker {
             source,
             self.state.typec_ctx.cast_checks(),
         );
-        self.state.typec_transfere = active.erase();
+        self.state.typec_transfer = active.erase();
     }
 
     fn check_casts(
@@ -843,7 +843,7 @@ impl ConstFolder for ConstFolderImpl<'_, '_> {
 #[derive(Default)]
 pub struct WorkerState {
     typec_ctx: TypecCtx,
-    typec_transfere: TypecTransfere<'static>,
+    typec_transfer: TypecTransfer<'static>,
     mir_ctx: BorrowcCtx,
     module: ModuleMir,
     // pub token_macros: Map<FragRef<Impl>, TokenMacroOwnedSpec>,
