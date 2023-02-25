@@ -9,16 +9,13 @@ use storage::*;
 use type_creator::TypeDisplay;
 use types::*;
 
-pub fn display_function(
-    funcs: impl IntoIterator<Item = FragRef<Func>>,
-    ctx: MirDisplayCtx,
-) -> String {
+pub fn display_function(funcs: impl IntoIterator<Item = FragRef<Func>>, ctx: MirDisplay) -> String {
     let mut buffer = String::new();
     ctx.display_funcs(funcs, &mut buffer).unwrap();
     buffer
 }
 
-pub struct MirDisplayCtx<'i> {
+pub struct MirDisplay<'i> {
     pub types: &'i Types,
     pub module: &'i ModuleMir,
     pub interner: &'i Interner,
@@ -26,7 +23,7 @@ pub struct MirDisplayCtx<'i> {
     pub mir: &'i Mir,
 }
 
-impl MirDisplayCtx<'_> {
+impl MirDisplay<'_> {
     pub fn display_funcs(
         &self,
         funcs: impl IntoIterator<Item = FragRef<Func>>,

@@ -111,6 +111,11 @@ impl InternerBase {
         s
     }
 
+    pub fn expand(&mut self, thread_count: u8) {
+        self.storage.expand(thread_count);
+        self.cluster.expand(thread_count);
+    }
+
     pub fn split(&self) -> impl Iterator<Item = Interner> + '_ {
         let mut clusters = self.cluster.split();
         let mut storages = self.storage.split();
@@ -223,6 +228,12 @@ impl Cluster {
                 })
         }
     }
+
+    fn expand(&mut self, thread_count: u8) {
+        assert!(self.allocs.is_unique());
+        self.allocs
+            .extend((0..thread_count).map(|_| Allocator::new()));
+    }
 }
 
 struct ClusterBorrow {
@@ -253,6 +264,9 @@ struct Allocator {
     current: *mut u8,
     bucket_size: usize,
 }
+
+unsafe impl Send for Allocator {}
+unsafe impl Sync for Allocator {}
 
 impl Allocator {
     fn new() -> Self {

@@ -4,6 +4,7 @@ use std::{
     cell::UnsafeCell,
     default::default,
     hash::Hash,
+    mem::ManuallyDrop,
     ops::Deref,
     sync::{
         atomic::{AtomicPtr, Ordering},
@@ -197,6 +198,10 @@ impl<T> SyncFragBase<T, Global> {
     pub fn new(thread_count: u8) -> Self {
         Self::new_in(thread_count, Global)
     }
+
+    pub fn expand(&mut self, thread_count: u8) {
+        self.expand_in(thread_count, Global)
+    }
 }
 
 impl<T, A: Allocator + Default> Clone for SyncFragBase<T, A> {
@@ -217,6 +222,28 @@ impl<T, A: Allocator + Default> SyncFragBase<T, A> {
                 .map(|thread| SyncFragView::new_in(thread, allocator.clone()))
                 .collect(),
         }
+    }
+
+    pub fn expand_in(&mut self, thread_count: u8, allocator: A)
+    where
+        A: Clone,
+    {
+        let new = (self.views.len() as u8..thread_count)
+            .map(|thread| SyncFragView::new_in(thread, allocator.clone()));
+        let current = mem::replace(&mut self.views, Arc::new([]));
+        unsafe {
+            let mut current: Arc<[ManuallyDrop<SyncFragView<T, A>>]> = mem::transmute(current);
+            let current = Arc::get_mut(&mut current)
+                .expect("no other references")
+                .iter_mut()
+                .map(|v| (v as *mut ManuallyDrop<SyncFragView<T, A>>).read());
+
+            self.views = current
+                .map(ManuallyDrop::into_inner)
+                .chain(new)
+                .collect::<Vec<_>>()
+                .into();
+        };
     }
 
     pub fn split(&self) -> impl Iterator<Item = SyncFragMap<T, A>> + '_ {

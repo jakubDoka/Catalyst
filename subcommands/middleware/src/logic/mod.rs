@@ -141,6 +141,13 @@ impl Middleware {
         self.incremental.take()
     }
 
+    pub fn unwrap_view(&mut self) -> DiagnosticView {
+        DiagnosticView {
+            workspace: &mut self.workspace,
+            resources: &self.incremental.as_ref().unwrap().resources,
+        }
+    }
+
     fn reload_resources(
         &mut self,
         resources: &mut Resources,
@@ -189,7 +196,7 @@ impl Middleware {
         drop(package_receiver);
 
         let mut tasks = task_base
-            .split(false)
+            .split(Some(args))
             .take(handlers.len())
             .collect::<Vec<_>>();
 
@@ -302,10 +309,11 @@ impl Middleware {
         db: &mut dyn ResourceDb,
     ) -> (MiddlewareOutput, DiagnosticView) {
         self.workspace.clear();
+        self.entry_points.clear();
 
         self.load_on_update(&args.incremental_path);
 
-        let thread_count = args.thread_count();
+        let thread_count = args.thread_count().min(255) as u8;
 
         let reloaded = self.incremental.is_some();
 
@@ -318,9 +326,10 @@ impl Middleware {
         } = self
             .incremental
             .take()
-            .unwrap_or_else(|| Incremental::new(thread_count.max(255) as u8));
+            .unwrap_or_else(|| Incremental::new(thread_count));
 
         if reloaded {
+            task_base.expand(thread_count);
             resources
                 .sources
                 .values_mut()
@@ -330,7 +339,7 @@ impl Middleware {
         if let Some(removed) = self.reload_resources(&mut resources, &mut task_base, db, &args.path)
             && !removed.is_empty()
         {
-            self.sweep_resources(&mut task_base, &mut module_items, removed, thread_count, &mut builtin_functions);
+            Self::sweep_resources(&mut self.relocator, &mut task_base, &mut module_items, removed, thread_count, &mut builtin_functions);
         };
 
         if self.workspace.has_errors() || resources.no_changes() {
@@ -365,7 +374,7 @@ impl Middleware {
 
         self.task_graph.prepare(&resources);
 
-        let tasks = task_base.split(args.dump_ir).collect::<Vec<_>>();
+        let tasks = task_base.split(Some(args)).collect::<Vec<_>>();
         let shared = Shared {
             resources: &resources,
             jit_isa: &args.jit_isa,
@@ -373,7 +382,7 @@ impl Middleware {
             builtin_functions: &builtin_functions,
         };
 
-        let mut handlers = vec![DefaultSourceAstHandler; thread_count];
+        let mut handlers = vec![DefaultSourceAstHandler; thread_count as usize];
 
         let (tasks, entry_points, imported) = thread::scope(|scope| {
             let (package_tasks, mut gen_senders, threads) = Self::launch_workers(
@@ -424,7 +433,7 @@ impl Middleware {
             )
         });
 
-        let (ir, mut main_task, compiled) = self.tidy_tasks(&mut task_base, tasks);
+        let ([ir, mir, tir], mut main_task, compiled) = self.tidy_tasks(&mut task_base, tasks);
 
         if self.workspace.has_errors() || args.check {
             let incr = self.incremental.insert(Incremental {
@@ -438,7 +447,7 @@ impl Middleware {
             let output = if self.workspace.has_errors() {
                 MiddlewareOutput::Failed
             } else {
-                MiddlewareOutput::Checked
+                MiddlewareOutput::Checked { mir, tir }
             };
 
             return (
@@ -493,6 +502,8 @@ impl Middleware {
             MiddlewareOutput::Compiled {
                 binary: object.emit().unwrap(),
                 ir,
+                mir,
+                tir,
             },
             DiagnosticView {
                 workspace: &mut self.workspace,
@@ -519,7 +530,7 @@ impl Middleware {
         &mut self,
         base: &mut TaskBase,
         mut tasks: Vec<Task>,
-    ) -> (Option<String>, Task, Vec<CompiledFuncRef>) {
+    ) -> ([Option<String>; 3], Task, Vec<CompiledFuncRef>) {
         // we want consistent output during tests
         tasks.sort_unstable_by_key(|t| t.id);
 
@@ -528,10 +539,17 @@ impl Middleware {
             task.commit(base);
         }
 
-        let ir = tasks
+        let dumps = tasks
             .iter_mut()
-            .filter_map(|task| task.ir_dump.take())
-            .reduce(|a, b| a + &b);
+            .map(|task| {
+                [
+                    task.ir_dump.take(),
+                    task.mir_dump.take(),
+                    task.tir_dump.take(),
+                ]
+            })
+            .reduce(|a, b| a.zip(b).map(|(a, b)| a.and_then(|a| b.map(|b| a + &b))))
+            .unwrap_or([None, None, None]);
 
         let compiled = tasks
             .iter_mut()
@@ -542,7 +560,7 @@ impl Middleware {
         let mut main_task = tasks.pop().expect("has to be at least one task");
         main_task.pull(base);
 
-        (ir, main_task, compiled)
+        (dumps, main_task, compiled)
     }
 
     fn launch_workers<'a: 'scope, 'scope, S: AstHandler>(
@@ -630,7 +648,7 @@ impl Middleware {
         receiver: Receiver<(PackageTask, VRef<Package>)>,
         tasks: Vec<PackageTask>,
         resources: &Resources,
-        worker_count: usize,
+        worker_count: u8,
         cached_items: &mut Map<VRef<Source>, ModuleItems>,
     ) -> Vec<Task> {
         let _t = QuickTimer::new("parsing, type checking, macro expansion");
@@ -689,7 +707,7 @@ impl Middleware {
                     .expect("worker thread terminated prematurely");
             }
 
-            if tasks.len() == worker_count {
+            if tasks.len() == worker_count as usize {
                 assert!(!self.task_graph.has_tasks());
                 break;
             }
@@ -715,7 +733,7 @@ impl Middleware {
 
         let leftover_tasks = receiver
             .into_iter()
-            .take(worker_count - tasks.len())
+            .take(worker_count as usize - tasks.len())
             .map(|(task, ..)| task);
         let mut res = tasks
             .into_iter()
@@ -741,11 +759,11 @@ impl Middleware {
     }
 
     fn sweep_resources(
-        &mut self,
+        relocator: &mut FragRelocator,
         task_base: &mut TaskBase,
         module_items: &mut Map<VRef<Source>, ModuleItems>,
         removed: Vec<VRef<Source>>,
-        thread_count: usize,
+        thread_count: u8,
         mut builtin_functions: &mut [FragRef<Func>],
     ) {
         let _t = QuickTimer::new("resource clear");
@@ -755,7 +773,7 @@ impl Middleware {
         }
 
         let mut threads = iter::repeat_with(Vec::new)
-            .take(thread_count)
+            .take(thread_count as usize)
             .collect::<Vec<_>>();
 
         for (item, thread) in module_items
@@ -763,7 +781,7 @@ impl Middleware {
             .flat_map(|val| val.items.values_mut())
             .zip((0..thread_count).cycle())
         {
-            threads[thread].push(item);
+            threads[thread as usize].push(item);
         }
 
         let mut frags = RelocatedObjects::default();
@@ -773,7 +791,7 @@ impl Middleware {
         frags.add_static_root(&Struct::ALL);
         frags.add_static_root(&SpecBase::ALL);
         task_base.register(&mut frags);
-        self.relocator.relocate(&mut threads, &mut frags);
+        relocator.relocate(&mut threads, &mut frags);
     }
 }
 
@@ -801,47 +819,67 @@ pub struct CommandInfo<'a> {
     pub inherit: Option<&'a CommandInfo<'a>>,
 }
 
+impl<'a> CommandInfo<'a> {
+    fn fmt_aligned<'b, T: 'b + Copy, const N: usize>(
+        f: &mut fmt::Formatter<'_>,
+        elems: impl Iterator<Item = T> + Clone,
+        aligned_parts: impl Fn(T) -> [&'b str; N],
+        format: impl Fn(&mut fmt::Formatter<'_>, [String; N], T) -> fmt::Result,
+    ) -> fmt::Result
+    where
+        T: Clone,
+    {
+        let max_lens = elems
+            .clone()
+            .map(&aligned_parts)
+            .fold([0; N], |acc, c| acc.zip(c).map(|(a, b)| a.max(b.len())));
+
+        for elem in elems {
+            let parts = aligned_parts(elem).zip(max_lens.clone()).map(|(a, b)| {
+                let mut s = a.to_string();
+                s.push_str(&" ".repeat(b - a.len()));
+                s
+            });
+            f.write_char('\t')?;
+            format(f, parts, elem)?;
+            f.write_char('\n')?;
+        }
+
+        Ok(())
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &CommandInfo<'a>> + Clone {
+        let mut current = Some(self);
+        iter::from_fn(move || {
+            let res = current?;
+            current = current?.inherit;
+            Some(res)
+        })
+    }
+}
+
 impl<'a> fmt::Display for CommandInfo<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.general)?;
-        f.write_char('\n')?;
-        f.write_str("FLAGS:\n")?;
-        let flag_max_len = self
-            .flags
-            .iter()
-            .map(|(name, ..)| name.len())
-            .max()
-            .unwrap_or(0);
-        for (name, desc) in self.flags {
-            let spacing = " ".repeat(flag_max_len - name.len());
-            writeln!(f, "\t-{name}{spacing} - {desc}")?;
+        for info in self.iter() {
+            f.write_str(info.general)?;
+            f.write_char('\n')?;
         }
+
+        f.write_str("FLAGS:\n")?;
+        Self::fmt_aligned(
+            f,
+            self.iter().flat_map(|i| i.flags.iter()),
+            |(n, ..)| [n],
+            |f, [n], (.., d)| write!(f, "{n} - {d}"),
+        )?;
 
         f.write_str("VALUES:\n")?;
-        let value_max_len = self
-            .flags
-            .iter()
-            .map(|(name, ..)| name.len())
-            .max()
-            .unwrap_or(0);
-        let type_max_len = self
-            .flags
-            .iter()
-            .map(|(name, ..)| name.len())
-            .max()
-            .unwrap_or(0);
-        for (name, value, desc) in self.values {
-            let value_spacing = " ".repeat(value_max_len - name.len());
-            let type_spacing = " ".repeat(type_max_len - name.len());
-            writeln!(
-                f,
-                "\t--{name}{value_spacing} {value}{type_spacing} - {desc}"
-            )?;
-        }
-
-        if let Some(inherit) = self.inherit {
-            write!(f, "\n{inherit}")?;
-        }
+        Self::fmt_aligned(
+            f,
+            self.iter().flat_map(|i| i.values.iter()),
+            |(n, v, ..)| [n, v],
+            |f, [n, v], (.., d)| write!(f, "{n} {v} - {d}"),
+        )?;
 
         Ok(())
     }
@@ -881,6 +919,8 @@ pub struct MiddlewareArgs {
     pub incremental_path: Option<PathBuf>,
     pub max_cores: Option<usize>,
     pub dump_ir: bool,
+    pub dump_mir: bool,
+    pub dump_tir: bool,
     pub check: bool,
     pub quiet: bool,
 }
@@ -894,7 +934,10 @@ impl MiddlewareArgs {
             "target" => "target triple of final binary"
             "check" => "skip codegen"
             "quiet" => "don't print anything"
-            "dump-ir" => "print cranelift ir for all compilef functions"
+
+            "dump-ir" => "print cranelift ir for all compiled functions"
+            "dump-mir" => "print mir for all (re)compiled functions"
+            "dump-tir" => "print tir for all (re)compiled functions"
         }
         values {
             "max-cores"("N") => "maximum cores used during compilation"
@@ -965,6 +1008,8 @@ impl MiddlewareArgs {
                 .map(|s| s.into()),
             max_cores: cli_input.value("max-cores").and_then(|s| s.parse().ok()),
             dump_ir: cli_input.enabled("dump-ir"),
+            dump_mir: cli_input.enabled("dump-mir"),
+            dump_tir: cli_input.enabled("dump-tir"),
             check: cli_input.enabled("check"),
             quiet: cli_input.enabled("quiet"),
         })
@@ -972,6 +1017,23 @@ impl MiddlewareArgs {
 
     pub fn display(&self) -> MiddlewareArgsDisplay {
         MiddlewareArgsDisplay { quiet: self.quiet }
+    }
+}
+
+impl Default for MiddlewareArgs {
+    fn default() -> Self {
+        Self {
+            path: ".".into(),
+            jit_isa: Isa::host(true).unwrap(),
+            isa: Isa::host(false).unwrap(),
+            incremental_path: None,
+            max_cores: Some(1),
+            dump_ir: false,
+            dump_mir: false,
+            dump_tir: false,
+            check: true,
+            quiet: true,
+        }
     }
 }
 
@@ -1008,8 +1070,16 @@ impl fmt::Write for MiddlewareArgsDisplay {
 
 #[derive(Debug)]
 pub enum MiddlewareOutput {
-    Compiled { binary: Vec<u8>, ir: Option<String> },
-    Checked,
+    Compiled {
+        binary: Vec<u8>,
+        ir: Option<String>,
+        mir: Option<String>,
+        tir: Option<String>,
+    },
+    Checked {
+        mir: Option<String>,
+        tir: Option<String>,
+    },
     Unchanged,
     Failed,
 }
@@ -1139,10 +1209,15 @@ impl<'a> DiagnosticView<'a> {
         &self,
         color: bool,
         output: &'b MiddlewareOutput,
-    ) -> Result<(&'b [u8], Option<&'b str>), String> {
+    ) -> Result<(&'b [u8], [Option<&'b str>; 3]), String> {
         Err(match output {
-            MiddlewareOutput::Compiled { binary, ir } => return Ok((binary, ir.as_deref())),
-            MiddlewareOutput::Checked => "No errors found.".into(),
+            MiddlewareOutput::Compiled {
+                binary,
+                ir,
+                mir,
+                tir,
+            } => return Ok((binary, [ir.as_deref(), mir.as_deref(), tir.as_deref()])),
+            MiddlewareOutput::Checked { .. } => "No errors found.".into(),
             MiddlewareOutput::Unchanged => "No changes detected.".into(),
             MiddlewareOutput::Failed => {
                 let mut display = SnippetDisplayImpl {

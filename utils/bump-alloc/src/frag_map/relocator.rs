@@ -229,7 +229,9 @@ pub struct FragMarkShard {
 impl FragMarkShard {
     fn project<T: 'static>(&self, slice: FragSlice<T>) -> Option<FragSlice<T>> {
         let FragSliceAddr { thread, index, len } = slice.0;
-        let range_index = self.data[thread as usize]
+        let range_index = self
+            .data
+            .get(thread as usize)?
             .binary_search_by_key(&index, |(.., r)| r.start)
             .map_or_else(|i| i.checked_sub(1), Some)?;
         let (reloc_index, range) = self.data[thread as usize].get(range_index)?.clone();

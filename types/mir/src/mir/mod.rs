@@ -21,6 +21,10 @@ impl MirBase {
         }
     }
 
+    pub fn expand(&mut self, thread_count: u8) {
+        self.modules.expand(thread_count);
+    }
+
     pub fn register<'a>(&'a mut self, objects: &mut RelocatedObjects<'a>) {
         objects.add_root(DashMapFilterUnmarkedKeys::new(&mut self.bodies));
         objects.add(&mut self.modules);

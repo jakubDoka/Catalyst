@@ -47,7 +47,7 @@ impl<'m> CcRuntime<'m> {
     command_info! {
         HELP
         [
-            "ctl c [...]\n",
+            "ctl cc [...]\n",
             "Allows invoking Catalyst compiler to produce platform specific executable files.\n",
         ]: MiddlewareArgs::HELP;
         flags {
@@ -76,13 +76,13 @@ impl<'m> CcRuntime<'m> {
 
         let (output, view) = self.middleware.update(&mid_args, &mut OsResources);
         let binary = view.dump_diagnostics(true, &output).map(|(bin, ir)| {
-            if let Some(ir) = ir {
+            for ir in ir.into_iter().flatten() {
                 let _ = writeln!(mid_args.display(), "{ir}");
             }
             bin
         });
 
-        if mid_args.check && let MiddlewareOutput::Checked = output {
+        if mid_args.check && let MiddlewareOutput::Checked { .. } = output {
             return Ok(());
         }
 

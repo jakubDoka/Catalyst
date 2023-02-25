@@ -20,7 +20,7 @@ mod patterns;
 pub use {
     builder::{compile_functions, MirBuilder, MirCompilationCtx},
     ctx::{BorrowcCtx, BorrowcMeta, ExternalMirCtx},
-    display::{display_function, MirDisplayCtx},
+    display::{display_function, MirDisplay},
 };
 
 /*

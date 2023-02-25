@@ -86,6 +86,8 @@ impl<'m> LspRuntime<'m> {
                 incremental_path: Some("incremental/lsp.rkyv".into()),
                 max_cores: None,
                 dump_ir: false,
+                dump_mir: false,
+                dump_tir: false,
                 check: true,
                 quiet: true,
             },

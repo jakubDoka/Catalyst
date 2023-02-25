@@ -1,51 +1,98 @@
 #![feature(default_free_fn)]
 
+use core::slice;
 use std::default::default;
 
+use ast::ManifestAst;
 use diags::*;
-use packaging::*;
+use lexing::NoTokenMeta;
+use parsing::Parser;
 use resources::*;
-use span::*;
 use storage::*;
-use testing::*;
+use testing::{
+    fmt::{AstHandler, MiddlewareArgs},
+    *,
+};
 
 #[derive(Default)]
-struct TestState {
-    workspace: Workspace,
-    resources: Resources,
-    interner: Interner,
-    package_graph: PackageGraph,
-}
+struct TestState;
 
-impl Scheduler for TestState {
-    fn before_parsing(&mut self, module: VRef<Module>) {
-        if self.resources.is_external(module) {
-            return;
-        }
+#[derive(Default)]
+struct Output(Vec<VRef<Source>>);
 
-        let module_ent = &self.resources.modules[module];
-        let content = &self.resources.sources[module_ent.source].content;
+impl AstHandler for Output {
+    type Meta = NoTokenMeta;
 
-        self.workspace.push(CtlSnippet {
-            source_annotations: vec![CtlSourceAnnotation {
-                label: "test".into(),
-                annotation_type: CtlAnnotationType::Info,
-                span: Span::new(0..content.len()),
-                origin: module_ent.source,
-            }],
-            title: default(),
-            footer: default(),
-        });
+    type Imports<'a> = ();
+
+    type Chunk<'a> = ();
+
+    fn parse_chunk<'a>(&mut self, _parser: Parser<'_, 'a, Self::Meta>) -> Option<Self::Chunk<'a>> {
+        None
     }
 
-    fn loader<'a>(&'a mut self, db: &'a mut dyn ResourceDb) -> PackageLoader<'a> {
-        PackageLoader {
-            resources: &mut self.resources,
-            workspace: &mut self.workspace,
-            interner: &mut self.interner,
-            package_graph: &mut self.package_graph,
-            db,
+    fn chunk(
+        &mut self,
+        _items: Self::Chunk<'_>,
+        _ctx: fmt::BaseSourceCtx,
+        _macros: fmt::MacroSourceCtx,
+    ) -> bool {
+        true
+    }
+
+    fn parse_imports<'a>(
+        &mut self,
+        mut parser: Parser<'_, 'a, Self::Meta>,
+    ) -> Option<Self::Imports<'a>> {
+        parser.skip_imports()
+    }
+
+    fn parse_manifest<'a>(
+        &mut self,
+        _parser: Parser<'_, 'a, Self::Meta>,
+    ) -> Option<ManifestAst<'a, Self::Meta>> {
+        None
+    }
+
+    fn should_skip_module(&mut self, ctx: fmt::BaseSourceCtx) -> bool {
+        if !ctx.shared.resources.is_external(ctx.module) {
+            self.0.push(ctx.shared.resources.modules[ctx.module].source);
         }
+
+        true
+    }
+}
+
+impl Testable for TestState {
+    fn exec<'a>(
+        &'a mut self,
+        name: &str,
+        middleware: &'a mut fmt::Middleware,
+        resources: &'a mut items::TestResources,
+    ) -> (&'a mut Workspace, &'a Resources) {
+        let mut output = Output::default();
+        let args = MiddlewareArgs {
+            path: name.into(),
+            ..default()
+        };
+        middleware.traverse_source_ast(&args, slice::from_mut(&mut output));
+
+        let view = middleware.unwrap_view();
+        let mut out = String::new();
+        for source in output.0 {
+            let source = &view.resources.sources[source].path;
+            let file = resources.read_to_string(source).unwrap();
+            out.push_str(&file);
+        }
+        view.workspace.push(MirRepr { repr: out });
+        (view.workspace, view.resources)
+    }
+}
+
+ctl_errors! {
+    #[info => "formatted:\n {repr}"]
+    error MirRepr {
+        repr ref: String,
     }
 }
 

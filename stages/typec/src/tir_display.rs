@@ -1,7 +1,5 @@
-use resources::Source;
-use type_creator::TypeDisplay;
-
-use crate::ctx::TypecExternalCtx;
+use resources::{Resources, Source};
+use type_creator::{type_creator, TypeCreator, TypeDisplay};
 
 use {
     std::{
@@ -12,7 +10,17 @@ use {
     types::*,
 };
 
-impl<'arena, 'ctx> TypecExternalCtx<'arena, 'ctx> {
+pub struct TirDisplay<'ctx> {
+    pub interner: &'ctx mut Interner,
+    pub types: &'ctx mut Types,
+    pub resources: &'ctx Resources,
+}
+
+impl<'ctx> TirDisplay<'ctx> {
+    fn creator(&mut self) -> TypeCreator {
+        type_creator!(self)
+    }
+
     pub fn dbg_funcs(&mut self, funcs: &[(FragRef<Func>, TirFunc)]) {
         let mut buffer = String::new();
         self.display_funcs(funcs, &mut buffer).unwrap();

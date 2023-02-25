@@ -1,15 +1,21 @@
 use std::{
+    collections::HashSet,
     fs::{self, *},
     io::Write,
     path::*,
     process::*,
-    thread::scope,
 };
 
 fn main() {
     println!("Initiating catalyst test!");
 
-    let target = std::env::args().nth(1);
+    let args = std::env::args()
+        .filter(|s| !s.starts_with("--"))
+        .collect::<Vec<_>>();
+
+    let flags = std::env::args()
+        .filter_map(|s| s.strip_prefix("--").map(|s| s.to_owned()))
+        .collect::<HashSet<_>>();
 
     let dirs_ctor = || {
         read_dir("tests")
@@ -17,35 +23,38 @@ fn main() {
             .filter_map(|file| file.ok())
             .filter(|file| file.file_type().unwrap().is_dir())
             .map(|file| (file.path(), file.file_name().to_str().unwrap().to_owned()))
-            .filter(|(.., name)| !matches!(target, Some(ref target) if !name.contains(target)))
+            .filter(|(.., name)| !matches!(args.get(1), Some(target) if !name.contains(target)))
     };
 
     for (path, name) in dirs_ctor() {
         println!("Compiling test case: {name}");
         Command::new("cargo")
             .current_dir(path)
-            .args(["build", "--release"])
+            .args(["build"])
+            .args(Some("--release").filter(|_| flags.contains("release")))
             .status()
             .unwrap();
     }
 
-    scope(|h| {
-        for (path, name) in dirs_ctor() {
-            h.spawn(move || {
-                println!("Running test: {name}");
-                Command::new(
-                    Path::new(&format!("target/release/{name}"))
-                        .canonicalize()
-                        .unwrap(),
-                )
-                .current_dir(path)
-                .args(std::env::args().nth(2))
-                .status()
-                .unwrap();
-                println!("Compiled and Run {name}");
-            });
-        }
-    });
+    let target_subdir = if flags.contains("release") {
+        "release"
+    } else {
+        "debug"
+    };
+
+    for (path, name) in dirs_ctor() {
+        println!("Running test: {name}");
+        Command::new(
+            Path::new(&format!("target/{target_subdir}/{name}"))
+                .canonicalize()
+                .unwrap(),
+        )
+        .current_dir(path)
+        .args(std::env::args().nth(2))
+        .status()
+        .unwrap();
+        println!("Compiled and Run {name}");
+    }
 
     let mut any_changes = false;
     for (path, _) in dirs_ctor() {

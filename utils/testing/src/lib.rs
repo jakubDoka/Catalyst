@@ -1,6 +1,8 @@
 #![feature(closure_lifetime_binder)]
 #![feature(iter_intersperse)]
 #![feature(let_chains)]
+#![feature(once_cell)]
+#![feature(internal_output_capture)]
 
 #[macro_export]
 macro_rules! gen_test {
@@ -10,19 +12,11 @@ macro_rules! gen_test {
         $($($type:ident)? $name:literal $structure:tt)*
     ) => {
         $crate::fmt::QuickTimer::set_enabled(false);
-        std::thread::scope(|h| {
-            fn testable<T: $crate::items::Testable>() {}
-            testable::<$test_struct>();
-            $(
-                let value = $parallel.then_some(h);
-                $crate::items::test_case($name, value, |name| {
-                    let mut resources = gen_test!(__inner__ name $($type)? $structure);
-                    resources.add_water();
-                    $crate::fmt::FmtRuntime::test_format(&name, &mut resources);
-                    <$test_struct>::default().exec($name, &mut resources)
-                });
-            )*
-        });
+        let tests = [$({
+            let name = $name;
+            (name, gen_test!(__inner__ name $($type)? $structure))
+        },)*];
+        $crate::items::run::<$test_struct, _>(tests, $parallel);
     };
 
     (__inner__ $name:ident simple $structure:tt) => {
@@ -110,10 +104,12 @@ pub use {fmt, items::Testable};
 
 pub mod items {
     use diags::*;
-    use packaging::Scheduler;
+    use fmt::{FmtRuntime, FmtRuntimeCtx, Middleware};
     use resources::*;
     use snippet_display::SnippetDisplayImpl;
-    use std::{mem, thread::Scope, time::SystemTime};
+    use std::iter;
+    use std::sync::{Arc, LazyLock, Mutex};
+    use std::time::SystemTime;
 
     use std::{
         collections::HashMap,
@@ -123,49 +119,73 @@ pub mod items {
         process::{Command, CommandArgs, ExitStatus, Output},
     };
 
-    impl<T: Scheduler + Default> Testable for T {
-        fn exec(mut self, name: &str, resources: &mut TestResources) -> (Workspace, Resources) {
-            self.execute(Path::new(name), resources);
-
-            (
-                mem::take(self.loader(resources).workspace),
-                mem::take(self.loader(resources).resources),
-            )
-        }
-    }
-
     pub trait Testable: Default {
-        fn exec(self, name: &str, resources: &mut TestResources) -> (Workspace, Resources);
+        fn exec<'a>(
+            &'a mut self,
+            name: &str,
+            middleware: &'a mut Middleware,
+            resources: &'a mut TestResources,
+        ) -> (&'a mut Workspace, &'a Resources);
     }
 
-    pub fn test_case<'a: 'b, 'b, 'c>(
-        name: &'static str,
-        scope: Option<&'a Scope<'b, 'c>>,
-        test_code: fn(&str) -> (Workspace, Resources),
-    ) {
-        if let Some(first_arg) = std::env::args().nth(1) && !name.starts_with(first_arg.as_str()) {
-            println!("Skipping test: {name}");
-            return;
+    pub fn run<T, I>(tests: I, parallel: bool)
+    where
+        T: Testable + Send,
+        I: IntoIterator<Item = (&'static str, TestResources)>,
+        I::IntoIter: Send,
+    {
+        let thread_count = std::thread::available_parallelism()
+            .ok()
+            .filter(|_| parallel)
+            .map(|x| x.get())
+            .unwrap_or(1);
+
+        #[derive(Default)]
+        struct Thread<T> {
+            testable: T,
+            mid: Middleware,
+            fmt: FmtRuntimeCtx,
+            stdout: Arc<Mutex<Vec<u8>>>,
         }
 
-        println!("Running sub test: {name}");
-        let runner = move || {
-            let (ws, packages) = test_code(name);
-            let mut out = String::new();
-            ws.display(&packages, &mut SnippetDisplayImpl::default(), &mut out);
+        let mut threads = iter::repeat_with(Thread::<T>::default)
+            .take(thread_count)
+            .collect::<Vec<_>>();
 
-            let path = format!("{}/{}.txt", "test_out", name);
-            if !Path::new("test_out").exists() {
-                std::fs::create_dir("test_out").unwrap();
+        let queue = Mutex::new(tests.into_iter());
+
+        std::thread::scope(|scope| {
+            for thread in threads.iter_mut() {
+                scope.spawn(|| {
+                    while let Ok(mut handle) = queue.lock() && let Some((name, mut task)) = handle.next() {
+                        drop(handle);
+
+                        task.add_water();
+
+                        //io::set_output_capture(Some(thread.stdout.clone()));
+
+                        FmtRuntime::test_format(name, &mut thread.mid, &mut thread.fmt, &mut task);
+                        let (ws, res) = thread.testable.exec(name, &mut thread.mid, &mut task);
+
+                        io::set_output_capture(None);
+                        if let Ok(mut handle) = thread.stdout.lock() {
+                            let message = format!("Test {name} stdout:\n{}", String::from_utf8_lossy(&handle));
+                            handle.clear();
+                            println!("{}", message);
+                        }
+
+                        let mut out = String::new();
+                        ws.display(&res, &mut SnippetDisplayImpl::default(), &mut out);
+                        ws.clear();
+                        let path = format!("{}/{}.txt", "test_out", name);
+                        if !Path::new("test_out").exists() {
+                            std::fs::create_dir("test_out").unwrap();
+                        }
+                        std::fs::write(path, out).unwrap();
+                    }
+                });
             }
-            std::fs::write(path, out).unwrap();
-        };
-
-        if let Some(scope) = scope {
-            scope.spawn(runner);
-        } else {
-            runner();
-        }
+        })
     }
 
     pub struct Folder {
@@ -229,9 +249,9 @@ pub mod items {
     #[derive(Default, Debug)]
     pub struct TestResources {
         pub env: HashMap<String, String>,
-        pub files: HashMap<PathBuf, String>,
-        pub binary_files: HashMap<PathBuf, Vec<u8>>,
-        pub repositories: HashMap<String, TestResources>,
+        pub files: HashMap<PathBuf, (String, SystemTime)>,
+        pub binary_files: HashMap<PathBuf, (Vec<u8>, SystemTime)>,
+        pub repositories: HashMap<String, Arc<TestResources>>,
     }
 
     fn new_exist_status(code: u32) -> ExitStatus {
@@ -244,9 +264,12 @@ pub mod items {
 
     impl TestResources {
         pub fn add_water(&mut self) {
+            static WATER_REPO: LazyLock<Arc<TestResources>> =
+                LazyLock::new(|| Arc::new(TestResources::water_repo()));
+
             self.repositories.insert(
                 "github.com/jakubDoka/water#main".to_string(),
-                Self::water_repo(),
+                WATER_REPO.clone(),
             );
         }
 
@@ -263,23 +286,33 @@ pub mod items {
                         include_str!("../../../water/root/macros/tokens.ctl"),
                     ),
                 ]
-                .map(|(path, content)| (PathBuf::from(path), content.to_string()))
+                .map(|(path, content)| {
+                    (
+                        PathBuf::from(path),
+                        (content.to_string(), SystemTime::now()),
+                    )
+                })
                 .into(),
                 ..Default::default()
             }
         }
 
         pub fn add_file(&mut self, path: &Path, content: String) {
-            self.files.insert(self.canonicalize(path).unwrap(), content);
+            self.files.insert(
+                self.canonicalize(path).unwrap(),
+                (content, SystemTime::now()),
+            );
         }
 
         pub fn add_binary_file(&mut self, path: &Path, content: Vec<u8>) {
-            self.binary_files
-                .insert(self.canonicalize(path).unwrap(), content);
+            self.binary_files.insert(
+                self.canonicalize(path).unwrap(),
+                (content, SystemTime::now()),
+            );
         }
 
         pub fn add_remote(&mut self, key: String, resources: Self) -> &mut Self {
-            self.repositories.entry(key).or_insert(resources)
+            Arc::get_mut(self.repositories.entry(key).or_insert(Arc::new(resources))).unwrap()
         }
 
         pub fn execute_git(&mut self, args: CommandArgs) -> io::Result<Output> {
@@ -313,7 +346,7 @@ pub mod items {
                         return Ok(Output {
                             status: new_exist_status(128),
                             stdout: Vec::new(),
-                            stderr: format!("fatal: repository '{repository:?}' not found").into_bytes(),
+                            stderr: format!("fatal: repository {repository:?} not found").into_bytes(),
                         });
                     };
 
@@ -376,12 +409,16 @@ pub mod items {
             self.binary_files
                 .get(self.canonicalize(path)?.as_path())
                 .cloned()
+                .map(|(data, _)| data)
                 .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "file not found"))
         }
 
         fn write_to_string(&mut self, path: &Path, data: &str) -> io::Result<()> {
             self.files
-                .insert(self.canonicalize(path)?, data.to_owned())
+                .insert(
+                    self.canonicalize(path)?,
+                    (data.to_owned(), SystemTime::now()),
+                )
                 .unwrap();
             Ok(())
         }
@@ -422,6 +459,7 @@ pub mod items {
             self.files
                 .get(self.canonicalize(path)?.as_path())
                 .cloned()
+                .map(|(data, _)| data)
                 .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "file not found"))
         }
 
@@ -433,8 +471,12 @@ pub mod items {
             Ok(()) // nothing
         }
 
-        fn get_modification_time(&self, _path: &Path) -> io::Result<std::time::SystemTime> {
-            Ok(SystemTime::UNIX_EPOCH)
+        fn get_modification_time(&self, path: &Path) -> io::Result<std::time::SystemTime> {
+            Ok(self
+                .files
+                .get(self.canonicalize(path)?.as_path())
+                .map(|(_, time)| *time)
+                .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "file not found"))?)
         }
     }
 }

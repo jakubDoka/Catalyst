@@ -6,6 +6,7 @@
 #![feature(fn_traits)]
 
 use std::{
+    default::default,
     fs,
     path::Path,
     process::{Command, ExitStatus},
@@ -17,19 +18,15 @@ use middleware::*;
 use testing::{items::TestResources, *};
 
 #[derive(Default)]
-struct TestState {
-    middleware: Middleware,
-}
+struct TestState {}
 
 impl TestState {
-    fn finally(&mut self, binary: Vec<u8>, ir: Option<String>) {
-        let s = &mut self.middleware;
-
+    fn finally(&mut self, mid: &mut Middleware, binary: Vec<u8>, ir: Option<String>) {
         if let Some(ir) = ir {
-            s.workspace.push(IrReport { ir });
+            mid.workspace.push(IrReport { ir });
         }
 
-        if s.workspace.has_errors() {
+        if mid.workspace.has_errors() {
             return;
         }
 
@@ -79,7 +76,7 @@ impl TestState {
         fs::remove_file(obj_path).unwrap();
         fs::remove_file(exe_path).unwrap();
 
-        s.workspace.push(ExecReport {
+        mid.workspace.push(ExecReport {
             status: output.status,
             stdout: String::from_utf8_lossy(&output.stdout).into(),
             stderr: String::from_utf8_lossy(&output.stderr).into(),
@@ -104,25 +101,25 @@ ctl_errors! {
 }
 
 impl Testable for TestState {
-    fn exec(mut self, name: &str, resources: &mut TestResources) -> (Workspace, Resources) {
-        let jit_isa = Isa::host(true).unwrap();
-        let isa = Isa::host(false).unwrap();
+    fn exec<'a>(
+        &'a mut self,
+        name: &str,
+        middleware: &'a mut Middleware,
+        resources: &'a mut TestResources,
+    ) -> (&'a mut Workspace, &'a Resources) {
         let args = MiddlewareArgs {
             path: Path::new(name).into(),
-            jit_isa,
-            isa,
-            incremental_path: None,
             max_cores: Some(1),
-            dump_ir: true,
             check: false,
-            quiet: false,
+            dump_ir: true,
+            ..default()
         };
-        let (output, ..) = self.middleware.update(&args, resources);
-        if let MiddlewareOutput::Compiled { binary, ir } = output {
-            self.finally(binary, ir);
+        let (output, ..) = middleware.update(&args, resources);
+        if let MiddlewareOutput::Compiled { binary, ir, .. } = output {
+            self.finally(middleware, binary, ir);
         }
-        let res = self.middleware.take_incremental().unwrap().resources;
-        (std::mem::take(&mut self.middleware.workspace), res)
+        let view = middleware.unwrap_view();
+        (view.workspace, view.resources)
     }
 }
 

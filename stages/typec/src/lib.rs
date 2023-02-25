@@ -30,5 +30,6 @@ mod ty_parser;
 pub use {
     ctx::{TypecCtx, TypecExternalCtx, TypecMeta, TypecTransfer},
     func_builder::TirBuilder,
+    tir_display::TirDisplay,
     ty_parser::TypecParser,
 };

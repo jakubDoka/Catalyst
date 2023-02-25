@@ -195,7 +195,6 @@ impl<T: NoInteriorMutability, A: Allocator> IndexMut<FragSlice<T>> for FragMap<T
 }
 
 #[derive(Archive, Deserialize, Serialize)]
-
 pub struct FragBase<T, A: Allocator = Global> {
     threads: Box<[FragVecView<T, A>]>,
 }
@@ -203,6 +202,10 @@ pub struct FragBase<T, A: Allocator = Global> {
 impl<T> FragBase<T> {
     pub fn new(thread_count: u8) -> Self {
         Self::new_in(thread_count, Global)
+    }
+
+    pub fn expand(&mut self, thread_count: u8) {
+        self.expand_in(thread_count, Global)
     }
 }
 
@@ -216,6 +219,16 @@ impl<T, A: Allocator> FragBase<T, A> {
             .collect::<Box<[_]>>();
 
         Self { threads }
+    }
+
+    pub fn expand_in(&mut self, thread_count: u8, allocator: A)
+    where
+        A: Clone,
+    {
+        let threads = (self.threads.len() as u8..thread_count)
+            .map(|thread| FragVecView::new_in(thread, allocator.clone()));
+        let current = mem::take(&mut self.threads);
+        self.threads = current.into_vec().into_iter().chain(threads).collect();
     }
 
     unsafe fn slice_unique(&self, addr: FragSliceAddr) -> &[T] {
@@ -590,6 +603,24 @@ pub struct ArchivedFragVecArc<T> {
 
 #[repr(transparent)]
 pub struct ArcVec<T, A: Allocator = Global>(NonNull<ArcVecInner<T, A>>);
+
+impl<T, A: Allocator> ArcVec<T, A> {
+    pub fn is_unique(&self) -> bool {
+        unsafe { ArcVecInner::is_unique(self.0) }
+    }
+
+    pub fn extend<I: ExactSizeIterator<Item = T>>(&mut self, i: I)
+    where
+        A: Clone,
+    {
+        unsafe {
+            let (.., overflows) = ArcVecInner::extend(self.0, i);
+            if let Some(overflows) = overflows {
+                *self = ArcVec(overflows);
+            }
+        };
+    }
+}
 
 impl<T, A> Archive for ArcVec<T, A>
 where

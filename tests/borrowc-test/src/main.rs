@@ -1,122 +1,38 @@
-use std::{mem, path::Path};
+#![feature(default_free_fn)]
+use std::default::default;
 
-use borrowc::*;
 use diags::*;
-use mir::*;
-use packaging::*;
-use parsing::*;
 use resources::*;
 
-use storage::*;
-use testing::*;
-use type_creator::type_creator;
-use typec::*;
-use types::*;
+use testing::{
+    fmt::{MiddlewareArgs, MiddlewareOutput},
+    *,
+};
 
 #[derive(Default)]
-struct TestState {
-    interner: Interner,
-    types: Types,
-    workspace: Workspace,
-    resources: Resources,
-    package_graph: PackageGraph,
-    typec_ctx: TypecCtx,
-    typec_transfer: TypecTransfer<'static>,
-    mir_ctx: BorrowcCtx,
-    arena: Arena,
-    functions: String,
-    mir: Mir,
-    module: ModuleMir,
-    builtin_funcs: Vec<FragRef<Func>>,
-}
+struct TestState;
 
-impl Scheduler for TestState {
-    fn init(&mut self, _: &Path) {
-        type_creator!(self).init(&mut self.builtin_funcs);
-    }
-
-    fn before_parsing(&mut self, module: storage::VRef<Module>) {
-        self.typec_ctx.build_scope(
-            module,
-            &self.resources,
-            &self.types,
-            &mut self.interner,
-            &self.builtin_funcs,
-        );
-    }
-
-    fn parse_segment(&mut self, module: storage::VRef<Module>, items: GroupedItemsAst) {
-        let mut active = Active::take(&mut self.typec_transfer);
-        let ext = TypecExternalCtx {
-            types: &mut self.types,
-            interner: &mut self.interner,
-            workspace: &mut self.workspace,
-            resources: &self.resources,
-            transfer: &mut active,
-            folder: &mut ConstFolderImpl {},
+impl Testable for TestState {
+    fn exec<'a>(
+        &'a mut self,
+        name: &str,
+        middleware: &'a mut fmt::Middleware,
+        resources: &'a mut items::TestResources,
+    ) -> (&'a mut Workspace, &'a Resources) {
+        let args = MiddlewareArgs {
+            path: name.into(),
+            dump_mir: true,
+            ..default()
         };
-        let meta = TypecMeta::new(&self.resources, module);
-
-        TypecParser::new(&self.arena, &mut self.typec_ctx, ext, meta).execute(items);
-
-        let mir_module = self.mir.modules.next();
-        borrowc::compile_functions(
-            module,
-            mir_module,
-            active.checked_funcs(),
-            &mut MirCompilationCtx {
-                module_ent: &mut self.module,
-                reused: &mut self.mir_ctx,
-                mir: &mut self.mir,
-                types: &mut self.types,
-                interner: &mut self.interner,
-                workspace: &mut self.workspace,
-                arena: &self.arena,
-                resources: &self.resources,
-            },
-        );
-
-        if !self.resources.is_external(module) {
-            MirDisplayCtx {
-                module: &self.module,
-                interner: &self.interner,
-                types: &self.types,
-                resources: &self.resources,
-                mir: &self.mir,
-            }
-            .display_funcs(
-                active.checked_funcs().iter().map(|&(f, ..)| f),
-                &mut self.functions,
-            )
-            .unwrap();
+        let (output, view) = middleware.update(&args, resources);
+        if let MiddlewareOutput::Checked {
+            mir: Some(repr), ..
+        } = output
+        {
+            view.workspace.push(MirRepr { repr });
         }
 
-        self.typec_transfer = active.erase();
-        self.module.clear();
-        self.typec_ctx.cast_checks().for_each(drop);
-    }
-
-    fn finally(&mut self) {
-        self.workspace.push(MirRepr {
-            repr: mem::take(&mut self.functions),
-        });
-    }
-
-    fn loader<'a>(&'a mut self, db: &'a mut dyn ResourceDb) -> PackageLoader<'a> {
-        PackageLoader {
-            resources: &mut self.resources,
-            workspace: &mut self.workspace,
-            interner: &mut self.interner,
-            package_graph: &mut self.package_graph,
-            db,
-        }
-    }
-}
-
-struct ConstFolderImpl {}
-impl ConstFolder for ConstFolderImpl {
-    fn fold(&mut self, _: Ty, _: TirNode, _: ConstFolderContext) -> FolderValue {
-        unimplemented!()
+        (view.workspace, view.resources)
     }
 }
 

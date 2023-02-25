@@ -27,10 +27,13 @@ impl<'m> FmtRuntime<'m> {
         }
     }
 
-    pub fn test_format(name: &str, resources: &mut dyn ResourceDb) {
-        let mut middleware = Middleware::default();
-        let mut ctx = FmtRuntimeCtx::default();
-        let mut runtime = FmtRuntime::new(&mut middleware, &mut ctx);
+    pub fn test_format(
+        name: &str,
+        middleware: &'m mut Middleware,
+        ctx: &'m mut FmtRuntimeCtx,
+        resources: &mut dyn ResourceDb,
+    ) {
+        let mut runtime = FmtRuntime::new(middleware, ctx);
         let cli_input = CliInput::from_string(&format!(
             ". _ {name} --max-cores 1 -quiet -check -no-incremental"
         ))
@@ -129,10 +132,6 @@ impl AstHandler for FmtWorker {
     type Imports<'a> = (Option<ImportsAst<'a, u32>>, Option<SourceInfo<u32>>);
 
     type Chunk<'a> = ItemsAstResult<'a, u32>;
-
-    fn should_skip_module(&mut self, ctx: BaseSourceCtx) -> bool {
-        ctx.shared.resources.is_external(ctx.module)
-    }
 
     fn imports(&mut self, (imports, header): Self::Imports<'_>, ctx: BaseSourceCtx) {
         build_fmt!(self, ctx).imports(header, imports);

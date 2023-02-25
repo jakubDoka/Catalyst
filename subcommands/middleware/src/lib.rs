@@ -6,6 +6,8 @@
 #![feature(decl_macro)]
 #![feature(trivial_bounds)]
 #![feature(closure_lifetime_binder)]
+#![feature(array_zip)]
+#![feature(is_some_and)]
 
 mod logic;
 

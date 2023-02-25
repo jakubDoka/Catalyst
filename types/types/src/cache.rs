@@ -54,6 +54,10 @@ impl TypecBase {
         }
     }
 
+    pub fn expand(&mut self, thread_count: u8) {
+        self.cache.expand(thread_count);
+    }
+
     pub fn split(&self) -> impl Iterator<Item = Types> + '_ {
         self.cache.split().map(|cache| Types {
             cache,
@@ -215,6 +219,15 @@ macro_rules! gen_cache {
                         $sync_name: SyncFragBase::new(thread_count),
                     )*
                 }
+            }
+
+            pub fn expand(&mut self, thread_count: u8) {
+                $(
+                    self.$name.expand(thread_count);
+                )*
+                $(
+                    self.$sync_name.expand(thread_count);
+                )*
             }
 
             pub fn split(&self) -> impl Iterator<Item = TypeCache> + '_ {

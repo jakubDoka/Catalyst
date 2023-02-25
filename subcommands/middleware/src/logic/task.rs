@@ -6,7 +6,6 @@ use type_creator::type_creator;
 use super::*;
 
 #[derive(Serialize, Deserialize, Archive)]
-
 pub struct TaskBase {
     pub interner: InternerBase,
     pub types: TypecBase,
@@ -24,7 +23,7 @@ impl TaskBase {
         };
 
         if let Some(mut t) = {
-            let t = s.split(false).next();
+            let t = s.split(None).next();
             t
         } {
             type_creator!(t).init(builtin_functions);
@@ -34,7 +33,17 @@ impl TaskBase {
         s
     }
 
-    pub fn split(&self, ir_dump: bool) -> impl Iterator<Item = Task> + '_ {
+    pub fn expand(&mut self, thread_count: u8) {
+        self.interner.expand(thread_count);
+        self.types.expand(thread_count);
+        self.gen.expand(thread_count);
+        self.mir.expand(thread_count);
+    }
+
+    pub fn split<'a>(
+        &'a self,
+        args: Option<&'a MiddlewareArgs>,
+    ) -> impl Iterator<Item = Task> + 'a {
         let mut interner_split = self.interner.split();
         let mut typec_split = self.types.split();
         let mut mir_split = self.mir.split();
@@ -43,7 +52,9 @@ impl TaskBase {
         iter::from_fn(move || {
             Some(Task {
                 id: ids.next()?,
-                ir_dump: ir_dump.then(String::new),
+                ir_dump: args.is_some_and(|a| a.dump_ir).then(String::new),
+                mir_dump: args.is_some_and(|a| a.dump_mir).then(String::new),
+                tir_dump: args.is_some_and(|a| a.dump_tir).then(String::new),
                 resources: TaskResources::default(),
                 interner: interner_split.next()?,
                 types: typec_split.next()?,
@@ -71,6 +82,8 @@ pub struct TaskResources {
 pub struct Task {
     pub id: usize,
     pub ir_dump: Option<String>,
+    pub mir_dump: Option<String>,
+    pub tir_dump: Option<String>,
     pub resources: TaskResources,
     pub interner: Interner,
     pub types: Types,

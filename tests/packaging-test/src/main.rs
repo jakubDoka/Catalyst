@@ -17,7 +17,12 @@ struct TestState {
 }
 
 impl Testable for TestState {
-    fn exec(mut self, name: &str, db: &mut TestResources) -> (Workspace, Resources) {
+    fn exec<'a>(
+        &'a mut self,
+        name: &str,
+        _middleware: &'a mut fmt::Middleware,
+        db: &'a mut TestResources,
+    ) -> (&'a mut Workspace, &'a Resources) {
         let mut ctx = default();
         PackageLoader {
             resources: &mut self.resources,
@@ -27,7 +32,7 @@ impl Testable for TestState {
             db,
         }
         .reload(Path::new(name), &mut ctx);
-        (self.workspace, self.resources)
+        (&mut self.workspace, &self.resources)
     }
 }
 

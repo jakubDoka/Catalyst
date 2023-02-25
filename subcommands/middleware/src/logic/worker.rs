@@ -118,6 +118,7 @@ impl Worker {
         builder.ins().return_(&[exit_code]);
 
         builder.seal_block(entry);
+        builder.finalize();
 
         let entry_name = generator.interner.intern_compressed(gen::ENTRY_POINT_NAME);
         let entry_func = generator.types.cache.funcs.push(Func {
@@ -131,6 +132,7 @@ impl Worker {
             .gen
             .save_compiled_code(compiled_entry, &self.context)
             .unwrap();
+        self.context.clear();
 
         compiled_entry
     }
@@ -471,6 +473,7 @@ impl Worker {
                 .calls
                 .extend(task.compile_requests.children[children].iter().copied());
             self.state.gen_resources.drops.clear();
+
             for &drop in task.compile_requests.drop_children[drops].iter() {
                 let prev = self.state.gen_resources.calls.len();
                 self.state
@@ -482,6 +485,7 @@ impl Worker {
                     .drops
                     .push(prev..self.state.gen_resources.calls.len());
             }
+
             Generator {
                 layouts: gen_layouts,
                 gen: &mut task.gen,
@@ -626,15 +630,15 @@ impl Worker {
     //     }
     // }
 
-    fn type_check_batch(
+    fn type_check_chunk<'a>(
         &mut self,
         module: VRef<Module>,
         module_ref: FragRef<ModuleMir>,
-        grouped_items: GroupedItemsAst,
-        arena: &Arena,
+        grouped_items: GroupedItemsAst<'a>,
+        arena: &'a Arena,
         task: &mut Task,
         shared: &Shared,
-    ) {
+    ) -> Active<TypecTransfer<'a>> {
         let mut active = Active::take(&mut self.state.typec_transfer);
         let ext = TypecExternalCtx {
             types: &mut task.types,
@@ -657,6 +661,19 @@ impl Worker {
         let meta = TypecMeta::new(shared.resources, module);
 
         TypecParser::new(arena, &mut self.state.typec_ctx, ext, meta).execute(grouped_items);
+        active
+    }
+
+    fn verify_chunk(
+        &mut self,
+        module: VRef<Module>,
+        module_ref: FragRef<ModuleMir>,
+        grouped_items: GroupedItemsAst,
+        arena: &Arena,
+        task: &mut Task,
+        shared: &Shared,
+    ) {
+        let active = self.type_check_chunk(module, module_ref, grouped_items, arena, task, shared);
 
         let mut ctx = MirCompilationCtx {
             module_ent: &mut self.state.module,
@@ -677,6 +694,28 @@ impl Worker {
             .filter(|&&(func, ..)| task.types[func].flags.contains(FuncFlags::ENTRY))
             .map(|(func, ..)| func)
             .collect_into(&mut task.resources.entry_points);
+
+        if let Some(ref mut tir_dump) = task.tir_dump {
+            TirDisplay {
+                interner: &mut task.interner,
+                types: &mut task.types,
+                resources: shared.resources,
+            }
+            .display_funcs(active.checked_funcs(), tir_dump)
+            .unwrap();
+        }
+
+        if let Some(ref mut mir_dump) = task.mir_dump {
+            MirDisplay {
+                module: &self.state.module,
+                interner: &task.interner,
+                types: &task.types,
+                resources: &shared.resources,
+                mir: &task.mir,
+            }
+            .display_funcs(active.checked_funcs().iter().map(|&(f, ..)| f), mir_dump)
+            .unwrap();
+        }
 
         let source = shared.resources.modules[module].source;
         Self::check_casts(
@@ -873,6 +912,10 @@ pub trait AstHandler: Sync + Send {
     type Imports<'a>;
     type Chunk<'a>;
 
+    fn parse_chunk<'a>(&mut self, parser: Parser<'_, 'a, Self::Meta>) -> Option<Self::Chunk<'a>>;
+    fn chunk(&mut self, items: Self::Chunk<'_>, ctx: BaseSourceCtx, macros: MacroSourceCtx)
+        -> bool;
+
     fn parse_manifest<'a>(
         &mut self,
         _parser: Parser<'_, 'a, Self::Meta>,
@@ -888,7 +931,10 @@ pub trait AstHandler: Sync + Send {
     ) {
     }
 
-    fn should_skip_module(&mut self, ctx: BaseSourceCtx) -> bool;
+    fn should_skip_module(&mut self, ctx: BaseSourceCtx) -> bool {
+        ctx.shared.resources.is_external(ctx.module)
+    }
+
     fn should_skip_manifest(&mut self, _package: VRef<Package>, _resources: &Resources) -> bool {
         true
     }
@@ -898,12 +944,7 @@ pub trait AstHandler: Sync + Send {
         parser: Parser<'_, 'a, Self::Meta>,
     ) -> Option<Self::Imports<'a>>;
 
-    fn imports(&mut self, header: Self::Imports<'_>, ctx: BaseSourceCtx);
-
-    fn parse_chunk<'a>(&mut self, parser: Parser<'_, 'a, Self::Meta>) -> Option<Self::Chunk<'a>>;
-
-    fn chunk(&mut self, items: Self::Chunk<'_>, ctx: BaseSourceCtx, macros: MacroSourceCtx)
-        -> bool;
+    fn imports(&mut self, _header: Self::Imports<'_>, _ctx: BaseSourceCtx) {}
 
     fn save_module(&mut self) -> bool {
         false
@@ -935,6 +976,13 @@ impl AstHandler for DefaultSourceAstHandler {
         false
     }
 
+    fn parse_imports<'a>(
+        &mut self,
+        mut parser: Parser<'_, 'a, Self::Meta>,
+    ) -> Option<Self::Imports<'a>> {
+        parser.skip_imports()
+    }
+
     fn imports(&mut self, _header: Self::Imports<'_>, _ctx: BaseSourceCtx) {}
 
     fn chunk(
@@ -943,7 +991,7 @@ impl AstHandler for DefaultSourceAstHandler {
         ctx: BaseSourceCtx,
         _macros: MacroSourceCtx,
     ) -> bool {
-        ctx.worker.type_check_batch(
+        ctx.worker.verify_chunk(
             ctx.module,
             ctx.mir_module,
             items,
@@ -952,13 +1000,6 @@ impl AstHandler for DefaultSourceAstHandler {
             ctx.shared,
         );
         items.last
-    }
-
-    fn parse_imports<'a>(
-        &mut self,
-        mut parser: Parser<'_, 'a, Self::Meta>,
-    ) -> Option<Self::Imports<'a>> {
-        parser.skip_imports()
     }
 
     fn parse_chunk<'a>(

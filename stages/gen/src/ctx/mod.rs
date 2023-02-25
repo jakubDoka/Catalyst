@@ -99,6 +99,8 @@ impl GenBase {
         Self { lookup: default() }
     }
 
+    pub fn expand(&mut self, _thread_count: u8) {}
+
     pub fn split(&self) -> impl Iterator<Item = Gen> + '_ {
         iter::repeat_with(|| Gen {
             lookup: self.lookup.clone(),

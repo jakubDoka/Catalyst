@@ -1,89 +1,35 @@
-use std::{mem, path::Path};
+#![feature(default_free_fn)]
+use std::default::default;
 
 use diags::*;
-use packaging::*;
-use parsing::*;
 use resources::*;
 
-use storage::*;
-use testing::*;
-use type_creator::type_creator;
-use typec::*;
-use types::*;
+use testing::{fmt::*, *};
 
 #[derive(Default)]
-struct TestState {
-    interner: Interner,
-    types: Types,
-    workspace: Workspace,
-    resources: Resources,
-    package_graph: PackageGraph,
-    typec_ctx: TypecCtx,
-    typec_transfer: TypecTransfer<'static>,
-    arena: Arena,
-    functions: String,
-    builtin_funcs: Vec<FragRef<Func>>,
-}
+struct TestState;
 
-impl Scheduler for TestState {
-    fn init(&mut self, _: &Path) {
-        type_creator!(self).init(&mut self.builtin_funcs);
-    }
-
-    fn before_parsing(&mut self, module: storage::VRef<Module>) {
-        self.typec_ctx.build_scope(
-            module,
-            &self.resources,
-            &self.types,
-            &mut self.interner,
-            &self.builtin_funcs,
-        );
-    }
-
-    fn parse_segment(&mut self, module: storage::VRef<Module>, items: GroupedItemsAst) {
-        let mut active = Active::take(&mut self.typec_transfer);
-        let mut ext = TypecExternalCtx {
-            types: &mut self.types,
-            interner: &mut self.interner,
-            workspace: &mut self.workspace,
-            resources: &self.resources,
-            transfer: &mut active,
-            folder: &mut ConstFolderImpl {},
+impl Testable for TestState {
+    fn exec<'a>(
+        &'a mut self,
+        name: &str,
+        middleware: &'a mut Middleware,
+        resources: &'a mut items::TestResources,
+    ) -> (&'a mut Workspace, &'a Resources) {
+        let args = MiddlewareArgs {
+            path: name.into(),
+            dump_tir: true,
+            ..default()
         };
-        let meta = TypecMeta::new(&self.resources, module);
-
-        TypecParser::new(&self.arena, &mut self.typec_ctx, ext.clone_borrow(), meta).execute(items);
-        if !self.resources.is_external(module) {
-            let funcs = ext.transfer.checked_funcs().to_bumpvec();
-            ext.display_funcs(&funcs, &mut self.functions).unwrap();
+        let (output, view) = middleware.update(&args, resources);
+        if let MiddlewareOutput::Checked {
+            tir: Some(repr), ..
+        } = output
+        {
+            view.workspace.push(TirRepr { repr });
         }
 
-        self.typec_transfer = active.erase();
-        self.arena.clear();
-        self.typec_ctx.cast_checks().for_each(drop);
-    }
-
-    fn finally(&mut self) {
-        self.workspace.push(TirRepr {
-            repr: mem::take(&mut self.functions),
-        });
-    }
-
-    fn loader<'a>(&'a mut self, db: &'a mut dyn ResourceDb) -> PackageLoader<'a> {
-        PackageLoader {
-            resources: &mut self.resources,
-            workspace: &mut self.workspace,
-            interner: &mut self.interner,
-            package_graph: &mut self.package_graph,
-            db,
-        }
-    }
-}
-
-struct ConstFolderImpl {}
-impl ConstFolder for ConstFolderImpl {
-    fn fold(&mut self, _: Ty, _: TirNode, _: ConstFolderContext) -> FolderValue {
-        unimplemented!()
+        (view.workspace, view.resources)
     }
 }
 
