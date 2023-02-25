@@ -1,13 +1,27 @@
-error
- --> attributes/root.ctl:1:1
+error: scope item not found
+ --> attributes/root.ctl:1:35
   |
-1 | / #[macro swap]
-2 | | 
-3 | | enum Swap {
-4 | |     Two: TwoTokens
-5 | |     Last: LastToken
-6 | |     Empty
-7 | | }
-  | |_- info: test
+1 | #[macro swap] ; enum Swap { Two : TwoTokens ; Last : LastToken ; Empty ; } ;
+  |                                   ^^^^^^^^^ this does not exist or is not imported
   |
+  = help: expected type or module
+  = info: debug: queried 'TwoTokens'
+
+error: scope item not found
+ --> attributes/root.ctl:1:54
+  |
+1 | #[macro swap] ; enum Swap { Two : TwoTokens ; Last : LastToken ; Empty ; } ;
+  |                                                      ^^^^^^^^^ this does not exist or is not imported
+  |
+  = help: expected type or module
+  = info: debug: queried 'LastToken'
+
+info: formatted:
+ #[macro swap]
+
+enum Swap {
+	Two: TwoTokens
+	Last: LastToken
+	Empty
+}
 
