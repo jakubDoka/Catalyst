@@ -1,5 +1,5 @@
 info: generated ir:
-native-x86_64-unknown-linux-gnu3\main[] function u0:0() -> i64 uext fast {
+native-x86_64-unknown-linux-gnu4\main[] function u0:0() -> i64 uext fast {
     ss0 = explicit_slot 8
     ss1 = explicit_slot 8
     ss2 = explicit_slot 8
@@ -14,8 +14,8 @@ native-x86_64-unknown-linux-gnu3\main[] function u0:0() -> i64 uext fast {
     ss11 = explicit_slot 8
     sig0 = (i64) -> i64 fast
     sig1 = (i64 uext) -> i64 uext fast
-    fn0 = colocated u0:13 sig0
-    fn1 = colocated u0:14 sig1
+    fn0 = colocated u0:27 sig0
+    fn1 = colocated u0:28 sig1
 
 block0:
     v0 = iconst.i64 0
@@ -59,11 +59,11 @@ block0:
     v26 = call fn1(v25)
     return v26
 }
-native-x86_64-unknown-linux-gnu3\uint\dereference[] function u0:0(i64 uext) -> i64 uext fast {
+native-x86_64-unknown-linux-gnu4\uint\dereference[] function u0:0(i64 uext) -> i64 uext fast {
 block0(v0: i64):
     return v0
 }
-native-x86_64-unknown-linux-gnu3\uint\reference[] function u0:0(i64) -> i64 fast {
+native-x86_64-unknown-linux-gnu4\uint\reference[] function u0:0(i64) -> i64 fast {
 block0(v0: i64):
     return v0
 }

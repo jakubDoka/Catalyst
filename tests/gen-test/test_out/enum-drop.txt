@@ -1,10 +1,10 @@
 info: generated ir:
-native-x86_64-unknown-linux-gnu3\main[] function u0:0() -> i64 uext fast {
+native-x86_64-unknown-linux-gnu4\main[] function u0:0() -> i64 uext fast {
     ss0 = explicit_slot 16
     ss1 = explicit_slot 16
     ss2 = explicit_slot 16
     sig0 = (i64) fast
-    fn0 = colocated u0:8 sig0
+    fn0 = colocated u0:56 sig0
 
 block0:
     v0 = iconst.i8 0
@@ -94,9 +94,9 @@ block9:
     v27 = iconst.i64 0
     return v27  ; v27 = 0
 }
-native-x86_64-unknown-linux-gnu3\3\A\drop[] function u0:0(i64) fast {
+native-x86_64-unknown-linux-gnu4\4\A\drop[] function u0:0(i64) fast {
     sig0 = (i32) -> i32 uext fast
-    fn0 = u0:9 sig0
+    fn0 = u0:59 sig0
 
 block0(v0: i64):
     v1 = load.i32 v0

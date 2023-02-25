@@ -1,7 +1,7 @@
 info: tir repr of functions:
 fn [] main() -> () {
     {
-        let mut var0 = 3\W\{}
+        let mut var0 = 2\W\{}
         loop id0 if 'true' {
             break id0 
         } else {
@@ -11,13 +11,13 @@ fn [] main() -> () {
     return
 }
 
-fn [] drop(^mut 3\W) -> () {
+fn [] drop(^mut 2\W) -> () {
     {
     }
     return
 }
 
-fn [] do_something(^mut 3\W) -> () {
+fn [] do_something(^mut 2\W) -> () {
     {
     }
     return

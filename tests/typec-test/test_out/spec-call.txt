@@ -7,12 +7,3 @@ error: not all parameter specs are satisfied
    = info: missing implementations:
             u32: Clay
 
-info: tir repr of functions:
-fn [:Clay ] pass(param0) -> param0 return var0
-
-fn [] main() -> uint return pass[uint](0)
-
-fn [] last_main() -> 3\Foo[uint] return pass[3\Foo[uint]](3\Foo[uint]\{0})
-
-
-

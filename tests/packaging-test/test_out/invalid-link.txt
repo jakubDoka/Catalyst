@@ -5,5 +5,5 @@ error: git exited with non-zero status code
   |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ here
   |
   = info: args: `clone --depth 1 --filter blob:none --branch main https://github.com/jakubDoka/water-kun invalid-link/deps/github.com/jakubDoka/water-kun/main`
-  = info: stderr: fatal: repository '"github.com/jakubDoka/water-kun#main"' not found
+  = info: stderr: fatal: repository "github.com/jakubDoka/water-kun#main" not found
 

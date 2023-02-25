@@ -24,10 +24,3 @@ error: inaccessible scope item
   |
   = info: item is defined in a different module and is private
 
-info: tir repr of functions:
-fn [] pass(uint) -> uint return var0
-
-fn [] new() -> 4\A return 4\A\{0}
-
-
-

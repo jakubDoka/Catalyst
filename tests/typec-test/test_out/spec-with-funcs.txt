@@ -54,7 +54,7 @@ error: dataflow of impl method does not match spec
    |        ^^^ here
    |
    = info: found mismatches:
-           ret 3\A uint
+           ret 2\A uint
 
 error: amount of arguments of impl method does not match spec
   --> spec-with-funcs/root.ctl:5:6
@@ -117,27 +117,4 @@ error: missing fields in struct constructor
    |                                             ^^^^^^^^^^^^^^^ here
    |
    = error: missing: inner
-
-info: tir repr of functions:
-fn [:Glue ,: ] glue_up(param1) -> 3\Glued[param1] return {
-    Glue\use_on[param0, param1](^Glue\new[param0](), var0)
-}
-
-fn [: ,:GenericSpec[param0] ] take(param0) -> param1 return GenericSpec\take[param0, param1](var0)
-
-fn [] new() -> uint return 0
-
-fn [: ] use_on(^uint,param0) -> 3\Glued[param0] return 3\Glued[param0]\{var1}
-
-fn [] new() -> uint return 0
-
-fn [] new() -> () {
-    {
-    }
-    return
-}
-
-fn [] take(uint) -> uint return var0
-
-
 

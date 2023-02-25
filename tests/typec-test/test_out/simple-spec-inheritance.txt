@@ -12,14 +12,3 @@ error: 'param0' does not implement 'B'
    |                                        ^^^ here
    |
 
-info: tir repr of functions:
-fn [] main() -> uint return {
-    uint - uint(uint - uint(sum[uint](), a()), a())
-}
-
-fn [] a() -> uint return 0
-
-fn [] a() -> uint return 1
-
-
-

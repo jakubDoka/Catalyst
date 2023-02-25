@@ -1,7 +1,7 @@
 info: tir repr of functions:
 fn [] drop_unused() -> () {
     {
-        3\A\{}
+        2\A\{}
     }
     return
 }
