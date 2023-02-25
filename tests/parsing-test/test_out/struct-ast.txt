@@ -1,17 +1,40 @@
-error
-  --> struct-ast/root.ctl:1:1
+error: scope item not found
+ --> struct-ast/root.ctl:5:78
+  |
+5 |                 pub /* comment */ use /* comment */ mut /* comment */ field: Something\[
+  |                                                                              ^^^^^^^^^ this does not exist or is not imported
+  |
+  = help: expected type or module
+  = info: debug: queried 'Something'
+
+error: scope item not found
+  --> struct-ast/root.ctl:10:30
    |
- 1 | / 
- 2 | | // comment
- 3 | | pub /* comment */ struct /* comment */ RichStruct /* comment */ { // comment
- 4 | |     // comment
- 5 | |     pub /* comment */ use /* comment */ mut /* comment */ field: Something\[Very, // uuu
- 6 | |         Complex] // comment
- 7 | |     // comment
- 8 | |     other_field: SimpleStuff\[Hell, /* gear */]
- 9 | |     priv pointer: ^mut ^int
-10 | |     // comment
-11 | | } // comment
-   | |____________- info: test
+10 |                 other_field: SimpleStuff\[Hell, /* gear */]; priv pointer: ^mut^int
+   |                              ^^^^^^^^^^^ this does not exist or is not imported
    |
+   = help: expected type or module
+   = info: debug: queried 'SimpleStuff'
+
+error: scope item not found
+  --> struct-ast/root.ctl:10:81
+   |
+10 |                 other_field: SimpleStuff\[Hell, /* gear */]; priv pointer: ^mut^int
+   |                                                                                 ^^^ this does not exist or is not imported
+   |
+   = help: expected type or module
+   = info: debug: queried 'int'
+
+info: formatted:
+ 
+// comment
+pub /* comment */ struct /* comment */ RichStruct /* comment */ { // comment
+	// comment
+	pub /* comment */ use /* comment */ mut /* comment */ field: Something\[Very, // uuu
+		Complex] // comment
+	// comment
+	other_field: SimpleStuff\[Hell, /* gear */]
+	priv pointer: ^mut ^int
+	// comment
+} // comment
 

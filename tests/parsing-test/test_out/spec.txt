@@ -1,11 +1,7 @@
-error
- --> spec/root.ctl:1:1
-  |
-1 | / pub spec [T] Some {
-2 | |     fn new() -> Self
-3 | |     fn get(s: ^Self) -> T
-4 | |     fn [D] set(s: ^mut Self, v: D, t: T)
-5 | | }
-  | |_- info: test
-  |
+info: formatted:
+ pub spec [T] Some {
+	fn new() -> Self
+	fn get(s: ^Self) -> T
+	fn [D] set(s: ^mut Self, v: D, t: T)
+}
 

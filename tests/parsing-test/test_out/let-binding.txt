@@ -1,17 +1,13 @@
-error
-  --> let-binding/root.ctl:1:1
-   |
- 1 | / struct A {
- 2 | |     a: uint
- 3 | |     b: uint
- 4 | | }
- 5 | | #[entry]
- 6 | | 
- 7 | | fn main() -> uint {
- 8 | |     let \{mut a, b} = A\{a: 0, b: 3}
- 9 | |     a = a + b
-10 | |     a - 3
-11 | | }
-   | |_- info: test
-   |
+info: formatted:
+ struct A {
+	a: uint
+	b: uint
+}
+#[entry]
+
+fn main() -> uint {
+	let \{mut a, b} = A\{a: 0, b: 3}
+	a = a + b
+	a - 3
+}
 

@@ -1,11 +1,34 @@
-error
- --> one-line-struct/root.ctl:1:1
+error: scope item not found
+ --> one-line-struct/root.ctl:1:52
   |
-1 | / pub struct OneLineStruct {
-2 | |     pub use mut filed: Trough
-3 | |     other_field: SimpleStuff
-4 | |     priv pointer: ^mut ^int
-5 | | }
-  | |_- info: test
+1 | pub struct OneLineStruct {     pub use mut filed : Trough ; other_field : SimpleStuff ; priv pointer : ^     mut ^ int ; }
+  |                                                    ^^^^^^ this does not exist or is not imported
   |
+  = help: expected type or module
+  = info: debug: queried 'Trough'
+
+error: scope item not found
+ --> one-line-struct/root.ctl:1:75
+  |
+1 | pub struct OneLineStruct {     pub use mut filed : Trough ; other_field : SimpleStuff ; priv pointer : ^     mut ^ int ; }
+  |                                                                           ^^^^^^^^^^^ this does not exist or is not imported
+  |
+  = help: expected type or module
+  = info: debug: queried 'SimpleStuff'
+
+error: scope item not found
+ --> one-line-struct/root.ctl:1:116
+  |
+1 | pub struct OneLineStruct {     pub use mut filed : Trough ; other_field : SimpleStuff ; priv pointer : ^     mut ^ int ; }
+  |                                                                                                                    ^^^ this does not exist or is not imported
+  |
+  = help: expected type or module
+  = info: debug: queried 'int'
+
+info: formatted:
+ pub struct OneLineStruct {
+	pub use mut filed: Trough
+	other_field: SimpleStuff
+	priv pointer: ^mut ^int
+}
 

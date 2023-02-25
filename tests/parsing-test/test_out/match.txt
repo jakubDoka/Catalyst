@@ -1,18 +1,14 @@
-error
-  --> match/root.ctl:1:1
-   |
- 1 | / struct B {
- 2 | |     a: uint
- 3 | |     b: uint
- 4 | | }
- 5 | | 
- 6 | | fn main -> uint =>
- 7 | |     match B\{a: 0, b: 3} {
- 8 | |         \{a: 6, b: 7} => 0
- 9 | |         \{a: 0, b: 3} => 1
-10 | |         \{a: 0, b} => b
-11 | |         \{a, b} => a + b
-12 | |     }
-   | |_____- info: test
-   |
+info: formatted:
+ struct B {
+	a: uint
+	b: uint
+}
+
+fn main -> uint =>
+	match B\{a: 0, b: 3} {
+		\{a: 6, b: 7} => 0
+		\{a: 0, b: 3} => 1
+		\{a: 0, b} => b
+		\{a, b} => a + b
+	}
 
