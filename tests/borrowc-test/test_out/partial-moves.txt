@@ -9,6 +9,37 @@ error: move out of already moved value
    |
    = note: you can disable move semantics with '#[no_moves]' function attribute
 
+error: move out of partially moved value
+  --> partial-moves/root.ctl:24:12
+   |
+24 |     drop(b.a0)
+   |            -- info: move occurs earlier here
+25 |     drop(b)
+   |          ^ here
+   |
+   = note: you can disable move semantics with '#[no_moves]' function attribute
+
+error: move out of partially moved value
+  --> partial-moves/root.ctl:37:25
+   |
+37 |     if 0 == 0 => drop(b.a0)
+   |                         -- info: move occurs earlier here
+38 | 
+39 |     drop(b)
+   |          ^ here
+   |
+   = note: you can disable move semantics with '#[no_moves]' function attribute
+
+error: reference to partially moved value
+  --> partial-moves/root.ctl:52:12
+   |
+52 |     drop(b.a0)
+   |            -- info: move occurs earlier here
+53 |     let a = ^b
+   |              ^ here
+   |
+   = note: you can disable move semantics with '#[no_moves]' function attribute
+
 error: reference to already moved value
   --> partial-moves/root.ctl:58:10
    |
