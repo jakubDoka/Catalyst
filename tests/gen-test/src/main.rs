@@ -21,12 +21,12 @@ use testing::{items::TestResources, *};
 struct TestState {}
 
 impl TestState {
-    fn finally(&mut self, mid: &mut Middleware, binary: Vec<u8>, ir: Option<String>) {
+    fn finally(&mut self, workspace: &mut Workspace, binary: Vec<u8>, ir: Option<String>) {
         if let Some(ir) = ir {
-            mid.workspace.push(IrReport { ir });
+            workspace.push(IrReport { ir });
         }
 
-        if mid.workspace.has_errors() {
+        if workspace.has_errors() {
             return;
         }
 
@@ -76,7 +76,7 @@ impl TestState {
         fs::remove_file(obj_path).unwrap();
         fs::remove_file(exe_path).unwrap();
 
-        mid.workspace.push(ExecReport {
+        workspace.push(ExecReport {
             status: output.status,
             stdout: String::from_utf8_lossy(&output.stdout).into(),
             stderr: String::from_utf8_lossy(&output.stderr).into(),
@@ -114,11 +114,10 @@ impl Testable for TestState {
             dump_ir: true,
             ..default()
         };
-        let (output, ..) = middleware.update(&args, resources);
+        let (output, view) = middleware.update(&args, resources);
         if let MiddlewareOutput::Compiled { binary, ir, .. } = output {
-            self.finally(middleware, binary, ir);
+            self.finally(view.workspace, binary, ir);
         }
-        let view = middleware.unwrap_view();
         (view.workspace, view.resources)
     }
 }

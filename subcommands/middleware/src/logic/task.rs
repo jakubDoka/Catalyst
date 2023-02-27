@@ -6,11 +6,11 @@ use type_creator::type_creator;
 use super::*;
 
 #[derive(Serialize, Deserialize, Archive)]
-pub struct TaskBase {
-    pub interner: InternerBase,
-    pub types: TypecBase,
-    pub gen: GenBase,
-    pub mir: MirBase,
+pub(super) struct TaskBase {
+    pub(super) interner: InternerBase,
+    types: TypecBase,
+    pub(super) gen: GenBase,
+    mir: MirBase,
 }
 
 impl TaskBase {
@@ -73,7 +73,6 @@ impl TaskBase {
 
 #[derive(Default)]
 pub struct TaskResources {
-    pub compile_requests: CompileRequests,
     pub modules_to_compile: Vec<VRef<Module>>,
     pub entry_points: Vec<FragRef<Func>>,
     pub workspace: Workspace,
@@ -106,236 +105,21 @@ impl DerefMut for Task {
 }
 
 impl Task {
-    pub(crate) fn traverse_compile_requests(
-        mut frontier: BumpVec<(CompileRequestChild, Result<usize, usize>)>,
-        tasks: &mut [Task],
-        isa: &Isa,
-    ) -> BumpVec<CompiledFuncRef> {
-        let mut cycle = (0..tasks.len()).cycle().fuse();
-        let mut imported = bumpvec![];
-        let mut type_frontier = bumpvec![];
-        let mut dependant_types = PushMap::default();
-        let mut seen = Set::default();
-        while let Some((CompileRequestChild { id, func, params }, task_id)) = frontier.pop() {
-            let Ok(task_id) = task_id else { continue; };
-
-            let task = &mut tasks[task_id];
-
-            let Func {
-                flags, visibility, ..
-            } = task.types[func];
-            if flags.contains(FuncFlags::BUILTIN) {
-                continue;
-            }
-            if visibility == FuncVisibility::Imported {
-                imported.push(id);
-                continue;
-            }
-
-            let generics = task
-                .types
-                .pack_func_param_specs(func)
-                .collect::<BumpVec<_>>();
-
-            let body = task
-                .mir
-                .bodies
-                .get(&BodyOwner::Func(func))
-                .unwrap()
-                .to_owned();
-            let module = task.mir.modules.reference(body.module());
-            let view = body.view(&module);
-
-            swap_mir_types(
-                &view,
-                &mut dependant_types,
-                &task.resources.compile_requests.ty_slices[params],
-                type_creator!(task),
-            );
-
-            let mut drops = bumpvec![cap view.drops.len()];
-            for (drop, other_id) in view.drops.values().zip(cycle.by_ref()) {
-                let (task, other) = get_two_refs(tasks, other_id, task_id);
-                let prev = frontier.len();
-                let ty = view.values[drop.value].ty();
-                type_frontier.push(dependant_types[ty].ty);
-                task.instantiate_destructors(
-                    &mut type_frontier,
-                    isa,
-                    task_id,
-                    &generics,
-                    &mut frontier,
-                    &mut seen,
-                );
-
-                let task = other.unwrap_or(task);
-                drops.push(
-                    task.compile_requests
-                        .children
-                        .extend(frontier[prev..].iter().map(|&(child, _)| child)),
-                );
-            }
-
-            let task = &mut tasks[task_id];
-            let drops = task.compile_requests.drop_children.extend(drops);
-            let prev = frontier.len();
-
-            view.calls
-                .values()
-                .zip(cycle.by_ref())
-                .map(|(&call, task_id)| {
-                    let task = &mut tasks[task_id];
-                    let params = view.ty_params[call.params]
-                        .iter()
-                        .map(|&p| dependant_types[p].ty)
-                        .collect::<BumpVec<_>>();
-                    task.load_call(call.callable, params, task_id, isa, &mut seen)
-                })
-                .collect_into(&mut *frontier);
-
-            let children = frontier[prev..]
-                .iter()
-                .map(|&(mut child, other_id)| {
-                    let (this, other) =
-                        get_two_refs(tasks, task_id, other_id.unwrap_or_else(|e| e));
-                    if let Some(other) = other {
-                        child.params = this.compile_requests.ty_slices.extend(
-                            other.compile_requests.ty_slices[child.params]
-                                .iter()
-                                .copied(),
-                        );
-                    }
-                    child
-                })
-                .collect::<BumpVec<_>>();
-
-            let task = &mut tasks[task_id];
-            let children = task.compile_requests.children.extend(children);
-            task.compile_requests.queue.push(CompileRequest {
-                func,
-                id,
-                params,
-                children,
-                drops,
-            });
-        }
-
-        imported
-    }
-
-    fn instantiate_destructors(
-        &mut self,
-        type_frontier: &mut BumpVec<Ty>,
-        isa: &Isa,
-        task_id: usize,
-        generics: &[FragSlice<Spec>],
-        frontier: &mut BumpVec<(CompileRequestChild, Result<usize, usize>)>,
-        seen: &mut Set<CompiledFuncRef>,
-    ) {
-        while let Some(ty) = type_frontier.pop() {
-            if !type_creator!(self).may_need_drop(ty) {
-                continue;
-            }
-
-            if let Some(Some((r#impl, params))) = type_creator!(self).is_drop(ty, generics) {
-                let func = self.types[self.types[r#impl].methods][0];
-                let params = self.types[params].to_bumpvec();
-                frontier.push(self.load_call(CallableMir::Func(func), params, task_id, isa, seen));
-            }
-
-            match ty.to_base_and_params(&self.types) {
-                Ok((base, params)) => {
-                    let types = match base {
-                        BaseTy::Struct(s) => type_creator!(self).instantiate_fields(s, params),
-                        BaseTy::Enum(e) => type_creator!(self).instantiate_variants(e, params),
-                    };
-                    type_frontier.extend(types.into_iter().rev());
-                }
-                Err(NonBaseTy::Array(a)) => type_frontier.push(self.types[a].item),
-                _ => (),
-            }
-        }
-    }
-
-    fn load_call(
-        &mut self,
-        callable: CallableMir,
-        params: BumpVec<Ty>,
-        task_id: usize,
-        isa: &Isa,
-        seen: &mut Set<CompiledFuncRef>,
-    ) -> (CompileRequestChild, Result<usize, usize>) {
-        let (func_id, params) = match callable {
-            CallableMir::Func(func_id) => (func_id, params),
-            CallableMir::SpecFunc(func) => self.load_spec_func(func, &params),
-            CallableMir::Pointer(_) => todo!(),
-        };
-
-        let key = Generator::func_instance_name(
-            false,
-            &isa.triple,
-            func_id,
-            params.iter().cloned(),
-            &self.types,
-            &mut self.interner,
-        );
-        let id = self.gen.get_or_insert_func(key, func_id);
-
-        let task_id = seen.insert(id).then_some(task_id).ok_or(task_id);
-
-        (
-            CompileRequestChild {
-                func: func_id,
-                id,
-                params: self.compile_requests.ty_slices.bump_slice(&params),
-            },
-            task_id,
-        )
-    }
-
-    fn load_spec_func(
-        &mut self,
-        func: FragRef<SpecFunc>,
-        params: &[Ty],
-    ) -> (FragRef<Func>, BumpVec<Ty>) {
-        // TODO: I dislike how much can panic here, maybe improve this in the future
-        let SpecFunc {
-            parent, generics, ..
-        } = self.types[func];
-        let SpecBase { methods, .. } = self.types[parent];
-        let index = methods.keys().position(|key| key == func).unwrap();
-        let generic_count = params.len() - generics.len() - 1;
-        let (upper, caller) = (&params[..generic_count], params[generic_count]);
-        let used_spec = if upper.is_empty() {
-            Spec::Base(parent)
-        } else {
-            Spec::Instance(type_creator!(self).spec_instance(parent, upper))
-        };
-
-        let (r#impl, params) = type_creator!(self)
-            .find_implementation(caller, used_spec, &[][..], &mut None)
-            .unwrap()
-            .unwrap();
-        let func_id = self.types[self.types[r#impl].methods][index];
-        let params = self.types[params].to_bumpvec();
-        (func_id, params)
-    }
-
-    pub fn pull(&mut self, task_base: &TaskBase) {
+    pub(super) fn pull(&mut self, task_base: &TaskBase) {
         self.types.pull(&task_base.types);
     }
 
-    pub fn commit(&mut self, main_task: &mut TaskBase) {
+    pub(super) fn commit(&mut self, main_task: &mut TaskBase) {
         self.types.commit(&mut main_task.types);
     }
 
-    pub fn commit_unique(self, main_task: &mut TaskBase) {
+    pub(super) fn commit_unique(self, main_task: &mut TaskBase) {
         self.types.commit_unique(&mut main_task.types);
     }
 }
 
 #[derive(Default)]
-pub struct TaskGraph {
+pub(super) struct TaskGraph {
     meta: Vec<(usize, VRefSlice<Package>)>,
     frontier: VecDeque<VRef<Package>>,
     inverse_graph: PushMap<VRef<Package>>,
@@ -343,7 +127,7 @@ pub struct TaskGraph {
 }
 
 impl TaskGraph {
-    pub fn prepare(&mut self, resources: &Resources) {
+    pub(super) fn prepare(&mut self, resources: &Resources) {
         self.clear();
 
         let mut edges = resources
@@ -379,11 +163,11 @@ impl TaskGraph {
         }
     }
 
-    pub(crate) fn next_task(&mut self) -> Option<VRef<Package>> {
+    pub(super) fn next_task(&mut self) -> Option<VRef<Package>> {
         self.frontier.pop_front()
     }
 
-    pub(crate) fn finish(&mut self, package: VRef<Package>) {
+    pub(super) fn finish(&mut self, package: VRef<Package>) {
         self.done += 1;
         let (.., deps) = self.meta[package.index()];
         for &dep in &self.inverse_graph[deps] {
@@ -402,16 +186,225 @@ impl TaskGraph {
         self.done = 0;
     }
 
-    pub(crate) fn has_tasks(&self) -> bool {
+    pub(super) fn has_tasks(&self) -> bool {
         self.meta.len() != self.done
     }
 }
 
-fn get_two_refs<T>(slice: &mut [T], a: usize, b: usize) -> (&mut T, Option<&mut T>) {
-    if a == b {
-        return (&mut slice[a], None);
+pub(super) struct CompileRequestCollector<'a> {
+    pub(super) requests: &'a mut CompileRequests,
+    pub(super) isa: &'a Isa,
+    pub(super) types: &'a mut Types,
+    pub(super) interner: &'a mut Interner,
+    pub(super) gen: &'a mut Gen,
+    pub(super) ctx: &'a mut CompileRequestCollectorCtx,
+    pub(super) mir: &'a Mir,
+}
+
+impl<'a> CompileRequestCollector<'a> {
+    pub(super) fn collect(
+        &mut self,
+        roots: impl IntoIterator<Item = CompileRequestChild>,
+    ) -> BumpVec<CompiledFuncRef> {
+        self.requests.clear();
+        self.ctx
+            .frontier
+            .extend(roots.into_iter().map(CRNode::from));
+
+        let mut imported = bumpvec![];
+        while let Some(CRNode {
+            req: CompileRequestChild { id, func, params },
+            skipped,
+        }) = self.ctx.frontier.pop()
+        {
+            if skipped {
+                continue;
+            }
+
+            let Func {
+                flags, visibility, ..
+            } = self.types[func];
+            if flags.contains(FuncFlags::BUILTIN) {
+                continue;
+            }
+            if visibility == FuncVisibility::Imported {
+                imported.push(id);
+                continue;
+            }
+
+            let generics = self
+                .types
+                .pack_func_param_specs(func)
+                .collect::<BumpVec<_>>();
+
+            let body = self
+                .mir
+                .bodies
+                .get(&BodyOwner::Func(func))
+                .unwrap()
+                .to_owned();
+            let module = self.mir.modules.reference(body.module());
+            let view = body.view(&module);
+
+            swap_mir_types(
+                &view,
+                &mut self.ctx.temp_types,
+                &self.requests.ty_slices[params],
+                type_creator!(self),
+            );
+
+            let drops = view
+                .drops
+                .values()
+                .map(|drop| {
+                    let prev = self.ctx.frontier.len();
+                    let ty = view.values[drop.value].ty();
+                    self.instantiate_destructors(ty, &generics);
+
+                    self.requests
+                        .children
+                        .extend(self.ctx.frontier[prev..].iter().map(CRNode::req))
+                })
+                .collect::<BumpVec<_>>();
+
+            let drops = self.requests.drop_children.extend(drops);
+
+            let calls = view
+                .calls
+                .values()
+                .map(|call| {
+                    let params = view.ty_params[call.params]
+                        .iter()
+                        .map(|&p| self.ctx.temp_types[p].ty)
+                        .collect::<BumpVec<_>>();
+                    self.load_call(call.callable, params)
+                })
+                .collect::<BumpVec<_>>();
+
+            let children = self.requests.children.extend(calls.iter().map(CRNode::req));
+            self.requests.queue.push(CompileRequest {
+                func,
+                id,
+                params,
+                children,
+                drops,
+            });
+
+            self.ctx.frontier.extend(calls);
+        }
+
+        imported
     }
 
-    // SAFETY: Since a != b borrowing these elements is valid.
-    unsafe { (mem::transmute(&mut slice[a]), Some(&mut slice[b])) }
+    fn instantiate_destructors(&mut self, root: VRef<TyMir>, generics: &[FragSlice<Spec>]) {
+        self.ctx.ty_frontier.push(self.ctx.temp_types[root].ty);
+        while let Some(ty) = self.ctx.ty_frontier.pop() {
+            if !type_creator!(self).may_need_drop(ty) {
+                continue;
+            }
+
+            if let Some(Some((r#impl, params))) = type_creator!(self).is_drop(ty, generics) {
+                let func = self.types[self.types[r#impl].methods][0];
+                let params = self.types[params].to_bumpvec();
+                let call_req = self.load_call(CallableMir::Func(func), params);
+                self.ctx.frontier.push(call_req);
+            }
+
+            match ty.to_base_and_params(&self.types) {
+                Ok((base, params)) => {
+                    let types = match base {
+                        BaseTy::Struct(s) => type_creator!(self).instantiate_fields(s, params),
+                        BaseTy::Enum(e) => type_creator!(self).instantiate_variants(e, params),
+                    };
+                    self.ctx.ty_frontier.extend(types.into_iter().rev());
+                }
+                Err(NonBaseTy::Array(a)) => self.ctx.ty_frontier.push(self.types[a].item),
+                _ => (),
+            }
+        }
+    }
+
+    fn load_call(&mut self, callable: CallableMir, params: BumpVec<Ty>) -> CRNode {
+        let (func_id, params) = match callable {
+            CallableMir::Func(func_id) => (func_id, params),
+            CallableMir::SpecFunc(func) => self.load_spec_func(func, &params),
+            CallableMir::Pointer(_) => todo!(),
+        };
+
+        let key = Generator::func_instance_name(
+            false,
+            &self.isa.triple,
+            func_id,
+            params.iter().cloned(),
+            &self.types,
+            &mut self.interner,
+        );
+        let id = self.gen.get_or_insert_func(key, func_id);
+
+        CRNode {
+            req: CompileRequestChild {
+                func: func_id,
+                id,
+                params: self.requests.ty_slices.bump_slice(&params),
+            },
+            skipped: !self.ctx.seen.insert(id),
+        }
+    }
+
+    fn load_spec_func(
+        &mut self,
+        func: FragRef<SpecFunc>,
+        params: &[Ty],
+    ) -> (FragRef<Func>, BumpVec<Ty>) {
+        // TODO: I dislike how much can panic here, maybe improve this in the future
+        let SpecFunc {
+            parent, generics, ..
+        } = self.types[func];
+        let SpecBase { methods, .. } = self.types[parent];
+        let index = methods.keys().position(|key| key == func).unwrap();
+        let generic_count = params.len() - generics.len() - 1;
+        let (upper, caller) = (&params[..generic_count], params[generic_count]);
+        let used_spec = if upper.is_empty() {
+            Spec::Base(parent)
+        } else {
+            Spec::Instance(type_creator!(self).spec_instance(parent, upper))
+        };
+
+        let (r#impl, params) = type_creator!(self)
+            .find_implementation(caller, used_spec, &[][..], &mut None)
+            .unwrap()
+            .unwrap();
+        let func_id = self.types[self.types[r#impl].methods][index];
+        let params = self.types[params].to_bumpvec();
+        (func_id, params)
+    }
+}
+
+#[derive(Default)]
+pub(super) struct CompileRequestCollectorCtx {
+    frontier: Vec<CRNode>,
+    seen: Set<CompiledFuncRef>,
+    temp_types: PushMap<TyMir>,
+    ty_frontier: Vec<Ty>,
+}
+
+#[derive(Clone, Copy)]
+struct CRNode {
+    req: CompileRequestChild,
+    skipped: bool,
+}
+
+impl CRNode {
+    fn req(&self) -> CompileRequestChild {
+        self.req
+    }
+}
+
+impl From<CompileRequestChild> for CRNode {
+    fn from(req: CompileRequestChild) -> Self {
+        Self {
+            req,
+            skipped: false,
+        }
+    }
 }

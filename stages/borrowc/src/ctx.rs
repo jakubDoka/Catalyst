@@ -11,7 +11,7 @@ use storage::*;
 use type_creator::TypeCreator;
 use types::*;
 
-use crate::builder::moves::MoveCtx;
+use crate::builder::{escapes::EscapeCtx, moves::MoveCtx};
 
 pub(crate) struct FuncBorrowcCtx<'m, 'i> {
     pub(crate) generics: &'i [FragSlice<Spec>],
@@ -235,6 +235,7 @@ pub struct BorrowcCtx {
     loops: Vec<LoopMir>,
 
     pub(crate) moves: MoveCtx,
+    pub(crate) _escapes: EscapeCtx,
 }
 
 impl BorrowcCtx {

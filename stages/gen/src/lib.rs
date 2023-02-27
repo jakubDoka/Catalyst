@@ -16,9 +16,10 @@ mod native;
 pub use {
     ctx::{
         layout::{GenLayouts, Layout, Offset},
-        CodeSaveError, CompileRequest, CompileRequestChild, CompileRequests, CompiledFunc,
-        CompiledFuncInner, CompiledFuncRef, ComputedValue, Gen, GenBase, GenBlock, GenBuilder,
-        GenFuncConstant, GenItemName, GenReloc, GenResources, GenValue, Isa, IsaCreationError,
+        CodeSaveError, CompileRequest, CompileRequestChild, CompileRequestView, CompileRequests,
+        CompileRequestsShard, CompiledFunc, CompiledFuncInner, CompiledFuncRef, ComputedValue, Gen,
+        GenBase, GenBlock, GenBuilder, GenFuncConstant, GenItemName, GenReloc, GenResources,
+        GenValue, Isa, IsaCreationError,
     },
     generate::function_loading::abi::{PassMode, PassSignature},
     generate::Generator,

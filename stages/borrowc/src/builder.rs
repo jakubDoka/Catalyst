@@ -13,6 +13,7 @@ use types::*;
 
 mod control_flow;
 mod data;
+pub mod escapes;
 pub mod moves;
 
 type NodeRes = OptVRef<ValueMir>;

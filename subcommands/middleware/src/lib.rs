@@ -1,13 +1,15 @@
-#![feature(const_trait_impl)]
-#![feature(let_chains)]
-#![feature(slice_group_by)]
-#![feature(default_free_fn)]
-#![feature(iter_collect_into)]
-#![feature(decl_macro)]
-#![feature(trivial_bounds)]
-#![feature(closure_lifetime_binder)]
-#![feature(array_zip)]
-#![feature(is_some_and)]
+#![feature(
+    const_trait_impl,
+    let_chains,
+    slice_group_by,
+    default_free_fn,
+    iter_collect_into,
+    decl_macro,
+    trivial_bounds,
+    closure_lifetime_binder,
+    array_zip,
+    is_some_and
+)]
 
 mod logic;
 
@@ -19,12 +21,10 @@ pub use {
     gen::*,
     lexing::*,
     logic::{
-        task::{Task, TaskGraph},
-        worker::{
-            AstHandler, BaseSourceCtx, MacroSourceCtx, Worker, WorkerConnections, WorkerState,
-        },
-        CommandInfo, DiagnosticView, GenTask, Incremental, Middleware, MiddlewareArgs,
-        MiddlewareArgsError, MiddlewareOutput, PackageTask, QuickTimer, Shared,
+        task::Task,
+        worker::{AstHandler, BaseSourceCtx, MacroSourceCtx},
+        CommandInfo, DiagnosticView, GenTask, Middleware, MiddlewareArgs, MiddlewareArgsError,
+        MiddlewareOutput, PackageTask, QuickTimer,
     },
     mir::*,
     packaging::*,

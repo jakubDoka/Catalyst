@@ -67,8 +67,3 @@ impl SpecFunc {
         !self.generics.is_empty()
     }
 }
-
-pub struct Predicate {
-    ty: Ty,
-    specs: FragSlice<Spec>,
-}

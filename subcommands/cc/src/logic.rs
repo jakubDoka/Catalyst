@@ -101,7 +101,7 @@ impl<'m> CcRuntime<'m> {
             let _ = writeln!(mid_args.display(), "Running: {}", path.display());
             let timer = QuickTimer::new("up time");
             let output = Command::new(path).status();
-            timer.drop();
+            timer.report();
             let _ = match output {
                 Ok(status) => writeln!(mid_args.display(), "Exited with status: {status}"),
                 Err(err) => writeln!(mid_args.display(), "Failed to run the executable: {err}"),

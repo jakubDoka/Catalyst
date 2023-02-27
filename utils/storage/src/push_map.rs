@@ -45,6 +45,12 @@ impl<T: Clone> ToOwned for PushMapView<T> {
     }
 }
 
+impl<T> Default for &PushMapView<T> {
+    fn default() -> Self {
+        unsafe { mem::transmute::<&[T], Self>(&[]) }
+    }
+}
+
 impl<T> Borrow<PushMapView<T>> for PushMap<T> {
     fn borrow(&self) -> &PushMapView<T> {
         self.as_view()

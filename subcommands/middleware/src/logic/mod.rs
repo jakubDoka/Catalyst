@@ -1,3 +1,8 @@
+use self::{
+    task::{CompileRequestCollector, CompileRequestCollectorCtx, TaskGraph},
+    worker::{GeneratorThread, Worker, WorkerConnections},
+};
+
 pub mod task;
 pub mod worker;
 
@@ -46,26 +51,24 @@ use {
     worker::DefaultSourceAstHandler,
 };
 
-pub type WorkerLaunchResult<'scope> = (
-    Vec<PackageTask>,
-    Vec<SyncSender<Task>>,
-    Vec<ScopedJoinHandle<'scope, (Worker, Option<Task>)>>,
-);
+type WorkerLaunchResult<'scope> = (Vec<PackageTask>, Vec<ScopedJoinHandle<'scope, Worker>>);
 
 #[derive(Default)]
 pub struct Middleware {
-    pub workspace: Workspace,
-    pub(crate) package_graph: PackageGraph,
-    pub(crate) resource_loading_ctx: ResourceLoaderCtx,
-    pub(crate) task_graph: TaskGraph,
-    pub(crate) entry_points: Vec<FragRef<Func>>,
-    pub(crate) incremental: Option<Incremental>,
-    pub(crate) relocator: FragRelocator,
+    workspace: Workspace,
+    package_graph: PackageGraph,
+    resource_loading_ctx: ResourceLoaderCtx,
+    task_graph: TaskGraph,
+    entry_points: Vec<FragRef<Func>>,
+    incremental: Option<Incremental>,
+    relocator: FragRelocator,
+    requests: CompileRequests,
+    request_ctx: CompileRequestCollectorCtx,
     save_path: Option<PathBuf>,
 }
 
 impl Middleware {
-    pub fn save(&mut self, save_path: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
+    fn save(&mut self, save_path: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
         let _t = QuickTimer::new("incremental data save");
         let Some(path) = save_path.or(self.save_path.take()) else {
             return Ok(());
@@ -135,10 +138,6 @@ impl Middleware {
         self.incremental = Some(incr);
 
         Ok(())
-    }
-
-    pub fn take_incremental(&mut self) -> Option<Incremental> {
-        self.incremental.take()
     }
 
     pub fn unwrap_view(&mut self) -> DiagnosticView {
@@ -244,7 +243,7 @@ impl Middleware {
         Self::distribute_modules(&mut tasks, &resources);
 
         thread::scope(|scope| {
-            let (package_tasks, gen_senders, threads) = Self::launch_workers(
+            let (package_tasks, threads) = Self::launch_workers(
                 scope,
                 package_sender,
                 tasks,
@@ -252,7 +251,6 @@ impl Middleware {
                 &mut worker_pool,
                 shared,
             );
-            drop(gen_senders);
 
             for task in package_tasks.into_iter() {
                 task.send(dummy_package)
@@ -384,8 +382,8 @@ impl Middleware {
 
         let mut handlers = vec![DefaultSourceAstHandler; thread_count as usize];
 
-        let (tasks, entry_points, imported) = thread::scope(|scope| {
-            let (package_tasks, mut gen_senders, threads) = Self::launch_workers(
+        let mut tasks = thread::scope(|scope| {
+            let (package_tasks, threads) = Self::launch_workers(
                 scope,
                 package_sender,
                 tasks,
@@ -407,35 +405,12 @@ impl Middleware {
                 self.workspace.transfer(&mut task.workspace);
             }
 
-            if self.workspace.has_errors() || args.check {
-                drop(gen_senders);
-                worker_pool.extend(
-                    threads
-                        .into_iter()
-                        .map(|thread| thread.join().expect("worker panicked").0),
-                );
-                return (tasks, vec![], vec![]);
-            }
-
-            let _t = QuickTimer::new("codegen");
-
-            task_base.gen.prepare();
-
-            let (entry_points, imported) = self.distribute_compile_requests(&mut tasks, &args.isa);
-            for (task, recv) in tasks.into_iter().zip(gen_senders.iter_mut()) {
-                recv.send(task).expect("worker terminated prematurely");
-            }
-
-            (
-                Self::join_workers(threads, &mut worker_pool),
-                entry_points,
-                imported,
-            )
+            Self::join_workers(threads, &mut worker_pool);
+            tasks
         });
 
-        let ([ir, mir, tir], mut main_task, compiled) = self.tidy_tasks(&mut task_base, tasks);
-
         if self.workspace.has_errors() || args.check {
+            let ([_, mir, tir], _) = self.tidy_tasks(&mut task_base, tasks);
             let incr = self.incremental.insert(Incremental {
                 resources,
                 task_base,
@@ -459,6 +434,15 @@ impl Middleware {
             );
         }
 
+        let [entry_points, imported] = self.codegen(
+            &mut task_base,
+            args,
+            &mut tasks,
+            &mut worker_pool,
+            &resources,
+        );
+
+        let ([ir, mir, tir], mut main_task) = self.tidy_tasks(&mut task_base, tasks);
         let shared = Shared {
             resources: &resources,
             jit_isa: &args.jit_isa,
@@ -474,20 +458,21 @@ impl Middleware {
         let mut object = ObjectContext::new(&args.isa).unwrap();
         object
             .load_functions(
-                compiled
-                    .into_iter()
+                self.requests
+                    .queue
+                    .drain(..)
+                    .map(|r| r.id)
                     .chain(imported)
                     .chain(iter::once(entry_point)),
                 &main_task.gen,
                 &main_task.types,
                 &mut main_task.interner,
             )
-            // .map_err(|err| {
-            //     if let ObjectRelocationError::MissingSymbol(id) = err {
-            //         let func = main_task.gen[id].func;
-            //         dbg !(&main_task.interner[main_task.types[func].name]);
-            //     }
-            // })
+            .map_err(|err| {
+                if let ObjectRelocationError::MissingSymbol(id) = err {
+                    dbg!(main_task.interner.get(id.ident()));
+                }
+            })
             .unwrap();
 
         let incr = self.incremental.insert(Incremental {
@@ -512,25 +497,18 @@ impl Middleware {
         )
     }
 
-    fn join_workers(
-        threads: Vec<ScopedJoinHandle<(Worker, Option<Task>)>>,
-        worker_pool: &mut Vec<Worker>,
-    ) -> Vec<Task> {
+    fn join_workers(threads: Vec<ScopedJoinHandle<Worker>>, worker_pool: &mut Vec<Worker>) {
         threads
             .into_iter()
-            .map(|thread| {
-                let (worker, task) = thread.join().expect("worker panicked");
-                worker_pool.push(worker);
-                task.expect("impossible since gen_senders still hasn't been dropped")
-            })
-            .collect()
+            .map(|thread| thread.join().expect("worker panicked"))
+            .collect_into(worker_pool);
     }
 
     fn tidy_tasks(
         &mut self,
         base: &mut TaskBase,
         mut tasks: Vec<Task>,
-    ) -> ([Option<String>; 3], Task, Vec<CompiledFuncRef>) {
+    ) -> ([Option<String>; 3], Task) {
         // we want consistent output during tests
         tasks.sort_unstable_by_key(|t| t.id);
 
@@ -551,16 +529,10 @@ impl Middleware {
             .reduce(|a, b| a.zip(b).map(|(a, b)| a.and_then(|a| b.map(|b| a + &b))))
             .unwrap_or([None, None, None]);
 
-        let compiled = tasks
-            .iter_mut()
-            .flat_map(|task| task.compile_requests.queue.drain(..))
-            .map(|req| req.id)
-            .collect();
-
         let mut main_task = tasks.pop().expect("has to be at least one task");
         main_task.pull(base);
 
-        (dumps, main_task, compiled)
+        (dumps, main_task)
     }
 
     fn launch_workers<'a: 'scope, 'scope, S: AstHandler>(
@@ -572,77 +544,71 @@ impl Middleware {
         shared: Shared<'scope>,
     ) -> WorkerLaunchResult<'scope> {
         let worker_count = tasks.len();
-        let workers = iter::repeat_with(|| WorkerConnections::new(package_sender.clone()))
-            .take(worker_count)
-            .collect::<Vec<_>>();
+        let (connections, input): (Vec<_>, Vec<_>) = (0..worker_count)
+            .map(|_| WorkerConnections::new(package_sender.clone()))
+            .unzip();
 
-        let (mut package_tasks, mut gen_senders, mut threads) = (
-            Vec::with_capacity(worker_count),
-            Vec::with_capacity(worker_count),
-            Vec::with_capacity(worker_count),
-        );
+        let package_tasks = tasks
+            .into_iter()
+            .zip(input)
+            .map(|(task, self_sender)| PackageTask { task, self_sender })
+            .collect();
+        let threads = worker_pool
+            .drain(..)
+            .chain(iter::repeat_with(Worker::default))
+            .zip(connections)
+            .zip(handlers)
+            .map(|((worker, connection), handler)| worker.run(scope, shared, connection, handler))
+            .collect();
 
-        for (((connections, package_sender, gen_sender), task), handler) in
-            workers.into_iter().zip(tasks).zip(handlers)
-        {
-            package_tasks.push(PackageTask {
-                self_sender: package_sender,
-                task,
-            });
-            gen_senders.push(gen_sender);
-            threads.push(worker_pool.pop().unwrap_or_default().run(
-                scope,
-                shared,
-                connections,
-                handler,
-            ));
-        }
-
-        (package_tasks, gen_senders, threads)
+        (package_tasks, threads)
     }
 
     pub fn distribute_compile_requests(
         &mut self,
-        tasks: &mut [Task],
+        task: &mut Task,
         isa: &Isa,
     ) -> (
         Vec<CompiledFuncRef>, // in executable
         Vec<CompiledFuncRef>, // in lib or dll
     ) {
-        let task_distribution = (0..tasks.len()).cycle();
-        let distributor = |(func, task_id): (_, usize)| {
-            let main_task = &mut tasks[0];
+        let distributor = |func| {
             let key = Generator::func_instance_name(
                 isa.jit,
                 &isa.triple,
                 func,
                 iter::empty(),
-                &main_task.types,
-                &mut main_task.interner,
+                &task.types,
+                &mut task.interner,
             );
-            let id = tasks[task_id].gen.get_or_insert_func(key, func);
-            (
-                CompileRequestChild {
-                    id,
-                    func,
-                    params: default(),
-                },
-                Ok(task_id),
-            )
+            let id = task.gen.get_or_insert_func(key, func);
+            CompileRequestChild {
+                id,
+                func,
+                params: default(),
+            }
         };
         let frontier = self
             .entry_points
             .drain(..)
-            .zip(task_distribution)
             .map(distributor)
             .collect::<BumpVec<_>>();
 
-        let internal = frontier.iter().map(|(req, _)| req.id).collect();
-        let external = Task::traverse_compile_requests(frontier, tasks, isa);
+        let internal = frontier.iter().map(|req| req.id).collect();
+        let external = CompileRequestCollector {
+            requests: &mut self.requests,
+            isa,
+            types: &mut task.types,
+            interner: &mut task.interner,
+            gen: &mut task.gen,
+            ctx: &mut self.request_ctx,
+            mir: &mut task.mir,
+        }
+        .collect(frontier);
         (internal, external.to_vec())
     }
 
-    pub fn expand(
+    fn expand(
         &mut self,
         task_base: &mut TaskBase,
         receiver: Receiver<(PackageTask, VRef<Package>)>,
@@ -792,6 +758,46 @@ impl Middleware {
         frags.add_static_root(&SpecBase::ALL);
         task_base.register(&mut frags);
         relocator.relocate(&mut threads, &mut frags);
+    }
+
+    fn codegen(
+        &mut self,
+        task_base: &mut TaskBase,
+        args: &MiddlewareArgs,
+        tasks: &mut [Task],
+        worker_pool: &mut [Worker],
+        resources: &Resources,
+    ) -> [Vec<CompiledFuncRef>; 2] {
+        let thread_count = tasks.len() as u8;
+        let _t = QuickTimer::new("codegen");
+        task_base.gen.prepare();
+        let (entry_points, imported) = self.distribute_compile_requests(
+            tasks.first_mut().expect("what are we doing then"),
+            &args.isa,
+        );
+        thread::scope(|scope| {
+            for ((task, requests), worker) in tasks
+                .iter_mut()
+                .zip(self.requests.split(thread_count as u8))
+                .zip(worker_pool.iter_mut())
+            {
+                scope.spawn(|| {
+                    GeneratorThread {
+                        requests,
+                        mir: &mut task.mir,
+                        resources: &resources,
+                        types: &mut task.types,
+                        ctx: &mut worker.gen,
+                        interner: &mut task.interner,
+                        isa: &args.isa,
+                        layouts: &mut worker.gen_layouts,
+                        gen: &mut task.gen,
+                    }
+                    .generate(&mut task.ir_dump)
+                });
+            }
+        });
+        [entry_points, imported]
     }
 }
 
@@ -1143,7 +1149,7 @@ ctl_errors! {
 
 pub struct PackageTask {
     self_sender: SyncSender<(PackageTask, VRef<Package>)>,
-    pub task: Task,
+    task: Task,
 }
 
 impl PackageTask {
@@ -1164,13 +1170,13 @@ pub struct GenTask {}
 
 #[derive(Serialize, Deserialize, Archive)]
 
-pub struct Incremental {
-    pub resources: Resources,
-    pub task_base: TaskBase,
+struct Incremental {
+    resources: Resources,
+    task_base: TaskBase,
     #[with(Skip)]
-    pub worker_pool: Vec<Worker>,
-    pub module_items: Map<VRef<Source>, ModuleItems>,
-    pub builtin_functions: Vec<FragRef<Func>>,
+    worker_pool: Vec<Worker>,
+    module_items: Map<VRef<Source>, ModuleItems>,
+    builtin_functions: Vec<FragRef<Func>>,
 }
 
 fn get_exe_mod_time() -> Option<i64> {
@@ -1396,11 +1402,10 @@ impl QuickTimer {
     }
 
     pub fn new(message: &'static str) -> Self {
-        // for later
         Self(message, Instant::now())
     }
 
-    pub fn drop(self) {}
+    pub fn report(self) {}
 }
 
 impl Drop for QuickTimer {

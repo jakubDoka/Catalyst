@@ -14,7 +14,7 @@ use type_creator::type_creator;
 use types::*;
 
 use crate::{
-    ctx::ComputedValue,
+    ctx::{CompileRequestView, ComputedValue},
     //interpreter::{ISlot, IValue},
     *,
 };
@@ -28,7 +28,7 @@ pub struct Generator<'ctx> {
     pub gen_resources: &'ctx mut GenResources,
     pub interner: &'ctx mut Interner,
     pub types: &'ctx mut Types,
-    pub compile_requests: &'ctx CompileRequests,
+    pub request: CompileRequestView<'ctx>,
     pub resources: &'ctx Resources,
 }
 
@@ -234,7 +234,9 @@ impl Generator<'_> {
 
         let value = builder.body.drops[drop].value;
         let ty = builder.value_ty(value);
-        let mut funcs = self.gen_resources.drops[drop.index()].clone();
+        let mut funcs = self.request.children[self.request.drops[drop.index()]]
+            .iter()
+            .copied();
         let GenValue {
             mut computed,
             offset,
@@ -311,9 +313,8 @@ impl Generator<'_> {
 
             // we can pass empty generics since all types are concrete
             if let Some(Some(..)) = type_creator!(self).is_drop(ty, &[]) {
-                let CompileRequestChild { id, params, .. } =
-                    self.gen_resources.calls[funcs.next().unwrap()];
-                let params = self.compile_requests.ty_slices[params].iter().copied();
+                let CompileRequestChild { id, params, .. } = funcs.next().unwrap();
+                let params = self.request.types[params].iter().copied();
                 let (func, ..) = self.import_compiled_func(id, params, builder);
                 let value = match offset == 0 {
                     true => value,
@@ -571,13 +572,13 @@ impl Generator<'_> {
 
     fn call(&mut self, call: VRef<CallMir>, ret: VRef<ValueMir>, builder: &mut GenBuilder) {
         let CallMir { args, .. } = builder.body.calls[call];
-        let CompileRequestChild { id, func, params } = self.gen_resources.calls[call.index()];
+        let CompileRequestChild { id, func, params } = self.request.calls[call.index()];
 
         if self.types[func].flags.contains(FuncFlags::BUILTIN) {
             if func == Func::CAST {
                 self.cast(args, ret, builder)
             } else if func == Func::SIZEOF {
-                self.sizeof(self.compile_requests.ty_slices[params][0], ret, builder)
+                self.sizeof(self.request.types[params][0], ret, builder)
             } else {
                 let args = builder.body.value_args[args]
                     .iter()
@@ -589,7 +590,7 @@ impl Generator<'_> {
             return;
         }
 
-        let params = self.compile_requests.ty_slices[params].iter().copied();
+        let params = self.request.types[params].iter().copied();
         let (func, struct_ret, pass_sig) = self.import_compiled_func(id, params, builder);
 
         let struct_ptr = struct_ret.then(|| {

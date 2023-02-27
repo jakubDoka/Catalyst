@@ -1,80 +1,65 @@
-use std::sync::mpsc::SendError;
-
 use type_creator::type_creator;
 
 use super::*;
 use typec::*;
 
-pub struct WorkerConnections {
-    pub package_tasks: Receiver<(PackageTask, VRef<Package>)>,
-    pub package_products: Sender<(PackageTask, VRef<Package>)>,
-    pub gen_tasks: Receiver<Task>,
+pub(super) struct WorkerConnections {
+    pub(super) package_tasks: Receiver<(PackageTask, VRef<Package>)>,
+    pub(super) package_products: Sender<(PackageTask, VRef<Package>)>,
 }
 
-type ConnsReturn = (
-    WorkerConnections,
-    SyncSender<(PackageTask, VRef<Package>)>,
-    SyncSender<Task>,
-);
+type ConnsReturn = (WorkerConnections, SyncSender<(PackageTask, VRef<Package>)>);
 
 impl WorkerConnections {
     pub fn new(package_products: Sender<(PackageTask, VRef<Package>)>) -> ConnsReturn {
         let (package_dump, package_tasks) = mpsc::sync_channel(0);
-        let (gen_dump, gen_tasks) = mpsc::sync_channel(0);
         (
             Self {
                 package_tasks,
                 package_products,
-                gen_tasks,
             },
             package_dump,
-            gen_dump,
         )
     }
 }
 
-pub struct Worker {
-    pub(crate) state: WorkerState,
-    pub(crate) context: Context,
-    pub(crate) function_builder_ctx: FunctionBuilderContext,
-}
-
-impl Default for Worker {
-    fn default() -> Self {
-        Self::new()
-    }
+#[derive(Default)]
+pub(super) struct Worker {
+    pub(super) typec_ctx: TypecCtx,
+    pub(super) typec_transfer: TypecTransfer<'static>,
+    pub(super) mir_ctx: BorrowcCtx,
+    pub(super) module: ModuleMir,
+    // pub token_macros: Map<FragRef<Impl>, TokenMacroOwnedSpec>,
+    // pub macro_ctx: MacroCtx<'static>,
+    pub(super) jit_layouts: GenLayouts,
+    pub(super) gen_layouts: GenLayouts,
+    pub(super) interpreter: InterpreterCtx,
+    pub(super) gen: GeneratorThreadCtx,
 }
 
 impl Worker {
-    pub fn new() -> Self {
-        Self {
-            state: default(),
-            context: Context::new(),
-            function_builder_ctx: FunctionBuilderContext::new(),
-        }
-    }
-
-    pub fn generaite_entry_point(
+    pub(super) fn generaite_entry_point(
         &mut self,
         task: &mut Task,
         isa: &Isa,
         shared: &Shared,
         entry_points: &[CompiledFuncRef],
     ) -> CompiledFuncRef {
-        self.context.func.signature = ir::Signature::new(isa.default_call_conv());
-        self.context
+        self.gen.cranelift.func.signature = ir::Signature::new(isa.default_call_conv());
+        self.gen
+            .cranelift
             .func
             .signature
             .returns
             .push(ir::AbiParam::new(ir::types::I32));
 
         let mut generator = Generator {
-            layouts: &mut self.state.gen_layouts,
+            layouts: &mut self.gen_layouts,
             gen: &mut task.gen,
-            gen_resources: &mut self.state.gen_resources,
+            gen_resources: &mut self.gen.resources,
             interner: &mut task.interner,
             types: &mut task.types,
-            compile_requests: &task.resources.compile_requests,
+            request: CompileRequestView::default(),
             resources: shared.resources,
         };
 
@@ -84,9 +69,9 @@ impl Worker {
             isa,
             mir_func,
             &module,
-            &mut self.context.func,
+            &mut self.gen.cranelift.func,
             mir_func.view(&module).types,
-            &mut self.function_builder_ctx,
+            &mut self.gen.function_builder,
         );
 
         let entry = builder.create_block();
@@ -114,7 +99,6 @@ impl Worker {
         } else {
             builder.ins().iconst(ir::types::I32, 0)
         };
-
         builder.ins().return_(&[exit_code]);
 
         builder.seal_block(entry);
@@ -127,31 +111,31 @@ impl Worker {
             ..default()
         });
         let compiled_entry = generator.gen.get_or_insert_func(entry_name, entry_func);
-        self.context.compile(&**isa).unwrap();
+        self.gen.cranelift.compile(&**isa).unwrap();
         generator
             .gen
-            .save_compiled_code(compiled_entry, &self.context)
+            .save_compiled_code(compiled_entry, &self.gen.cranelift)
             .unwrap();
-        self.context.clear();
+        self.gen.cranelift.clear();
 
         compiled_entry
     }
 
-    pub fn run<'a: 'scope, 'scope, S: AstHandler>(
+    pub(super) fn run<'a: 'scope, 'scope, S: AstHandler>(
         mut self,
         thread_scope: &'a thread::Scope<'scope, '_>,
         shared: Shared<'scope>,
         connections: WorkerConnections,
-        source_ast_handler: &'scope mut S,
-    ) -> ScopedJoinHandle<'scope, (Worker, Option<Task>)> {
+        ast_handler: &'scope mut S,
+    ) -> ScopedJoinHandle<'scope, Worker> {
         thread_scope.spawn(move || {
             let mut arena = Arena::new();
             let mut jit_ctx = JitContext::new(iter::empty());
-            self.state.jit_layouts.clear(shared.jit_isa);
-            self.state.gen_layouts.clear(shared.isa);
-            loop {
-                let Ok((mut package_task, package)) = connections.package_tasks.recv() else {break;};
 
+            self.jit_layouts.clear(shared.jit_isa);
+            self.gen_layouts.clear(shared.isa);
+
+            while let Ok((mut package_task, package)) = connections.package_tasks.recv() {
                 let modules = mem::take(&mut package_task.task.modules_to_compile);
                 for &module in modules.iter() {
                     self.compile_module(
@@ -160,25 +144,21 @@ impl Worker {
                         &mut package_task.task,
                         &mut jit_ctx,
                         &shared,
-                        source_ast_handler,
+                        ast_handler,
                     );
                 }
                 package_task.task.modules_to_compile = modules;
-                let err = connections.package_products.send((package_task, package));
-                if let Err(SendError((package_task, ..))) = err {
-                    return (self, Some(package_task.task));
-                };
+
+                if connections
+                    .package_products
+                    .send((package_task, package))
+                    .is_err()
+                {
+                    break; // in case of ast walker this is desired behavior
+                }
             }
 
-            let Some(mut compile_task) = connections.gen_tasks.recv().ok() else {
-                return (self, None);
-            };
-
-            let mut gen_layouts = mem::take(&mut self.state.gen_layouts);
-            self.compile_current_requests(&mut compile_task, &shared, shared.isa, &mut gen_layouts);
-
-            self.state.gen_layouts = gen_layouts;
-            (self, Some(compile_task))
+            self
         })
     }
 
@@ -206,14 +186,14 @@ impl Worker {
 
     //     // let mut macros = types::build_scope(
     //     //     module,
-    //     //     &mut self.state.scope,
+
     //     //     shared.resources,
     //     //     &task.types,
     //     //     &mut task.interner,
     //     // );
 
     //     // loop {
-    //     //     // let mut macro_ctx = mem::take(&mut self.state.macro_ctx);
+
     //     //     // self.load_macros(
     //     //     //     &mut macro_ctx,
     //     //     //     macros.iter().copied(),
@@ -229,11 +209,8 @@ impl Worker {
     //     //     let last = grouped_items.last;
     //     //     arena.clear();
 
-    //     //     // self.state.macro_ctx = macro_ctx.clear();
-    //     //     let mut local_macros = mem::take(&mut self.state.tir_builder_ctx.macros);
     //     //     self.compile_macros(&local_macros, task, jit_ctx, shared);
     //     //     macros.extend(local_macros.drain(..));
-    //     //     self.state.tir_builder_ctx.macros = local_macros;
 
     //     //     if last {
     //     //         break;
@@ -287,7 +264,7 @@ impl Worker {
         let Some(result) = handler.parse_imports(parser!()) else {return};
         handler.imports(result, ctx!());
 
-        self.state.typec_ctx.build_scope(
+        self.typec_ctx.build_scope(
             module,
             shared.resources,
             &task.types,
@@ -296,7 +273,6 @@ impl Worker {
         );
 
         loop {
-            // let mut macro_ctx = mem::take(&mut self.state.macro_ctx);
             // self.load_macros(
             //     &mut macro_ctx,
             //     macros.iter().copied(),
@@ -311,11 +287,8 @@ impl Worker {
 
             arena.clear();
 
-            // self.state.macro_ctx = macro_ctx.clear();
-            // let mut local_macros = mem::take(&mut self.state.typec_ctx.macros);
             // self.compile_macros(&local_macros, task, jit_ctx, shared);
             // macros.extend(local_macros.drain(..));
-            // self.state.tir_builder_ctx.macros = local_macros;
 
             if last {
                 break;
@@ -323,16 +296,16 @@ impl Worker {
         }
 
         if handler.save_module() {
-            let module = task.mir.modules.push(self.state.module.clone());
+            let module = task.mir.modules.push(self.module.clone());
             assert_eq!(module, mir_module);
-            self.state.module.clear();
+            self.module.clear();
 
             //self.fold_constants(source, task, shared);
         }
     }
 
     // fn fold_constants(&mut self, _source: VRef<Source>, task: &mut Task, shared: &Shared) {
-    //     for constant in self.state.just_compiled_consts.drain(..) {
+
     //         let body = task
     //             .mir
     //             .bodies
@@ -357,14 +330,12 @@ impl Worker {
     //             .types
     //             .extend(body.view(module).types.values().copied());
 
-    //         let prepared_ctx = self.state.interpreter.prepare(1 << 20, 10_000);
-
     //         let mut interp = Interpreter {
     //             ctx: prepared_ctx,
     //             types: &mut task.types,
     //             interner: &mut task.interner,
     //             mir: &mut task.mir,
-    //             layouts: &mut self.state.jit_layouts,
+
     //             current: &mut current,
     //             gen: &task.gen,
     //         };
@@ -386,7 +357,7 @@ impl Worker {
     //         task.gen.save_const(
     //             constant,
     //             value,
-    //             &mut self.state.jit_layouts,
+
     //             &mut task.types,
     //             &mut task.interner,
     //         );
@@ -405,10 +376,9 @@ impl Worker {
     //    }
 
     //    let imported = self.push_macro_compile_requests(macros, task, shared);
-    //    let mut layouts = mem::take(&mut self.state.jit_layouts);
+
     //    let compiled = self.compile_current_requests(task, shared, shared.jit_isa, &mut layouts);
     //    task.compile_requests.clear();
-    //    self.state.jit_layouts = layouts;
 
     //    jit_ctx
     //        .load_functions(
@@ -421,102 +391,6 @@ impl Worker {
     //        .unwrap();
     //    jit_ctx.prepare_for_execution();
     //}
-
-    fn compile_current_requests(
-        &mut self,
-        task: &mut Task,
-        shared: &Shared,
-        isa: &Isa,
-        gen_layouts: &mut GenLayouts,
-    ) -> BumpVec<CompiledFuncRef> {
-        let mut compiled = bumpvec![];
-        for &CompileRequest {
-            func,
-            id,
-            params,
-            children,
-            drops,
-        } in &task.resources.compile_requests.queue
-        {
-            compiled.push(id);
-
-            let Func { signature, .. } = task.types[func];
-            let body = task
-                .mir
-                .bodies
-                .get(&BodyOwner::Func(func))
-                .expect("every source code function has body")
-                .to_owned();
-            let module = task.mir.modules.reference(body.module());
-            let params = task.compile_requests.ty_slices[params].to_bumpvec();
-            let view = body.view(&module);
-
-            swap_mir_types(
-                &view,
-                &mut self.state.temp_dependant_types,
-                &params,
-                type_creator!(task),
-            );
-
-            let builder = GenBuilder::new(
-                isa,
-                body,
-                &module,
-                &mut self.context.func,
-                self.state.temp_dependant_types.as_view(),
-                &mut self.function_builder_ctx,
-            );
-            let root = body.entry();
-            self.state.gen_resources.calls.clear();
-            self.state
-                .gen_resources
-                .calls
-                .extend(task.compile_requests.children[children].iter().copied());
-            self.state.gen_resources.drops.clear();
-
-            for &drop in task.compile_requests.drop_children[drops].iter() {
-                let prev = self.state.gen_resources.calls.len();
-                self.state
-                    .gen_resources
-                    .calls
-                    .extend(&task.compile_requests.children[drop]);
-                self.state
-                    .gen_resources
-                    .drops
-                    .push(prev..self.state.gen_resources.calls.len());
-            }
-
-            Generator {
-                layouts: gen_layouts,
-                gen: &mut task.gen,
-                gen_resources: &mut self.state.gen_resources,
-                interner: &mut task.interner,
-                types: &mut task.types,
-                compile_requests: &task.resources.compile_requests,
-                resources: shared.resources,
-            }
-            .generate(signature, view.ret, view.args, &params, root, builder);
-
-            let name = task.interner.get(id.ident());
-            if let Some(ref mut dump) = task.ir_dump {
-                write!(dump, "{} {}", name, self.context.func.display()).unwrap();
-            }
-
-            if let err @ Err(..) = self
-                .context
-                .compile(&*isa.inner)
-                .map_err(|err| format!("{err:?}"))
-                .map(|_| ())
-            {
-                panic!("{:?}, {} {}", err, name, self.context.func.display());
-            }
-            task.gen.save_compiled_code(id, &self.context).unwrap();
-            let signatures = self.context.func.dfg.signatures.values_mut();
-            self.state.gen_resources.recycle_signatures(signatures);
-            self.context.clear();
-        }
-        compiled
-    }
 
     //fn push_macro_compile_requests(
     //    &mut self,
@@ -587,7 +461,7 @@ impl Worker {
 
     //         match spec {
     //             s if s == SpecBase::TOKEN_MACRO => {
-    //                 if let Some(spec) = self.state.token_macros.get(&r#impl) {
+
     //                     let tm = jit_ctx.token_macro(spec).unwrap();
     //                     ctx.tokens.declare_macro(spec.name, tm);
     //                     continue;
@@ -597,7 +471,7 @@ impl Worker {
     //         }
 
     //         let layout =
-    //             self.state
+
     //                 .jit_layouts
     //                 .ty_layout(ty, &[], &mut task.types, &mut task.interner);
     //         let params = task.types[params].to_bumpvec();
@@ -623,7 +497,7 @@ impl Worker {
     //                     .token_macro(&r#macro)
     //                     .expect("all functions should be present");
     //                 ctx.tokens.declare_macro(r#macro.name, tm);
-    //                 self.state.token_macros.insert(r#impl, r#macro);
+
     //             }
     //             _ => unreachable!(),
     //         }
@@ -639,7 +513,7 @@ impl Worker {
         task: &mut Task,
         shared: &Shared,
     ) -> Active<TypecTransfer<'a>> {
-        let mut active = Active::take(&mut self.state.typec_transfer);
+        let mut active = Active::take(&mut self.typec_transfer);
         let ext = TypecExternalCtx {
             types: &mut task.types,
             interner: &mut task.interner,
@@ -650,17 +524,17 @@ impl Worker {
                 module,
                 module_ref,
                 arena,
-                reused: &mut self.state.mir_ctx,
-                module_ent: &mut self.state.module,
-                interpreter: &mut self.state.interpreter,
+                reused: &mut self.mir_ctx,
+                module_ent: &mut self.module,
+                interpreter: &mut self.interpreter,
                 mir: &mut task.mir,
-                layouts: &mut self.state.jit_layouts,
+                layouts: &mut self.jit_layouts,
                 gen: &mut task.gen,
             },
         };
         let meta = TypecMeta::new(shared.resources, module);
 
-        TypecParser::new(arena, &mut self.state.typec_ctx, ext, meta).execute(grouped_items);
+        TypecParser::new(arena, &mut self.typec_ctx, ext, meta).execute(grouped_items);
         active
     }
 
@@ -676,8 +550,8 @@ impl Worker {
         let active = self.type_check_chunk(module, module_ref, grouped_items, arena, task, shared);
 
         let mut ctx = MirCompilationCtx {
-            module_ent: &mut self.state.module,
-            reused: &mut self.state.mir_ctx,
+            module_ent: &mut self.module,
+            reused: &mut self.mir_ctx,
             mir: &mut task.mir,
             types: &mut task.types,
             interner: &mut task.interner,
@@ -707,7 +581,7 @@ impl Worker {
 
         if let Some(ref mut mir_dump) = task.mir_dump {
             MirDisplay {
-                module: &self.state.module,
+                module: &self.module,
                 interner: &task.interner,
                 types: &task.types,
                 resources: &shared.resources,
@@ -720,11 +594,11 @@ impl Worker {
         let source = shared.resources.modules[module].source;
         Self::check_casts(
             task,
-            &mut self.state.gen_layouts,
+            &mut self.gen_layouts,
             source,
-            self.state.typec_ctx.cast_checks(),
+            self.typec_ctx.cast_checks(),
         );
-        self.state.typec_transfer = active.erase();
+        self.typec_transfer = active.erase();
     }
 
     fn check_casts(
@@ -879,21 +753,6 @@ impl ConstFolder for ConstFolderImpl<'_, '_> {
     }
 }
 
-#[derive(Default)]
-pub struct WorkerState {
-    typec_ctx: TypecCtx,
-    typec_transfer: TypecTransfer<'static>,
-    mir_ctx: BorrowcCtx,
-    module: ModuleMir,
-    // pub token_macros: Map<FragRef<Impl>, TokenMacroOwnedSpec>,
-    // pub macro_ctx: MacroCtx<'static>,
-    temp_dependant_types: PushMap<TyMir>,
-    gen_resources: GenResources,
-    jit_layouts: GenLayouts,
-    gen_layouts: GenLayouts,
-    interpreter: InterpreterCtx,
-}
-
 // #[derive(Default)]
 // pub struct MacroCtx<'macros> {
 //     pub tokens: TokenMacroCtx<'macros>,
@@ -1011,5 +870,112 @@ impl AstHandler for DefaultSourceAstHandler {
 
     fn save_module(&mut self) -> bool {
         true
+    }
+}
+
+pub(super) struct GeneratorThread<'a> {
+    pub(super) requests: CompileRequestsShard<'a>,
+    pub(super) mir: &'a Mir,
+    pub(super) resources: &'a Resources,
+    pub(super) types: &'a mut Types,
+    pub(super) ctx: &'a mut GeneratorThreadCtx,
+    pub(super) interner: &'a mut Interner,
+    pub(super) isa: &'a Isa,
+    pub(super) layouts: &'a mut GenLayouts,
+    pub(super) gen: &'a mut Gen,
+}
+
+impl<'a> GeneratorThread<'a> {
+    pub(super) fn generate(&mut self, ir_dump: &mut Option<String>) {
+        for req @ &CompileRequest {
+            func, id, params, ..
+        } in self.requests.queue
+        {
+            let Func { signature, .. } = self.types[func];
+            let body = self
+                .mir
+                .bodies
+                .get(&BodyOwner::Func(func))
+                .expect("every source code function has body")
+                .to_owned();
+            let module = self.mir.modules.reference(body.module());
+            let params = &self.requests.ty_slices[params];
+            let view = body.view(&module);
+
+            swap_mir_types(
+                &view,
+                &mut self.ctx.temp_types,
+                &params,
+                type_creator!(self),
+            );
+
+            let builder = GenBuilder::new(
+                self.isa,
+                body,
+                &module,
+                &mut self.ctx.cranelift.func,
+                self.ctx.temp_types.as_view(),
+                &mut self.ctx.function_builder,
+            );
+            let root = body.entry();
+
+            Generator {
+                layouts: self.layouts,
+                gen: &mut self.gen,
+                gen_resources: &mut self.ctx.resources,
+                interner: &mut self.interner,
+                types: &mut self.types,
+                request: req.view(&self.requests),
+                resources: self.resources,
+            }
+            .generate(signature, view.ret, view.args, &params, root, builder);
+
+            if let Some(ref mut dump) = ir_dump {
+                let name = self.interner.get(id.ident());
+                write!(dump, "{} {}", name, self.ctx.cranelift.func.display()).unwrap();
+            }
+
+            if let err @ Err(..) = self
+                .ctx
+                .cranelift
+                .compile(&*self.isa.inner)
+                .map_err(|err| format!("{err:?}"))
+                .map(|_| ())
+            {
+                let name = self.interner.get(id.ident());
+                panic!("{:?}, {} {}", err, name, self.ctx.cranelift.func.display());
+            }
+
+            self.gen
+                .save_compiled_code(id, &self.ctx.cranelift)
+                .unwrap();
+            self.ctx.clear();
+        }
+    }
+}
+
+pub struct GeneratorThreadCtx {
+    pub temp_types: PushMap<TyMir>,
+    pub cranelift: Context,
+    pub function_builder: FunctionBuilderContext,
+    pub resources: GenResources,
+}
+
+impl Default for GeneratorThreadCtx {
+    fn default() -> Self {
+        Self {
+            temp_types: PushMap::new(),
+            cranelift: Context::new(),
+            function_builder: FunctionBuilderContext::new(),
+            resources: GenResources::default(),
+        }
+    }
+}
+
+impl GeneratorThreadCtx {
+    fn clear(&mut self) {
+        let signatures = self.cranelift.func.dfg.signatures.values_mut();
+        self.resources.recycle_signatures(signatures);
+        self.cranelift.clear();
     }
 }

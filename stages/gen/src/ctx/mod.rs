@@ -359,6 +359,29 @@ impl CompileRequests {
         self.children.clear();
         self.drop_children.clear();
     }
+
+    pub fn split(&mut self, thread_count: u8) -> impl Iterator<Item = CompileRequestsShard> {
+        let chunks = self
+            .queue
+            .chunks_exact(self.queue.len() / thread_count as usize);
+        let reminder = chunks.remainder();
+        chunks
+            .chain(std::iter::once(reminder))
+            .take(thread_count as usize)
+            .map(|ch| CompileRequestsShard {
+                queue: ch,
+                ty_slices: self.ty_slices.as_view(),
+                children: self.children.as_view(),
+                drop_children: self.drop_children.as_view(),
+            })
+    }
+}
+
+pub struct CompileRequestsShard<'a> {
+    pub queue: &'a [CompileRequest],
+    pub ty_slices: &'a PushMapView<Ty>,
+    pub children: &'a PushMapView<CompileRequestChild>,
+    pub drop_children: &'a PushMapView<VSlice<CompileRequestChild>>,
 }
 
 #[derive(Clone, Copy)]
@@ -368,6 +391,25 @@ pub struct CompileRequest {
     pub params: VSlice<Ty>,
     pub children: VSlice<CompileRequestChild>,
     pub drops: VSlice<VSlice<CompileRequestChild>>,
+}
+
+impl CompileRequest {
+    pub fn view<'a>(&self, shard: &CompileRequestsShard<'a>) -> CompileRequestView<'a> {
+        CompileRequestView {
+            types: shard.ty_slices,
+            children: &shard.children,
+            calls: &shard.children[self.children],
+            drops: &shard.drop_children[self.drops],
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct CompileRequestView<'a> {
+    pub types: &'a PushMapView<Ty>,
+    pub children: &'a PushMapView<CompileRequestChild>,
+    pub calls: &'a [CompileRequestChild],
+    pub drops: &'a [VSlice<CompileRequestChild>],
 }
 
 #[derive(Clone, Copy)]
@@ -387,8 +429,6 @@ pub struct GenResources {
     pub values: ShadowMap<ValueMir, GenValue>,
     pub func_imports: Map<CompiledFuncRef, (ir::FuncRef, bool, PassSignature)>,
     pub block_stack: Vec<(VRef<BlockMir>, bool, ir::Block)>,
-    pub calls: Vec<CompileRequestChild>,
-    pub drops: Vec<Range<usize>>,
     pub signature_pool: Vec<(ir::Signature, PassSignature)>,
 }
 
