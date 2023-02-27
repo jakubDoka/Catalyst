@@ -811,7 +811,7 @@ pub trait AstHandler: Sync + Send {
 }
 
 pub struct BaseSourceCtx<'a> {
-    pub worker: &'a mut Worker,
+    worker: &'a mut Worker,
     pub module: VRef<Module>,
     pub mir_module: FragRef<ModuleMir>,
     pub arena: &'a Arena,

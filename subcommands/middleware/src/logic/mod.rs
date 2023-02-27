@@ -1,3 +1,8 @@
+use rkyv::{
+    de::deserializers::SharedDeserializeMapError,
+    ser::serializers::{AllocScratchError, CompositeSerializerError, SharedSerializeMapError},
+};
+
 use self::{
     task::{CompileRequestCollector, CompileRequestCollectorCtx, TaskGraph},
     worker::{GeneratorThread, Worker, WorkerConnections},
@@ -53,6 +58,31 @@ use {
 
 type WorkerLaunchResult<'scope> = (Vec<PackageTask>, Vec<ScopedJoinHandle<'scope, Worker>>);
 
+compose_error!(MiddlewareLoadError {
+    #["check sequence is corrupted"]
+    CorruptedCheckSequence,
+    #["data is outdated"]
+    OutdatedData,
+    #["failed to deserialize incremental blob: {e}"]
+    Deserialize(e: MiddlewareSerializerError<SharedDeserializeMapError>),
+});
+
+compose_error!(MiddlewareSaveError {
+    #["empty path"]
+    EmptyPath,
+    #["dir creation failed: {e}"]
+    DirCreation(e: std::io::Error),
+    #["faild (create and)open file for incremental blob: {e}"]
+    FileOpen(e: std::io::Error),
+    #["failed to perform write operation: {e}"]
+    Write(e: std::io::Error),
+    #["missing incremental data"]
+    MissingData,
+    #["failed to serialize incremental data: {e}"]
+    Serialization(e: MiddlewareSerializerError<CompositeSerializerError<
+        std::io::Error, AllocScratchError, SharedSerializeMapError>>),
+});
+
 #[derive(Default)]
 pub struct Middleware {
     workspace: Workspace,
@@ -68,34 +98,39 @@ pub struct Middleware {
 }
 
 impl Middleware {
-    fn save(&mut self, save_path: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
+    fn save(&mut self, save_path: Option<PathBuf>) -> Result<(), MiddlewareSaveError> {
         let _t = QuickTimer::new("incremental data save");
         let Some(path) = save_path.or(self.save_path.take()) else {
             return Ok(());
         };
 
         let Some(prefix) = path.parent() else {
-            return Err("empty path".into())
+            return Err(MiddlewareSaveError::EmptyPath);
         };
-        std::fs::create_dir_all(prefix)?;
+        std::fs::create_dir_all(prefix).map_err(MiddlewareSaveError::DirCreation)?;
 
         let mut file = fs::OpenOptions::new()
             .create(true)
             .write(true)
-            .open(&path)?;
+            .open(&path)
+            .map_err(MiddlewareSaveError::FileOpen)?;
         let mut writer = BufWriter::new(&mut file);
-        writer.write_all(&[0; mem::size_of::<i64>()])?;
+        writer
+            .write_all(&[0; mem::size_of::<i64>()])
+            .map_err(MiddlewareSaveError::Write)?;
 
         let mut serializer = MiddlewareSerializer(CompositeSerializer::new(
             WriteSerializer::new(writer),
             AllocScratch::new(),
             SharedSerializeMap::default(),
         ));
-        serializer.serialize_value(
-            self.incremental
-                .as_ref()
-                .ok_or("incremental data is not present")?,
-        )?;
+        serializer
+            .serialize_value(
+                self.incremental
+                    .as_ref()
+                    .ok_or(MiddlewareSaveError::MissingData)?,
+            )
+            .map_err(MiddlewareSaveError::Serialization)?;
 
         let Some(exe_mod_time) = get_exe_mod_time() else {
             return Ok(());
@@ -103,37 +138,44 @@ impl Middleware {
 
         drop(serializer);
 
-        file.seek(SeekFrom::Start(0))?;
-        file.write_all(&exe_mod_time.to_ne_bytes())?;
+        file.seek(SeekFrom::Start(0))
+            .map_err(MiddlewareSaveError::Write)?;
+        file.write_all(&exe_mod_time.to_ne_bytes())
+            .map_err(MiddlewareSaveError::Write)?;
 
         Ok(())
     }
 
-    unsafe fn from_bytes<'a, T>(bytes: &'a [u8]) -> Result<T, Box<dyn Error + Send + Sync>>
+    unsafe fn from_bytes<'a, T>(
+        bytes: &'a [u8],
+    ) -> Result<T, MiddlewareSerializerError<SharedDeserializeMapError>>
     where
         T: Archive,
         T::Archived: 'a + Deserialize<T, MiddlewareDeserializer<SharedDeserializeMap>>,
     {
-        Ok(rkyv::util::archived_root::<T>(bytes)
-            .deserialize(&mut MiddlewareDeserializer(SharedDeserializeMap::default()))?)
+        rkyv::util::archived_root::<T>(bytes)
+            .deserialize(&mut MiddlewareDeserializer(SharedDeserializeMap::default()))
     }
 
-    fn load(&mut self, incremental: &[u8]) -> Result<(), Box<dyn Error + Send + Sync>> {
+    fn load(&mut self, incremental: &[u8]) -> Result<(), MiddlewareLoadError> {
         let _t = QuickTimer::new("incremental data load");
 
         let check_size = mem::size_of::<i64>();
         let Some(check_array) = incremental.get(..check_size).and_then(|slice| slice.try_into().ok()) else {
-            return Err("check sequence is corrupted".into());
+            return Err(MiddlewareLoadError::CorruptedCheckSequence);
         };
 
         let check = i64::from_ne_bytes(check_array);
         if get_exe_mod_time() != Some(check) {
-            return Err("data is outdated".into());
+            return Err(MiddlewareLoadError::OutdatedData);
         }
 
         // SAFETY: After former checks, there is nothing more we can do or are willing to do
         // user is just unlucky at this point
-        let incr = unsafe { Self::from_bytes::<Incremental>(&incremental[check_size..])? };
+        let incr = unsafe {
+            Self::from_bytes::<Incremental>(&incremental[check_size..])
+                .map_err(MiddlewareLoadError::Deserialize)?
+        };
 
         self.incremental = Some(incr);
 
@@ -1143,7 +1185,7 @@ ctl_errors! {
     #[info => "failed to load incremental data"]
     #[info => "trace: {err}"]
     error IncrementalDataIssue {
-        err ref: Box<dyn Error + Send + Sync>
+        err ref: MiddlewareLoadError,
     }
 }
 
