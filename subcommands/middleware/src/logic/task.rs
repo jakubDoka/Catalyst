@@ -207,9 +207,7 @@ impl<'a> CompileRequestCollector<'a> {
         roots: impl IntoIterator<Item = CompileRequestChild>,
     ) -> BumpVec<CompiledFuncRef> {
         self.requests.clear();
-        self.ctx
-            .frontier
-            .extend(roots.into_iter().map(CRNode::from));
+        self.ctx.init(roots);
 
         let mut imported = bumpvec![];
         while let Some(CRNode {
@@ -386,6 +384,14 @@ pub(super) struct CompileRequestCollectorCtx {
     seen: Set<CompiledFuncRef>,
     temp_types: PushMap<TyMir>,
     ty_frontier: Vec<Ty>,
+}
+
+impl CompileRequestCollectorCtx {
+    fn init(&mut self, roots: impl IntoIterator<Item = CompileRequestChild>) {
+        assert!(self.frontier.is_empty());
+        self.frontier.extend(roots.into_iter().map(CRNode::from));
+        self.seen.clear();
+    }
 }
 
 #[derive(Clone, Copy)]
