@@ -208,7 +208,7 @@ struct Cluster {
 
 impl Cluster {
     fn new(thread_count: u8) -> Self {
-        let new = ArcVecInner::with_capacity(thread_count as usize, Global);
+        let new = ArcVecInner::with_capacity(thread_count as usize);
         unsafe {
             ArcVecInner::extend(new, (0..thread_count).map(|_| Allocator::new()));
         }

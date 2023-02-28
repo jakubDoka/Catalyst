@@ -1,5 +1,4 @@
 use std::{
-    alloc::Allocator,
     any::TypeId,
     default::default,
     hash::{BuildHasher, Hash},
@@ -50,7 +49,7 @@ pub trait DynFragMap: Send + Sync {
     fn item_id(&self) -> TypeId;
 }
 
-impl<T: Relocated + 'static, A: Allocator + Send + Sync> DynFragMap for FragBase<T, A> {
+impl<T: Relocated + 'static + Send + Sync> DynFragMap for FragBase<T> {
     fn mark(&self, addr: FragSliceAddr, marker: &mut FragRelocMarker) {
         // SAFETY: is_unique should be asserted
         unsafe {
@@ -289,9 +288,8 @@ impl FragMarkShard {
     pub(crate) fn filter_base<
         'a,
         T: Relocated + 'static,
-        A: Allocator + 'a,
         S: FnOnce(usize),
-        V: Deref<Target = ArcVec<T, A>>,
+        V: Deref<Target = ArcVec<T>>,
     >(
         &mut self,
         base_threads: impl Iterator<Item = (V, S)>,

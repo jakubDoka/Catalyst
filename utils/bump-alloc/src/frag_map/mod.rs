@@ -36,16 +36,13 @@ pub unsafe auto trait NoInteriorMutability {}
 
 impl<T: ?Sized> !NoInteriorMutability for UnsafeCell<T> {}
 
-pub struct FragMap<T, A: Allocator = Global> {
-    others: Box<[FragVecView<T, A>]>,
-    thread_local: FragVec<T, A>,
+pub struct FragMap<T = Global> {
+    others: Box<[FragVecView<T>]>,
+    thread_local: FragVec<T>,
 }
 
-impl<T, A: Allocator> FragMap<T, A> {
-    fn new_in(others: Box<[FragVecView<T, A>]>, thread: usize) -> Self
-    where
-        A: Clone,
-    {
+impl<T> FragMap<T> {
+    fn new_in(others: Box<[FragVecView<T>]>, thread: usize) -> Self {
         let thread_local = FragVec::new(others[thread].clone());
         Self {
             others,
@@ -53,10 +50,7 @@ impl<T, A: Allocator> FragMap<T, A> {
         }
     }
 
-    pub fn push(&mut self, value: T) -> FragRef<T>
-    where
-        A: Clone,
-    {
+    pub fn push(&mut self, value: T) -> FragRef<T> {
         let (id, reallocated) = self.thread_local.push(value);
         self.handle_reallocation(reallocated);
         id
@@ -65,24 +59,23 @@ impl<T, A: Allocator> FragMap<T, A> {
     pub fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) -> FragSlice<T>
     where
         I::IntoIter: ExactSizeIterator,
-        A: Clone,
     {
         let (addr, reallocated) = self.thread_local.extend(iter.into_iter());
         self.handle_reallocation(reallocated);
         addr
     }
 
-    pub fn commit(&mut self, base: &mut FragBase<T, A>) {
+    pub fn commit(&mut self, base: &mut FragBase<T>) {
         self.thread_local.freeze();
         base.threads[self.thread_local.view.thread as usize] = self.thread_local.view.clone();
     }
 
-    pub fn commit_unique(self, base: &mut FragBase<T, A>) {
+    pub fn commit_unique(self, base: &mut FragBase<T>) {
         let thread = self.thread_local.view.thread as usize;
         base.threads[thread] = self.thread_local.view;
     }
 
-    pub fn pull(&mut self, base: &FragBase<T, A>) {
+    pub fn pull(&mut self, base: &FragBase<T>) {
         self.others.clone_from_slice(&base.threads);
     }
 
@@ -141,7 +134,7 @@ impl<T, A: Allocator> FragMap<T, A> {
     }
 }
 
-impl<T: NoInteriorMutability, A: Allocator> Index<FragRef<T>> for FragMap<T, A> {
+impl<T: NoInteriorMutability> Index<FragRef<T>> for FragMap<T> {
     type Output = T;
 
     fn index(&self, index: FragRef<T>) -> &Self::Output {
@@ -155,7 +148,7 @@ impl<T: NoInteriorMutability, A: Allocator> Index<FragRef<T>> for FragMap<T, A> 
     }
 }
 
-impl<T: NoInteriorMutability, A: Allocator> IndexMut<FragRef<T>> for FragMap<T, A> {
+impl<T: NoInteriorMutability> IndexMut<FragRef<T>> for FragMap<T> {
     fn index_mut(&mut self, index: FragRef<T>) -> &mut Self::Output {
         // unsafe { self.get_unchacked_mut(index) }
         let FragAddr { index, thread, .. } = index.0;
@@ -167,7 +160,7 @@ impl<T: NoInteriorMutability, A: Allocator> IndexMut<FragRef<T>> for FragMap<T, 
     }
 }
 
-impl<T: NoInteriorMutability, A: Allocator> Index<FragSlice<T>> for FragMap<T, A> {
+impl<T: NoInteriorMutability> Index<FragSlice<T>> for FragMap<T> {
     type Output = [T];
 
     fn index(&self, index: FragSlice<T>) -> &Self::Output {
@@ -182,7 +175,7 @@ impl<T: NoInteriorMutability, A: Allocator> Index<FragSlice<T>> for FragMap<T, A
     }
 }
 
-impl<T: NoInteriorMutability, A: Allocator> IndexMut<FragSlice<T>> for FragMap<T, A> {
+impl<T: NoInteriorMutability> IndexMut<FragSlice<T>> for FragMap<T> {
     fn index_mut(&mut self, index: FragSlice<T>) -> &mut Self::Output {
         // unsafe { self.gen_unchecked_slice_mut(index) }
         let FragSliceAddr { index, thread, len } = index.0;
@@ -195,38 +188,22 @@ impl<T: NoInteriorMutability, A: Allocator> IndexMut<FragSlice<T>> for FragMap<T
 }
 
 #[derive(Archive, Deserialize, Serialize)]
-pub struct FragBase<T, A: Allocator = Global> {
-    threads: Box<[FragVecView<T, A>]>,
+pub struct FragBase<T> {
+    threads: Box<[FragVecView<T>]>,
 }
 
 impl<T> FragBase<T> {
     pub fn new(thread_count: u8) -> Self {
-        Self::new_in(thread_count, Global)
-    }
-
-    pub fn expand(&mut self, thread_count: u8) {
-        self.expand_in(thread_count, Global)
-    }
-}
-
-impl<T, A: Allocator> FragBase<T, A> {
-    pub fn new_in(thread_count: u8, allocator: A) -> Self
-    where
-        A: Clone,
-    {
         let threads = (0..thread_count)
-            .map(|thread| FragVecView::new_in(thread, allocator.clone()))
+            .map(|thread| FragVecView::new(thread))
             .collect::<Box<[_]>>();
 
         Self { threads }
     }
 
-    pub fn expand_in(&mut self, thread_count: u8, allocator: A)
-    where
-        A: Clone,
-    {
-        let threads = (self.threads.len() as u8..thread_count)
-            .map(|thread| FragVecView::new_in(thread, allocator.clone()));
+    pub fn expand(&mut self, thread_count: u8) {
+        let threads =
+            (self.threads.len() as u8..thread_count).map(|thread| FragVecView::new(thread));
         let current = mem::take(&mut self.threads);
         self.threads = current.into_vec().into_iter().chain(threads).collect();
     }
@@ -237,10 +214,7 @@ impl<T, A: Allocator> FragBase<T, A> {
         &ArcVecInner::full_data(thread.inner.0)[index as usize..index as usize + len as usize]
     }
 
-    pub fn split(&self) -> impl Iterator<Item = FragMap<T, A>> + '_
-    where
-        A: Clone,
-    {
+    pub fn split(&self) -> impl Iterator<Item = FragMap<T>> + '_ {
         assert!(self.is_unique());
         (0..self.threads.len()).map(|thread| FragMap::new_in(self.threads.clone(), thread))
     }
@@ -258,7 +232,7 @@ impl<T, A: Allocator> FragBase<T, A> {
     // }
 }
 
-impl<T: NoInteriorMutability, A: Allocator> Index<FragRef<T>> for FragBase<T, A> {
+impl<T: NoInteriorMutability> Index<FragRef<T>> for FragBase<T> {
     type Output = T;
 
     fn index(&self, index: FragRef<T>) -> &Self::Output {
@@ -267,7 +241,7 @@ impl<T: NoInteriorMutability, A: Allocator> Index<FragRef<T>> for FragBase<T, A>
     }
 }
 
-impl<T: NoInteriorMutability, A: Allocator> Index<FragSlice<T>> for FragBase<T, A> {
+impl<T: NoInteriorMutability> Index<FragSlice<T>> for FragBase<T> {
     type Output = [T];
 
     fn index(&self, index: FragSlice<T>) -> &Self::Output {
@@ -286,28 +260,22 @@ macro_rules! terminate {
     };
 }
 
-pub struct FragVec<T, A: Allocator = Global> {
-    view: FragVecView<T, A>,
+pub struct FragVec<T = Global> {
+    view: FragVecView<T>,
 }
 
-impl<T, A: Allocator> FragVec<T, A> {
-    fn new(view: FragVecView<T, A>) -> Self {
+impl<T> FragVec<T> {
+    fn new(view: FragVecView<T>) -> Self {
         Self { view }
     }
 
-    fn push(&mut self, value: T) -> (FragRef<T>, bool)
-    where
-        A: Clone,
-    {
+    fn push(&mut self, value: T) -> (FragRef<T>, bool) {
         let (slice, reallocated) = self.extend(iter::once(value));
         let FragSliceAddr { index, thread, .. } = slice.0;
         (FragRef::new(FragAddr::new(index, thread)), reallocated)
     }
 
-    fn extend<I: ExactSizeIterator<Item = T>>(&mut self, values: I) -> (FragSlice<T>, bool)
-    where
-        A: Clone,
-    {
+    fn extend<I: ExactSizeIterator<Item = T>>(&mut self, values: I) -> (FragSlice<T>, bool) {
         let Ok(values_len) = values.len().try_into() else {
             terminate!("FragVec::extend: iterator too long");
         };
@@ -337,7 +305,7 @@ impl<T, A: Allocator> FragVec<T, A> {
     }
 }
 
-impl<T, A: Allocator, I: SliceIndex<[T]>> Index<I> for FragVec<T, A> {
+impl<T, I: SliceIndex<[T]>> Index<I> for FragVec<T> {
     type Output = I::Output;
 
     fn index(&self, index: I) -> &Self::Output {
@@ -345,7 +313,7 @@ impl<T, A: Allocator, I: SliceIndex<[T]>> Index<I> for FragVec<T, A> {
     }
 }
 
-impl<T, A: Allocator, I: SliceIndex<[T]>> IndexMut<I> for FragVec<T, A> {
+impl<T, I: SliceIndex<[T]>> IndexMut<I> for FragVec<T> {
     fn index_mut(&mut self, index: I) -> &mut Self::Output {
         unsafe {
             index.index_mut(ArcVecInner::data_mut(
@@ -358,20 +326,20 @@ impl<T, A: Allocator, I: SliceIndex<[T]>> IndexMut<I> for FragVec<T, A> {
 
 #[derive(Archive, Deserialize, Serialize)]
 
-pub struct FragVecView<T, A: Allocator = Global> {
-    inner: ArcVec<T, A>,
+pub struct FragVecView<T> {
+    inner: ArcVec<T>,
     thread: u8,
     frozen: usize,
     len: usize,
 }
 
-unsafe impl<T: Send + Sync, A: Send + Sync + Allocator> Send for FragVecView<T, A> {}
-unsafe impl<T: Send + Sync, A: Send + Sync + Allocator> Sync for FragVecView<T, A> {}
+unsafe impl<T: Send + Sync> Send for FragVecView<T> {}
+unsafe impl<T: Send + Sync> Sync for FragVecView<T> {}
 
-impl<T, A: Allocator> FragVecView<T, A> {
-    fn new_in(thread: u8, allocator: A) -> Self {
+impl<T> FragVecView<T> {
+    fn new(thread: u8) -> Self {
         Self {
-            inner: ArcVec(ArcVecInner::new(allocator)),
+            inner: ArcVec(ArcVecInner::new()),
             thread,
             frozen: 0,
             len: 0,
@@ -386,7 +354,7 @@ impl<T, A: Allocator> FragVecView<T, A> {
     }
 }
 
-impl<T, A: Allocator, I: SliceIndex<[T]>> Index<I> for FragVecView<T, A> {
+impl<T, I: SliceIndex<[T]>> Index<I> for FragVecView<T> {
     type Output = I::Output;
 
     fn index(&self, index: I) -> &Self::Output {
@@ -394,7 +362,7 @@ impl<T, A: Allocator, I: SliceIndex<[T]>> Index<I> for FragVecView<T, A> {
     }
 }
 
-impl<T, A: Allocator> Clone for FragVecView<T, A> {
+impl<T> Clone for FragVecView<T> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -425,16 +393,15 @@ macro_rules! field {
 }
 
 #[repr(C)]
-pub struct ArcVecInner<T, A: Allocator = Global> {
+pub struct ArcVecInner<T> {
     ref_count: AtomicUsize,
-    owner: Option<NonNull<ArcVecInner<T, A>>>,
+    owner: Option<NonNull<ArcVecInner<T>>>,
     cap: usize,
     len: usize,
-    allocator: A,
     data: [T; 0],
 }
 
-impl<T, A: Allocator> ArcVecInner<T, A> {
+impl<T> ArcVecInner<T> {
     unsafe fn is_unique(s: NonNull<Self>) -> bool {
         field!(s => ref_count).load(atomic::Ordering::Relaxed) == 1
     }
@@ -475,17 +442,14 @@ impl<T, A: Allocator> ArcVecInner<T, A> {
         let cap = field!(s => cap);
         let layout = Self::layout(cap);
 
-        let allocator = field!(s => ref allocator).read();
+        let allocator = Global;
         allocator.deallocate(s.cast(), layout);
     }
 
     unsafe fn extend<I: ExactSizeIterator<Item = T>>(
         mut s: NonNull<Self>,
         i: I,
-    ) -> (*mut T, Option<NonNull<Self>>)
-    where
-        A: Clone,
-    {
+    ) -> (*mut T, Option<NonNull<Self>>) {
         let pushed_len = i.len();
         let cap = field!(s => cap);
         let len = field!(s => len);
@@ -506,13 +470,9 @@ impl<T, A: Allocator> ArcVecInner<T, A> {
 
     #[cold]
     #[inline(never)]
-    unsafe fn reallocate(s: NonNull<Self>, len: usize, pushed_len: usize) -> NonNull<Self>
-    where
-        A: Clone,
-    {
+    unsafe fn reallocate(s: NonNull<Self>, len: usize, pushed_len: usize) -> NonNull<Self> {
         let cap = (len + pushed_len).next_power_of_two();
-        let allocator = field!(s => allocator).clone();
-        let new_s = Self::with_capacity(cap, allocator);
+        let new_s = Self::with_capacity(cap);
 
         // note: by this we avoid cloning the contents, eventhough we
         // have two instances of the data it is immutable and only parrent will
@@ -524,9 +484,9 @@ impl<T, A: Allocator> ArcVecInner<T, A> {
         new_s
     }
 
-    fn with_capacity(cap: usize, allocator: A) -> NonNull<Self> {
+    fn with_capacity(cap: usize) -> NonNull<Self> {
         let layout = Self::layout(cap);
-        let s = allocator
+        let s = Global
             .allocate(layout)
             .unwrap_or_else(|err| terminate!("{}", err))
             .cast::<Self>();
@@ -537,7 +497,6 @@ impl<T, A: Allocator> ArcVecInner<T, A> {
                 owner: None,
                 cap,
                 len: 0,
-                allocator,
                 data: [],
             });
         }
@@ -545,9 +504,9 @@ impl<T, A: Allocator> ArcVecInner<T, A> {
         s
     }
 
-    fn new(allocator: A) -> NonNull<Self> {
+    fn new() -> NonNull<Self> {
         let cap = ((1 << 10) / mem::size_of::<T>()).next_power_of_two();
-        Self::with_capacity(cap, allocator)
+        Self::with_capacity(cap)
     }
 
     fn layout(cap: usize) -> Layout {
@@ -557,13 +516,13 @@ impl<T, A: Allocator> ArcVecInner<T, A> {
             .0
     }
 
-    unsafe fn full_data_mut<'a>(inner: NonNull<ArcVecInner<T, A>>) -> &'a mut [T] {
+    unsafe fn full_data_mut<'a>(inner: NonNull<ArcVecInner<T>>) -> &'a mut [T] {
         let len = field!(inner => len);
         Self::data_mut(inner, 0..len)
     }
 
     pub(crate) unsafe fn unextend(
-        load: NonNull<ArcVecInner<T, A>>,
+        load: NonNull<ArcVecInner<T>>,
         index: u32,
         len: u16,
     ) -> impl Iterator<Item = T> {
@@ -590,7 +549,7 @@ impl<T, A: Allocator> ArcVecInner<T, A> {
         Finalizer((0..len as usize).map(move |i| base.add(i).read()))
     }
 
-    unsafe fn full_data<'a>(inner: NonNull<ArcVecInner<T, A>>) -> &'a [T] {
+    unsafe fn full_data<'a>(inner: NonNull<ArcVecInner<T>>) -> &'a [T] {
         let len = field!(inner => len);
         Self::data(inner, len)
     }
@@ -602,17 +561,14 @@ pub struct ArchivedFragVecArc<T> {
 }
 
 #[repr(transparent)]
-pub struct ArcVec<T, A: Allocator = Global>(NonNull<ArcVecInner<T, A>>);
+pub struct ArcVec<T = Global>(NonNull<ArcVecInner<T>>);
 
-impl<T, A: Allocator> ArcVec<T, A> {
+impl<T> ArcVec<T> {
     pub fn is_unique(&self) -> bool {
         unsafe { ArcVecInner::is_unique(self.0) }
     }
 
-    pub fn extend<I: ExactSizeIterator<Item = T>>(&mut self, i: I)
-    where
-        A: Clone,
-    {
+    pub fn extend<I: ExactSizeIterator<Item = T>>(&mut self, i: I) {
         unsafe {
             let (.., overflows) = ArcVecInner::extend(self.0, i);
             if let Some(overflows) = overflows {
@@ -622,10 +578,9 @@ impl<T, A: Allocator> ArcVec<T, A> {
     }
 }
 
-impl<T, A> Archive for ArcVec<T, A>
+impl<T> Archive for ArcVec<T>
 where
     T: Archive,
-    A: Allocator + Default,
 {
     type Archived = ArchivedFragVecArc<T::Archived>;
 
@@ -641,10 +596,9 @@ where
     }
 }
 
-impl<T, A, S> Serialize<S> for ArcVec<T, A>
+impl<T, S> Serialize<S> for ArcVec<T>
 where
     T: Archive + Serialize<S>,
-    A: Allocator + Default,
     S: ScratchSpace + ?Sized + Serializer,
 {
     fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, <S as Fallible>::Error> {
@@ -655,18 +609,14 @@ where
     }
 }
 
-impl<T, A, D> Deserialize<ArcVec<T, A>, D> for ArchivedFragVecArc<T::Archived>
+impl<T, D> Deserialize<ArcVec<T>, D> for ArchivedFragVecArc<T::Archived>
 where
     T::Archived: Deserialize<T, D>,
     D: Fallible + ?Sized,
     T: Archive + Sized,
-    A: Allocator + Default + Clone,
 {
-    fn deserialize(&self, deserializer: &mut D) -> Result<ArcVec<T, A>, <D as Fallible>::Error> {
-        let new = ArcVec(ArcVecInner::<T, A>::with_capacity(
-            self.data.len(),
-            A::default(),
-        ));
+    fn deserialize(&self, deserializer: &mut D) -> Result<ArcVec<T>, <D as Fallible>::Error> {
+        let new = ArcVec(ArcVecInner::<T>::with_capacity(self.data.len()));
         let base = unsafe { ArcVecInner::get_item(new.0, 0) };
         for (i, item) in self.data.iter().enumerate() {
             let des = item.deserialize(deserializer)?;
@@ -881,10 +831,10 @@ where
     }
 }
 
-// unsafe impl<T: Sync + Send, A: Allocator + Sync + Send> Sync for FragVecArc<T, A> {}
-unsafe impl<T: Sync + Send, A: Allocator + Sync + Send> Send for ArcVec<T, A> {}
+// unsafe impl<T: Sync + Send + Sync + Send> Sync for FragVecArc<T> {}
+unsafe impl<T: Sync + Send + Sync + Send> Send for ArcVec<T> {}
 
-impl<T, A: Allocator> Clone for ArcVec<T, A> {
+impl<T> Clone for ArcVec<T> {
     fn clone(&self) -> Self {
         unsafe {
             ArcVecInner::inc(self.0);
@@ -894,7 +844,7 @@ impl<T, A: Allocator> Clone for ArcVec<T, A> {
     }
 }
 
-impl<T, A: Allocator> Drop for ArcVec<T, A> {
+impl<T> Drop for ArcVec<T> {
     fn drop(&mut self) {
         unsafe {
             ArcVecInner::dec(self.0);
@@ -902,8 +852,8 @@ impl<T, A: Allocator> Drop for ArcVec<T, A> {
     }
 }
 
-unsafe impl<T, A: Allocator> RefCnt for ArcVec<T, A> {
-    type Base = ArcVecInner<T, A>;
+unsafe impl<T> RefCnt for ArcVec<T> {
+    type Base = ArcVecInner<T>;
 
     fn into_ptr(me: Self) -> *mut Self::Base {
         let ptr = me.0.as_ptr();
