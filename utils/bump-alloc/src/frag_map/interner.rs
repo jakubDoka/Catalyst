@@ -67,7 +67,7 @@ impl<S: ScratchSpace + Serializer + ?Sized> Serialize<S> for InternerBase {
 impl<D: Fallible + ?Sized> Deserialize<InternerBase, D> for ArchivedInterner {
     fn deserialize(&self, _deserializer: &mut D) -> Result<InternerBase, <D as Fallible>::Error> {
         let cluster = Cluster::new(self.indices.len() as u8);
-        let storage = SyncFragBase::new(self.indices.len() as u8);
+        let mut storage = SyncFragBase::new(self.indices.len() as u8);
         let index = CMap::default();
 
         for (((string, lens), mut cluster), mut storage) in self
@@ -98,7 +98,7 @@ impl<D: Fallible + ?Sized> Deserialize<InternerBase, D> for ArchivedInterner {
 
 impl InternerBase {
     pub fn new(thread_count: u8) -> Self {
-        let s = Self {
+        let mut s = Self {
             index: default(),
             storage: SyncFragBase::new(thread_count),
             cluster: Cluster::new(thread_count),
@@ -116,17 +116,16 @@ impl InternerBase {
         self.cluster.expand(thread_count);
     }
 
-    pub fn split(&self) -> impl Iterator<Item = Interner> + '_ {
-        let mut clusters = self.cluster.split();
-        let mut storages = self.storage.split();
-        iter::from_fn(move || {
-            Some(Interner {
+    pub fn split(&mut self) -> impl Iterator<Item = Interner> + '_ {
+        self.cluster
+            .split()
+            .zip(self.storage.split())
+            .map(|(cluster, storage)| Interner {
                 index: self.index.clone(),
-                storage: storages.next()?,
-                cluster: clusters.next()?,
+                storage,
+                cluster,
                 temp: default(),
             })
-        })
     }
 }
 
@@ -279,7 +278,10 @@ impl Allocator {
     }
 
     unsafe fn alloc(&mut self, content: &str) -> (&'static str, Pop) {
-        if self.start.add(content.len()) > self.current {
+        if (self.start as usize)
+            .checked_add(content.len())
+            .map_or(true, |o| o > self.current as usize)
+        {
             self.grow(content.len());
         }
 

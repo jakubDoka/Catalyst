@@ -225,7 +225,7 @@ impl Middleware {
 
         let Some(Incremental {
             resources,
-            task_base,
+            mut task_base,
             mut worker_pool,
             module_items,
             builtin_functions,

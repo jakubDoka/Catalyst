@@ -64,7 +64,7 @@ impl Worker {
         };
 
         let mut module = ModuleMir::default();
-        let mir_func = module.dummy_func(iter::empty(), task.mir.modules.next(), Ty::U32);
+        let mir_func = module.dummy_func(iter::empty(), task.mir.next_module(), Ty::U32);
         let mut builder = GenBuilder::new(
             isa,
             mir_func,
@@ -227,7 +227,7 @@ impl Worker {
         shared: &Shared,
         handler: &mut S,
     ) {
-        let mir_module = task.mir.modules.next();
+        let mir_module = task.mir.next_module();
 
         macro ctx() {
             BaseSourceCtx {
@@ -296,11 +296,8 @@ impl Worker {
         }
 
         if handler.save_module() {
-            let module = task.mir.modules.push(self.module.clone());
-            assert_eq!(module, mir_module);
+            task.mir.insert_module(mir_module, self.module.clone());
             self.module.clear();
-
-            //self.fold_constants(source, task, shared);
         }
     }
 
@@ -702,7 +699,8 @@ impl<'arena, 'ctx> ConstFolderImpl<'arena, 'ctx> {
         current
             .types
             .extend(body.view(self.module_ent).types.values().copied());
-        self.mir.modules.push(mem::take(self.module_ent));
+        self.mir
+            .insert_module(self.module_ref, mem::take(self.module_ent));
 
         let prepared_ctx = self.interpreter.prepare(1 << 20, 10_000);
 
@@ -729,9 +727,7 @@ impl<'arena, 'ctx> ConstFolderImpl<'arena, 'ctx> {
 
         *self.module_ent = self
             .mir
-            .modules
-            .unextend(self.module_ref.as_slice())
-            .next()
+            .remove_module(self.module_ref)
             .expect("module was pushed previously");
 
         self.module_ent.roll_back(body);
@@ -894,11 +890,10 @@ impl<'a> GeneratorThread<'a> {
             let Func { signature, .. } = self.types[func];
             let body = self
                 .mir
-                .bodies
-                .get(&BodyOwner::Func(func))
+                .get_func(func, &self.types.cache.funcs)
                 .expect("every source code function has body")
                 .to_owned();
-            let module = self.mir.modules.reference(body.module());
+            let module = self.mir.reference_module(body.module());
             let params = &self.requests.ty_slices[params];
             let view = body.view(&module);
 

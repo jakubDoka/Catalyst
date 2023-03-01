@@ -32,8 +32,7 @@ impl MirDisplay<'_> {
         for func in funcs {
             let mir = self
                 .mir
-                .bodies
-                .get(&BodyOwner::Func(func))
+                .get_func(func, &self.types.cache.funcs)
                 .expect("Expected body to be present");
             self.display_func(mir.view(self.module), func, buffer)?;
             buffer.push_str("\n\n");

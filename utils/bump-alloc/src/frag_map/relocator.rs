@@ -42,7 +42,7 @@ impl<'a, T: Relocated + ?Sized> Relocated for &'a T {
 }
 
 pub trait DynFragMap: Send + Sync {
-    fn is_unique(&self) -> bool;
+    fn is_unique(&mut self) -> bool;
     fn mark(&self, addr: FragSliceAddr, marker: &mut FragRelocMarker);
     fn remap(&mut self, ctx: &FragMarks);
     fn filter(&mut self, marks: &mut FragMarkShard);
@@ -75,7 +75,7 @@ impl<T: Relocated + 'static + Send + Sync> DynFragMap for FragBase<T> {
         }));
     }
 
-    fn is_unique(&self) -> bool {
+    fn is_unique(&mut self) -> bool {
         self.is_unique()
     }
 
@@ -142,7 +142,11 @@ impl FragRelocator {
         let threads_len = threads.len();
         self.markers.resize_with(threads_len, default);
 
-        assert!(frags.maps.iter().all(|(.., m)| m.is_unique()));
+        assert!(frags
+            .maps
+            .iter_mut()
+            .flat_map(|(.., m)| m)
+            .all(|m| m.is_unique()));
 
         thread::scope(|scope| {
             let frag_maps = &*frags;
@@ -176,9 +180,9 @@ impl FragRelocator {
 
             for maps in iter {
                 scope.spawn(move || {
-                    for (.., frag, marks) in maps {
+                    for (.., frags, marks) in maps {
                         marks.optimize();
-                        frag.filter(marks);
+                        frags.iter_mut().for_each(|frag| frag.filter(marks));
                     }
                 });
             }
@@ -200,8 +204,8 @@ impl FragRelocator {
 
             for (((maps, thread), roots), cleared) in iter {
                 scope.spawn(|| {
-                    for (.., frag) in maps {
-                        frag.remap(&self.marked);
+                    for (.., frags) in maps {
+                        frags.iter_mut().for_each(|frag| frag.remap(&self.marked));
                     }
                     for root in thread {
                         root.remap(&self.marked);
@@ -313,6 +317,7 @@ impl FragMarkShard {
                 .windows(2)
                 .map(|s| s[0].1.end..s[1].1.start)
                 .chain(extras)
+                .take_while(|r| r.end <= current_len as u32)
             {
                 unsafe {
                     ptr::drop_in_place(ptr::slice_from_raw_parts_mut(
@@ -323,7 +328,10 @@ impl FragMarkShard {
             }
 
             let mut cursor = 0;
-            for (index, range) in marks.iter_mut() {
+            for (index, range) in marks
+                .iter_mut()
+                .take_while(|(.., r)| r.end <= current_len as u32)
+            {
                 let len = range.len();
                 unsafe {
                     let source = base.add(range.start as usize);
@@ -338,7 +346,7 @@ impl FragMarkShard {
 
             len_setter(cursor);
             unsafe {
-                ptr::addr_of_mut!((*thread.0.as_ptr()).len).write(cursor);
+                field!(thread.0 => mut len) = cursor;
             }
         }
     }
@@ -379,7 +387,7 @@ impl FragMarks {
 
 #[derive(Default)]
 pub struct RelocatedObjects<'a> {
-    maps: Map<TypeId, &'a mut dyn DynFragMap>,
+    maps: Map<TypeId, Vec<&'a mut dyn DynFragMap>>,
     roots: Vec<&'a mut dyn Relocated>,
     static_roots: Vec<&'a dyn Relocated>,
     cleared: Vec<&'a mut dyn Relocated>,
@@ -387,7 +395,10 @@ pub struct RelocatedObjects<'a> {
 
 impl<'a> RelocatedObjects<'a> {
     pub fn add(&mut self, frag_map: &'a mut impl DynFragMap) {
-        self.maps.insert((*frag_map).item_id(), frag_map);
+        self.maps
+            .entry((*frag_map).item_id())
+            .or_default()
+            .push(frag_map);
     }
 
     pub fn add_root(&mut self, root: &'a mut dyn Relocated) {
@@ -426,7 +437,7 @@ impl FragRelocMarker {
         }
 
         while let Some((type_id, addr)) = self.frontier.pop() {
-            if let Some(frag_map) = relocs.maps.get(&type_id) {
+            for frag_map in relocs.maps.get(&type_id).into_iter().flatten() {
                 frag_map.mark(addr, self);
             }
         }

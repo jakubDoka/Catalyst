@@ -94,7 +94,7 @@ pub fn compile_functions(
         )
         .build(args, tir.body) else {continue};
 
-        ctx.mir.bodies.insert(BodyOwner::Func(func), body);
+        ctx.mir.insert_func(func, body, &ctx.types.cache.funcs);
     }
 }
 

@@ -1,4 +1,9 @@
-use std::{default::default, iter, mem, ops::Deref, sync::Arc, usize};
+use std::{
+    default::default,
+    iter, mem,
+    ops::{Deref, Index},
+    usize,
+};
 
 use rkyv::{Archive, Deserialize, Serialize};
 use span::*;
@@ -9,14 +14,14 @@ use types::*;
 #[derive(Serialize, Deserialize, Archive)]
 
 pub struct MirBase {
-    pub bodies: Arc<CMap<BodyOwner, FuncMir>>,
-    pub modules: SyncFragBase<ModuleMir>,
+    bodies: ShadowFragBase<Func, Option<FuncMir>>,
+    modules: SyncFragBase<ModuleMir>,
 }
 
 impl MirBase {
     pub fn new(thread_count: u8) -> Self {
         Self {
-            bodies: default(),
+            bodies: ShadowFragBase::new(thread_count),
             modules: SyncFragBase::new(thread_count),
         }
     }
@@ -26,15 +31,15 @@ impl MirBase {
     }
 
     pub fn register<'a>(&'a mut self, objects: &mut RelocatedObjects<'a>) {
-        objects.add_root(DashMapFilterUnmarkedKeys::new(&mut self.bodies));
+        objects.add(&mut self.bodies);
         objects.add(&mut self.modules);
     }
 
-    pub fn split(&self) -> impl Iterator<Item = Mir> + '_ {
-        self.modules.split().map(|modules| Mir {
-            bodies: self.bodies.clone(),
-            modules,
-        })
+    pub fn split(&mut self) -> impl Iterator<Item = Mir> + '_ {
+        self.modules
+            .split()
+            .zip(self.bodies.split())
+            .map(|(modules, bodies)| Mir { bodies, modules })
     }
 }
 
@@ -55,8 +60,54 @@ impl IsMarked for BodyOwner {
 derive_relocated!(enum BodyOwner { Func(f) => f,  });
 
 pub struct Mir {
-    pub bodies: Arc<CMap<BodyOwner, FuncMir>>,
-    pub modules: SyncFragMap<ModuleMir>,
+    bodies: ShadowFragMap<Func, Option<FuncMir>>,
+    modules: SyncFragMap<ModuleMir>,
+}
+
+impl Mir {
+    pub fn get_func(&self, index: FragRef<Func>, backing: &FragMap<Func>) -> Option<&FuncMir> {
+        self.bodies.get(index, backing).as_ref()
+    }
+
+    pub fn insert_func(&mut self, index: FragRef<Func>, mir: FuncMir, backing: &FragMap<Func>) {
+        *self.bodies.get_mut(index, backing) = Some(mir);
+    }
+
+    pub fn next_module(&self) -> FragRef<ModuleMir> {
+        self.modules.next()
+    }
+
+    pub fn insert_module(&mut self, place: FragRef<ModuleMir>, mir: ModuleMir) {
+        assert_eq!(self.modules.push(mir), place);
+    }
+
+    pub fn reference_module(&self, place: FragRef<ModuleMir>) -> SyncFragBorrow<ModuleMir> {
+        self.modules.reference(place)
+    }
+
+    pub fn remove_module(&mut self, place: FragRef<ModuleMir>) -> Option<ModuleMir> {
+        self.modules.unextend(place.as_slice()).next()
+    }
+
+    pub fn pull(&mut self, base: &MirBase) {
+        self.bodies.pull(&base.bodies);
+    }
+
+    pub fn commit(&mut self, base: &mut MirBase) {
+        self.bodies.commit(&mut base.bodies);
+    }
+
+    pub fn commit_unique(self, base: &mut MirBase) {
+        self.bodies.commit_unique(&mut base.bodies);
+    }
+}
+
+impl Index<FragRef<ModuleMir>> for Mir {
+    type Output = ModuleMir;
+
+    fn index(&self, index: FragRef<ModuleMir>) -> &Self::Output {
+        &self.modules[index]
+    }
 }
 
 impl Default for Mir {

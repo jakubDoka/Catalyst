@@ -225,13 +225,13 @@ impl<T> SyncFragBase<T> {
         };
     }
 
-    pub fn split(&self) -> impl Iterator<Item = SyncFragMap<T>> + '_ {
+    pub fn split(&mut self) -> impl Iterator<Item = SyncFragMap<T>> + '_ {
         assert!(self.is_unique());
         (0..self.views.len()).map(|t| SyncFragMap::new(t as u8, self))
     }
 
-    pub fn is_unique(&self) -> bool {
-        Arc::strong_count(&self.views) == 1
+    pub fn is_unique(&mut self) -> bool {
+        Arc::get_mut(&mut self.views).is_some()
     }
 }
 
@@ -243,7 +243,7 @@ impl<T: Relocated + 'static> DynFragMap for SyncFragBase<T> {
     ) {
         let thread = &self.views[thread as usize];
         unsafe {
-            ArcVecInner::data(thread.inner.load().0, thread.len.as_mut_ptr().read())
+            ArcVecInner::data(thread.inner.load().0, thread.len.as_ptr().read())
                 [index as usize..index as usize + len as usize]
                 .mark(marker);
         }
@@ -266,7 +266,7 @@ impl<T: Relocated + 'static> DynFragMap for SyncFragBase<T> {
         )
     }
 
-    fn is_unique(&self) -> bool {
+    fn is_unique(&mut self) -> bool {
         self.is_unique()
     }
 
@@ -408,7 +408,7 @@ impl<T> FragSliceKey<T> {
     }
 }
 
-impl<T: Hash + Default> Hash for FragSliceKey<T> {
+impl<T: Hash> Hash for FragSliceKey<T> {
     fn hash<H: ~const std::hash::Hasher>(&self, state: &mut H) {
         unsafe {
             self.inner_slice().hash(state);
@@ -416,13 +416,13 @@ impl<T: Hash + Default> Hash for FragSliceKey<T> {
     }
 }
 
-impl<T: Eq + Default> PartialEq for FragSliceKey<T> {
+impl<T: Eq> PartialEq for FragSliceKey<T> {
     fn eq(&self, other: &Self) -> bool {
         unsafe { self.inner_slice() == other.inner_slice() }
     }
 }
 
-impl<T: Eq + Default> Eq for FragSliceKey<T> {}
+impl<T: Eq> Eq for FragSliceKey<T> {}
 
 #[cfg(test)]
 mod test {
@@ -465,7 +465,7 @@ mod test {
         const THREAD_COUNT: usize = 4;
         let dash = &DashMap::<usize, FragRef<Tested>>::default();
         let run = &AtomicBool::new(true);
-        let shared = SyncFragBase::new(THREAD_COUNT as u8);
+        let mut shared = SyncFragBase::new(THREAD_COUNT as u8);
         let counter = &AtomicUsize::new(0);
 
         thread::scope(|s| {

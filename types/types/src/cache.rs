@@ -58,7 +58,7 @@ impl TypecBase {
         self.cache.expand(thread_count);
     }
 
-    pub fn split(&self) -> impl Iterator<Item = Types> + '_ {
+    pub fn split(&mut self) -> impl Iterator<Item = Types> + '_ {
         self.cache.split().map(|cache| Types {
             cache,
             mapping: self.mapping.clone(),
@@ -74,7 +74,7 @@ impl TypecBase {
 
 impl Default for Types {
     fn default() -> Self {
-        let base = TypecBase::new(1);
+        let mut base = TypecBase::new(1);
         let types = { base.split().next().unwrap() };
         types
     }
@@ -230,7 +230,7 @@ macro_rules! gen_cache {
                 )*
             }
 
-            pub fn split(&self) -> impl Iterator<Item = TypeCache> + '_ {
+            pub fn split(&mut self) -> impl Iterator<Item = TypeCache> + '_ {
                 $(
                     let mut $name = self.$name.split();
                 )*

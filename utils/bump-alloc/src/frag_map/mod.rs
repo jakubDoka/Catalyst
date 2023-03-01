@@ -36,14 +36,14 @@ pub unsafe auto trait NoInteriorMutability {}
 
 impl<T: ?Sized> !NoInteriorMutability for UnsafeCell<T> {}
 
-pub struct FragMap<T = Global> {
-    others: Box<[FragVecView<T>]>,
+pub struct FragMap<T> {
+    others: Box<[FragVec<T>]>,
     thread_local: FragVec<T>,
 }
 
 impl<T> FragMap<T> {
-    fn new_in(others: Box<[FragVecView<T>]>, thread: usize) -> Self {
-        let thread_local = FragVec::new(others[thread].clone());
+    fn new_in(others: Box<[FragVec<T>]>, thread: usize) -> Self {
+        let thread_local = others[thread].clone();
         Self {
             others,
             thread_local,
@@ -67,12 +67,12 @@ impl<T> FragMap<T> {
 
     pub fn commit(&mut self, base: &mut FragBase<T>) {
         self.thread_local.freeze();
-        base.threads[self.thread_local.view.thread as usize] = self.thread_local.view.clone();
+        base.threads[self.thread_local.thread as usize] = self.thread_local.clone();
     }
 
     pub fn commit_unique(self, base: &mut FragBase<T>) {
-        let thread = self.thread_local.view.thread as usize;
-        base.threads[thread] = self.thread_local.view;
+        let thread = self.thread_local.thread as usize;
+        base.threads[thread] = self.thread_local;
     }
 
     pub fn pull(&mut self, base: &FragBase<T>) {
@@ -84,7 +84,7 @@ impl<T> FragMap<T> {
             return;
         }
 
-        self.others[self.thread_local.view.thread as usize] = self.thread_local.view.clone();
+        self.others[self.thread_local.thread as usize] = self.thread_local.clone();
     }
 
     pub fn indexed(
@@ -122,14 +122,14 @@ impl<T> FragMap<T> {
     /// Ensure slice is not out of bounds and does not capture frozen element.
     pub unsafe fn get_unchacked_mut(&mut self, index: FragRef<T>) -> &mut T {
         let FragAddr { index, .. } = index.0;
-        &mut *ArcVecInner::get_item(self.thread_local.view.inner.0, index as usize)
+        &mut *ArcVecInner::get_item(self.thread_local.inner.0, index as usize)
     }
 
     /// # Safety
     /// Ensure slice is not out of bounds and does not capture frozen elements.
     pub unsafe fn gen_unchecked_slice_mut(&mut self, slice: FragSlice<T>) -> &mut [T] {
         let FragSliceAddr { index, len, .. } = slice.0;
-        let ptr = ArcVecInner::get_item(self.thread_local.view.inner.0, index as usize);
+        let ptr = ArcVecInner::get_item(self.thread_local.inner.0, index as usize);
         slice::from_raw_parts_mut(ptr, len as usize)
     }
 }
@@ -140,8 +140,8 @@ impl<T: NoInteriorMutability> Index<FragRef<T>> for FragMap<T> {
     fn index(&self, index: FragRef<T>) -> &Self::Output {
         // unsafe { self.get_unchecked(index) }
         let FragAddr { index, thread, .. } = index.0;
-        if thread == self.thread_local.view.thread {
-            &self.thread_local[index as usize]
+        if thread == self.thread_local.thread {
+            self.thread_local.thread_local_get(index as usize)
         } else {
             &self.others[thread as usize][index as usize]
         }
@@ -152,9 +152,9 @@ impl<T: NoInteriorMutability> IndexMut<FragRef<T>> for FragMap<T> {
     fn index_mut(&mut self, index: FragRef<T>) -> &mut Self::Output {
         // unsafe { self.get_unchacked_mut(index) }
         let FragAddr { index, thread, .. } = index.0;
-        assert!(self.thread_local.view.thread == thread);
+        assert!(self.thread_local.thread == thread);
         let index = (index as usize)
-            .checked_sub(self.thread_local.view.frozen)
+            .checked_sub(self.thread_local.frozen)
             .expect("accessing frozen elements mutably");
         &mut self.thread_local[index]
     }
@@ -167,8 +167,8 @@ impl<T: NoInteriorMutability> Index<FragSlice<T>> for FragMap<T> {
         // unsafe { self.gen_unchecked_slice(index) }
         let FragSliceAddr { index, thread, len } = index.0;
         let range = index as usize..index as usize + len as usize;
-        if thread == self.thread_local.view.thread {
-            &self.thread_local[range]
+        if thread == self.thread_local.thread {
+            self.thread_local.thread_local_get(range)
         } else {
             &self.others[thread as usize][range]
         }
@@ -179,9 +179,9 @@ impl<T: NoInteriorMutability> IndexMut<FragSlice<T>> for FragMap<T> {
     fn index_mut(&mut self, index: FragSlice<T>) -> &mut Self::Output {
         // unsafe { self.gen_unchecked_slice_mut(index) }
         let FragSliceAddr { index, thread, len } = index.0;
-        assert!(self.thread_local.view.thread == thread);
+        assert!(self.thread_local.thread == thread);
         let index = (index as usize)
-            .checked_sub(self.thread_local.view.frozen)
+            .checked_sub(self.thread_local.frozen)
             .expect("accessing frozen elements mutably");
         &mut self.thread_local[index..index + len as usize]
     }
@@ -189,21 +189,20 @@ impl<T: NoInteriorMutability> IndexMut<FragSlice<T>> for FragMap<T> {
 
 #[derive(Archive, Deserialize, Serialize)]
 pub struct FragBase<T> {
-    threads: Box<[FragVecView<T>]>,
+    threads: Box<[FragVec<T>]>,
 }
 
 impl<T> FragBase<T> {
     pub fn new(thread_count: u8) -> Self {
         let threads = (0..thread_count)
-            .map(|thread| FragVecView::new(thread))
+            .map(|thread| FragVec::new(thread))
             .collect::<Box<[_]>>();
 
         Self { threads }
     }
 
     pub fn expand(&mut self, thread_count: u8) {
-        let threads =
-            (self.threads.len() as u8..thread_count).map(|thread| FragVecView::new(thread));
+        let threads = (self.threads.len() as u8..thread_count).map(|thread| FragVec::new(thread));
         let current = mem::take(&mut self.threads);
         self.threads = current.into_vec().into_iter().chain(threads).collect();
     }
@@ -214,12 +213,12 @@ impl<T> FragBase<T> {
         &ArcVecInner::full_data(thread.inner.0)[index as usize..index as usize + len as usize]
     }
 
-    pub fn split(&self) -> impl Iterator<Item = FragMap<T>> + '_ {
+    pub fn split(&mut self) -> impl Iterator<Item = FragMap<T>> + '_ {
         assert!(self.is_unique());
         (0..self.threads.len()).map(|thread| FragMap::new_in(self.threads.clone(), thread))
     }
 
-    pub fn is_unique(&self) -> bool {
+    pub fn is_unique(&mut self) -> bool {
         self.threads
             .iter()
             .all(|t| unsafe { ArcVecInner::is_unique(t.inner.0) })
@@ -260,83 +259,29 @@ macro_rules! terminate {
     };
 }
 
-pub struct FragVec<T = Global> {
-    view: FragVecView<T>,
-}
-
-impl<T> FragVec<T> {
-    fn new(view: FragVecView<T>) -> Self {
-        Self { view }
-    }
-
-    fn push(&mut self, value: T) -> (FragRef<T>, bool) {
-        let (slice, reallocated) = self.extend(iter::once(value));
-        let FragSliceAddr { index, thread, .. } = slice.0;
-        (FragRef::new(FragAddr::new(index, thread)), reallocated)
-    }
-
-    fn extend<I: ExactSizeIterator<Item = T>>(&mut self, values: I) -> (FragSlice<T>, bool) {
-        let Ok(values_len) = values.len().try_into() else {
-            terminate!("FragVec::extend: iterator too long");
-        };
-
-        let (.., possibly_new) = unsafe { ArcVecInner::extend(self.view.inner.0, values) };
-
-        let slice = FragSlice::new(FragSliceAddr::new(
-            self.view.len as u32,
-            self.view.thread,
-            values_len,
-        ));
-
-        if let Some(inner) = possibly_new {
-            self.view.inner = ArcVec(inner);
-        }
-        self.view.len += values_len as usize;
-
-        (slice, possibly_new.is_some())
-    }
-
-    fn freeze(&mut self) {
-        self.view.frozen = self.view.len;
-    }
-
-    fn next(&self) -> FragRef<T> {
-        FragRef::new(FragAddr::new(self.view.len as u32, self.view.thread))
-    }
-}
-
-impl<T, I: SliceIndex<[T]>> Index<I> for FragVec<T> {
-    type Output = I::Output;
-
-    fn index(&self, index: I) -> &Self::Output {
-        unsafe { index.index(ArcVecInner::data(self.view.inner.0, self.view.len)) }
-    }
-}
-
-impl<T, I: SliceIndex<[T]>> IndexMut<I> for FragVec<T> {
-    fn index_mut(&mut self, index: I) -> &mut Self::Output {
-        unsafe {
-            index.index_mut(ArcVecInner::data_mut(
-                self.view.inner.0,
-                self.view.frozen..self.view.len,
-            ))
-        }
-    }
-}
-
 #[derive(Archive, Deserialize, Serialize)]
-
-pub struct FragVecView<T> {
+pub struct FragVec<T> {
     inner: ArcVec<T>,
     thread: u8,
     frozen: usize,
     len: usize,
 }
 
-unsafe impl<T: Send + Sync> Send for FragVecView<T> {}
-unsafe impl<T: Send + Sync> Sync for FragVecView<T> {}
+impl<T> Clone for FragVec<T> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            thread: self.thread,
+            frozen: self.frozen,
+            len: self.len,
+        }
+    }
+}
 
-impl<T> FragVecView<T> {
+unsafe impl<T: Send + Sync> Send for FragVec<T> {}
+unsafe impl<T: Send + Sync> Sync for FragVec<T> {}
+
+impl<T> FragVec<T> {
     fn new(thread: u8) -> Self {
         Self {
             inner: ArcVec(ArcVecInner::new()),
@@ -352,9 +297,50 @@ impl<T> FragVecView<T> {
             ArcVecInner::full_data_mut(self.inner.0)
         }
     }
+
+    fn push(&mut self, value: T) -> (FragRef<T>, bool) {
+        let (slice, reallocated) = self.extend(iter::once(value));
+        let FragSliceAddr { index, thread, .. } = slice.0;
+        (FragRef::new(FragAddr::new(index, thread)), reallocated)
+    }
+
+    fn extend<I: ExactSizeIterator<Item = T>>(&mut self, values: I) -> (FragSlice<T>, bool) {
+        let Ok(values_len) = values.len().try_into() else {
+            terminate!("FragVec::extend: iterator too long");
+        };
+
+        let (.., possibly_new) = unsafe { ArcVecInner::extend(self.inner.0, values) };
+
+        let slice = FragSlice::new(FragSliceAddr::new(self.len as u32, self.thread, values_len));
+
+        if let Some(inner) = possibly_new {
+            self.inner = ArcVec(inner);
+        }
+        self.len += values_len as usize;
+
+        (slice, possibly_new.is_some())
+    }
+
+    fn freeze(&mut self) {
+        self.frozen = self.len;
+    }
+
+    fn next(&self) -> FragRef<T> {
+        FragRef::new(FragAddr::new(self.len as u32, self.thread))
+    }
+
+    fn thread_local_get<I: SliceIndex<[T]>>(&self, index: I) -> &I::Output {
+        unsafe { index.index(ArcVecInner::data(self.inner.0, self.len)) }
+    }
 }
 
-impl<T, I: SliceIndex<[T]>> Index<I> for FragVecView<T> {
+impl<T, I: SliceIndex<[T]>> IndexMut<I> for FragVec<T> {
+    fn index_mut(&mut self, index: I) -> &mut Self::Output {
+        unsafe { index.index_mut(ArcVecInner::data_mut(self.inner.0, self.frozen..self.len)) }
+    }
+}
+
+impl<T, I: SliceIndex<[T]>> Index<I> for FragVec<T> {
     type Output = I::Output;
 
     fn index(&self, index: I) -> &Self::Output {
@@ -362,33 +348,22 @@ impl<T, I: SliceIndex<[T]>> Index<I> for FragVecView<T> {
     }
 }
 
-impl<T> Clone for FragVecView<T> {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-            frozen: self.frozen,
-            thread: self.thread,
-            len: self.len,
-        }
-    }
-}
-
 #[macro_export]
 macro_rules! field {
     ($s:expr => $field:ident) => {
-        *ptr::addr_of!((*$s.as_ptr()).$field)
+        *std::ptr::addr_of!((*$s.as_ptr()).$field)
     };
 
     ($s:expr => mut $field:ident) => {
-        *ptr::addr_of_mut!((*$s.as_ptr()).$field)
+        *std::ptr::addr_of_mut!((*$s.as_ptr()).$field)
     };
 
     ($s:expr => ref $field:ident) => {
-        ptr::addr_of!((*$s.as_ptr()).$field)
+        std::ptr::addr_of!((*$s.as_ptr()).$field)
     };
 
     ($s:expr => ref mut $field:ident) => {
-        ptr::addr_of_mut!((*$s.as_ptr()).$field)
+        std::ptr::addr_of_mut!((*$s.as_ptr()).$field)
     };
 }
 
@@ -556,14 +531,13 @@ impl<T> ArcVecInner<T> {
 }
 
 #[repr(transparent)]
-pub struct ArchivedFragVecArc<T> {
-    data: ArchivedVec<T>,
-}
-
-#[repr(transparent)]
-pub struct ArcVec<T = Global>(NonNull<ArcVecInner<T>>);
+pub struct ArcVec<T>(NonNull<ArcVecInner<T>>);
 
 impl<T> ArcVec<T> {
+    pub fn new() -> Self {
+        ArcVec(ArcVecInner::new())
+    }
+
     pub fn is_unique(&self) -> bool {
         unsafe { ArcVecInner::is_unique(self.0) }
     }
@@ -578,11 +552,16 @@ impl<T> ArcVec<T> {
     }
 }
 
+#[repr(transparent)]
+pub struct ArchivedArcVec<T: Archive> {
+    data: ArchivedVec<T::Archived>,
+}
+
 impl<T> Archive for ArcVec<T>
 where
     T: Archive,
 {
-    type Archived = ArchivedFragVecArc<T::Archived>;
+    type Archived = ArchivedArcVec<T>;
 
     type Resolver = VecResolver;
 
@@ -609,7 +588,7 @@ where
     }
 }
 
-impl<T, D> Deserialize<ArcVec<T>, D> for ArchivedFragVecArc<T::Archived>
+impl<T, D> Deserialize<ArcVec<T>, D> for ArchivedArcVec<T>
 where
     T::Archived: Deserialize<T, D>,
     D: Fallible + ?Sized,

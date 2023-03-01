@@ -41,7 +41,7 @@ impl TaskBase {
     }
 
     pub fn split<'a>(
-        &'a self,
+        &'a mut self,
         args: Option<&'a MiddlewareArgs>,
     ) -> impl Iterator<Item = Task> + 'a {
         let mut interner_split = self.interner.split();
@@ -107,14 +107,17 @@ impl DerefMut for Task {
 impl Task {
     pub(super) fn pull(&mut self, task_base: &TaskBase) {
         self.types.pull(&task_base.types);
+        self.mir.pull(&task_base.mir);
     }
 
     pub(super) fn commit(&mut self, main_task: &mut TaskBase) {
         self.types.commit(&mut main_task.types);
+        self.mir.commit(&mut main_task.mir);
     }
 
     pub(super) fn commit_unique(self, main_task: &mut TaskBase) {
         self.types.commit_unique(&mut main_task.types);
+        self.mir.commit_unique(&mut main_task.mir);
     }
 }
 
@@ -237,11 +240,10 @@ impl<'a> CompileRequestCollector<'a> {
 
             let body = self
                 .mir
-                .bodies
-                .get(&BodyOwner::Func(func))
+                .get_func(func, &self.types.cache.funcs)
                 .unwrap()
                 .to_owned();
-            let module = self.mir.modules.reference(body.module());
+            let module = self.mir.reference_module(body.module());
             let view = body.view(&module);
 
             swap_mir_types(

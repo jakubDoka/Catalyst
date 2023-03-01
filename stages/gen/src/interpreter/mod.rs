@@ -66,11 +66,10 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
     ) -> Result<(), StepError> {
         let body = self
             .mir
-            .bodies
-            .get(&BodyOwner::Func(func))
+            .get_func(func, &self.types.cache.funcs)
             .ok_or(StepError::Inerpreter(InterpreterError::MissingBody))?
             .to_owned();
-        let module = &self.mir.modules[body.module()];
+        let module = &self.mir[body.module()];
         let next_view = body.view(module);
 
         let mut frame = StackFrame {
@@ -299,7 +298,7 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
         let view = self
             .current
             .func
-            .view(&self.mir.modules[self.current.func.module()]);
+            .view(&self.mir[self.current.func.module()]);
         self.load_inst_low(&view).map(|inst| (inst, view))
     }
 
