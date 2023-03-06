@@ -2,6 +2,7 @@ use crate::*;
 use core::slice;
 use std::{
     alloc::Layout,
+    cell::UnsafeCell,
     mem::{self, MaybeUninit},
     ops::Deref,
     ptr::{copy_nonoverlapping, NonNull},
@@ -10,18 +11,20 @@ use std::{
 #[derive(Default)]
 #[repr(transparent)]
 pub struct Arena {
-    allocator: Allocator,
+    allocator: UnsafeCell<Allocator>,
 }
 
 unsafe impl Send for Arena {}
 
 impl Arena {
-    pub fn new() -> Self {
-        Self::from_allocator(Allocator::new())
+    pub fn new(allocator: Allocator) -> Self {
+        Self {
+            allocator: allocator.into(),
+        }
     }
 
-    pub fn from_allocator(allocator: Allocator) -> Self {
-        Self { allocator }
+    fn allocator(&self) -> &mut Allocator {
+        unsafe { &mut *self.allocator.get() }
     }
 
     #[inline]
@@ -34,7 +37,7 @@ impl Arena {
             return unsafe { &mut *NonNull::dangling().as_ptr() };
         };
 
-        let ptr = self.allocator.alloc(layout);
+        let ptr = self.allocator().alloc(layout, false);
         unsafe {
             (ptr.as_ptr() as *mut T).write(value);
             &*(ptr.as_ptr() as *const T)
@@ -52,7 +55,7 @@ impl Arena {
             return &[];
         };
 
-        let ptr = self.allocator.alloc(layout);
+        let ptr = self.allocator().alloc(layout, false);
         unsafe {
             copy_nonoverlapping(value.as_ptr(), ptr.as_ptr() as *mut _, value.len());
             slice::from_raw_parts(ptr.as_ptr() as *const _, value.len())
@@ -70,7 +73,7 @@ impl Arena {
         let len = iter.len();
         let layout = Layout::array::<T>(len).expect("layout of resulting allocation is invalid");
 
-        let ptr = self.allocator.alloc(layout);
+        let ptr = self.allocator().alloc(layout, false);
         // SAFETY: layout should represent valid slice
         let slice = unsafe { slice::from_raw_parts_mut(ptr.as_ptr() as *mut MaybeUninit<T>, len) };
 
@@ -84,29 +87,28 @@ impl Arena {
 
     #[allow(clippy::mut_from_ref)]
     pub fn alloc_byte_layout(&self, layout: Layout) -> &mut [u8] {
-        let mut ptr = self.allocator.alloc(layout);
+        let mut ptr = self.allocator().alloc(layout, false);
         unsafe { ptr.as_mut() }
     }
 
     pub fn clear(&mut self) {
-        // unique access means there is no valid reference eto this
-        unsafe { self.allocator.clear() };
+        self.allocator.get_mut().clear();
     }
 
     pub fn into_allocator(mut self) -> Allocator {
         self.clear();
-        self.allocator
+        self.allocator.into_inner()
     }
 
     pub fn frame(&mut self) -> ArenaFrame {
         ArenaFrame {
-            allocator: self.allocator.frame(),
+            allocator: self.allocator.get_mut().frame(),
         }
     }
 }
 
 pub struct ArenaFrame<'a> {
-    allocator: AllocatorFrame<'a, false>,
+    allocator: AllocatorFrame<'a>,
 }
 
 impl<'a> Deref for ArenaFrame<'a> {
@@ -124,12 +126,12 @@ mod test {
     #[test]
     #[cfg_attr(miri, ignore)]
     fn test_safety() {
-        let arena = Arena::new();
+        let arena = Arena::default();
 
         let a = arena.alloc(1);
         let b = arena.alloc(a as &i32);
 
-        let other_arena = Arena::new();
+        let other_arena = Arena::default();
 
         let c = other_arena.alloc(b as &&i32);
 
@@ -139,7 +141,7 @@ mod test {
     #[test]
     #[cfg_attr(miri, ignore)]
     fn test_expand() {
-        let arena = Arena::new();
+        let arena = Arena::default();
 
         for i in 0usize..1024 + 1 {
             arena.alloc(i);
@@ -149,7 +151,7 @@ mod test {
     #[test]
     #[cfg_attr(miri, ignore)]
     fn clear() {
-        let mut arena = Arena::new();
+        let mut arena = Arena::default();
 
         for i in 0usize..1024 + 1 {
             arena.alloc(i);

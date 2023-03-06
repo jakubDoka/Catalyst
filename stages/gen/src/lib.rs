@@ -18,13 +18,13 @@ pub use {
         layout::{GenLayouts, Layout, Offset},
         CodeSaveError, CompileRequest, CompileRequestChild, CompileRequestView, CompileRequests,
         CompileRequestsShard, CompiledFunc, CompiledFuncInner, CompiledFuncRef, ComputedValue, Gen,
-        GenBase, GenBlock, GenBuilder, GenFuncConstant, GenItemName, GenReloc, GenResources,
-        GenValue, Isa, IsaCreationError,
+        GenBase, GenBlock, GenBuilder, GenFuncConstant, GenItemName, GenReloc, GenRelocator,
+        GenResources, GenValue, Isa, IsaCreationError,
     },
     generate::function_loading::abi::{PassMode, PassSignature},
     generate::Generator,
     interpreter::{IRegister, IValue, Interpreter, InterpreterCtx, InterpreterError, StackFrame},
-    jit::{JitContext, JitRelocError},
+    jit::{JitAdapter, JitContext, JitRelocError, JittedFunc, Jitter, JitterCtx, JitterError},
     native::{ObjectContext, ObjectCreationError, ObjectRelocationError},
 };
 

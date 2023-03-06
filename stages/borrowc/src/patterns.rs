@@ -411,7 +411,7 @@ mod test {
     #[test]
     fn test_exhaustive() {
         use UpperBound::*;
-        let arena = Arena::new();
+        let arena = Arena::default();
         let branches = build_branches(
             &arena,
             &[

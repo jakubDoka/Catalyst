@@ -7,7 +7,6 @@ use {
         alloc::{Allocator as Alloc, Global, Layout},
         default::default,
         fmt::Display,
-        ops::{Deref, DerefMut},
         ptr::{self, NonNull},
         sync::Arc,
     },
@@ -18,7 +17,7 @@ pub mod ident;
 pub struct InternerBase {
     index: Arc<CMap<&'static str, Ident>>,
     storage: SyncFragBase<&'static str>,
-    cluster: Cluster,
+    cluster: Cluster<Allocator>,
 }
 
 #[repr(transparent)]
@@ -66,7 +65,7 @@ impl<S: ScratchSpace + Serializer + ?Sized> Serialize<S> for InternerBase {
 
 impl<D: Fallible + ?Sized> Deserialize<InternerBase, D> for ArchivedInterner {
     fn deserialize(&self, _deserializer: &mut D) -> Result<InternerBase, <D as Fallible>::Error> {
-        let cluster = Cluster::new(self.indices.len() as u8);
+        let cluster = Cluster::<Allocator>::new(self.indices.len() as u8);
         let mut storage = SyncFragBase::new(self.indices.len() as u8);
         let index = CMap::default();
 
@@ -132,7 +131,7 @@ impl InternerBase {
 pub struct Interner {
     index: Arc<CMap<&'static str, Ident>>,
     storage: SyncFragMap<&'static str>,
-    cluster: ClusterBorrow,
+    cluster: ClusterBorrow<Allocator>,
     temp: String,
 }
 
@@ -201,62 +200,6 @@ impl Default for Interner {
     }
 }
 
-struct Cluster {
-    allocs: ArcVec<Allocator>,
-}
-
-impl Cluster {
-    fn new(thread_count: u8) -> Self {
-        let new = ArcVecInner::with_capacity(thread_count as usize);
-        unsafe {
-            ArcVecInner::extend(new, (0..thread_count).map(|_| Allocator::new()));
-        }
-        Self {
-            allocs: ArcVec(new),
-        }
-    }
-
-    fn split(&self) -> impl Iterator<Item = ClusterBorrow> + '_ {
-        unsafe {
-            assert!(ArcVecInner::is_unique(self.allocs.0));
-            ArcVecInner::full_data_mut(self.allocs.0)
-                .iter_mut()
-                .map(|borrowed| ClusterBorrow {
-                    borrowed,
-                    _backing: self.allocs.clone(),
-                })
-        }
-    }
-
-    fn expand(&mut self, thread_count: u8) {
-        assert!(self.allocs.is_unique());
-        self.allocs
-            .extend((0..thread_count).map(|_| Allocator::new()));
-    }
-}
-
-struct ClusterBorrow {
-    borrowed: *mut Allocator,
-    _backing: ArcVec<Allocator>,
-}
-
-unsafe impl Send for ClusterBorrow {}
-unsafe impl Sync for ClusterBorrow {}
-
-impl Deref for ClusterBorrow {
-    type Target = Allocator;
-
-    fn deref(&self) -> &Self::Target {
-        unsafe { &*self.borrowed }
-    }
-}
-
-impl DerefMut for ClusterBorrow {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.borrowed }
-    }
-}
-
 struct Allocator {
     buckets: Vec<Bucket>,
     start: *mut u8,
@@ -266,6 +209,12 @@ struct Allocator {
 
 unsafe impl Send for Allocator {}
 unsafe impl Sync for Allocator {}
+
+impl Default for Allocator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Allocator {
     fn new() -> Self {
@@ -278,10 +227,7 @@ impl Allocator {
     }
 
     unsafe fn alloc(&mut self, content: &str) -> (&'static str, Pop) {
-        if (self.start as usize)
-            .checked_add(content.len())
-            .map_or(true, |o| o > self.current as usize)
-        {
+        if (self.current as usize - self.start as usize) < content.len() {
             self.grow(content.len());
         }
 

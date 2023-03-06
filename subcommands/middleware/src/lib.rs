@@ -23,7 +23,7 @@ pub use {
     logic::{
         task::Task,
         worker::{AstHandler, BaseSourceCtx, MacroSourceCtx},
-        CommandInfo, DiagnosticView, GenTask, Middleware, MiddlewareArgs, MiddlewareArgsError,
+        CommandInfo, DiagnosticView, Middleware, MiddlewareArgs, MiddlewareArgsError,
         MiddlewareOutput, PackageTask, QuickTimer,
     },
     mir::*,

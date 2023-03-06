@@ -110,11 +110,12 @@ impl Worker {
             name: generator.interner.intern(gen::ENTRY_POINT_NAME),
             ..default()
         });
-        let compiled_entry = generator.gen.get_or_insert_func(entry_name, entry_func);
+        let (compiled_entry, ..) = generator.gen.get_or_insert_func(entry_name, entry_func);
         self.gen.cranelift.compile(&**isa).unwrap();
+        let arbitrary = Func::CAST;
         generator
             .gen
-            .save_compiled_code(compiled_entry, &self.gen.cranelift)
+            .save_compiled_code(arbitrary, compiled_entry, &self.gen.cranelift)
             .unwrap();
         self.gen.cranelift.clear();
 
@@ -129,7 +130,7 @@ impl Worker {
         ast_handler: &'scope mut S,
     ) -> ScopedJoinHandle<'scope, Worker> {
         thread_scope.spawn(move || {
-            let mut arena = Arena::new();
+            let mut arena = Arena::default();
             let mut jit_ctx = JitContext::new(iter::empty());
 
             self.jit_layouts.clear(shared.jit_isa);
@@ -581,7 +582,7 @@ impl Worker {
                 module: &self.module,
                 interner: &task.interner,
                 types: &task.types,
-                resources: &shared.resources,
+                resources: shared.resources,
                 mir: &task.mir,
             }
             .display_funcs(active.checked_funcs().iter().map(|&(f, ..)| f), mir_dump)
@@ -897,12 +898,7 @@ impl<'a> GeneratorThread<'a> {
             let params = &self.requests.ty_slices[params];
             let view = body.view(&module);
 
-            swap_mir_types(
-                &view,
-                &mut self.ctx.temp_types,
-                &params,
-                type_creator!(self),
-            );
+            swap_mir_types(&view, &mut self.ctx.temp_types, params, type_creator!(self));
 
             let builder = GenBuilder::new(
                 self.isa,
@@ -916,14 +912,14 @@ impl<'a> GeneratorThread<'a> {
 
             Generator {
                 layouts: self.layouts,
-                gen: &mut self.gen,
+                gen: self.gen,
                 gen_resources: &mut self.ctx.resources,
-                interner: &mut self.interner,
-                types: &mut self.types,
+                interner: self.interner,
+                types: self.types,
                 request: req.view(&self.requests),
                 resources: self.resources,
             }
-            .generate(signature, view.ret, view.args, &params, root, builder);
+            .generate(signature, view.ret, view.args, params, root, builder);
 
             if let Some(ref mut dump) = ir_dump {
                 let name = self.interner.get(id.ident());
@@ -942,7 +938,7 @@ impl<'a> GeneratorThread<'a> {
             }
 
             self.gen
-                .save_compiled_code(id, &self.ctx.cranelift)
+                .save_compiled_code(func, id, &self.ctx.cranelift)
                 .unwrap();
             self.ctx.clear();
         }

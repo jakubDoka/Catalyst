@@ -26,9 +26,54 @@
     slice_iter_mut_as_mut_slice
 )]
 
-mod alloc_tree;
+#[macro_export]
+macro_rules! transmute_arkive {
+    ($($name:ident($ty:ty => $repr:ty))*) => {
+        $(
+            transmute_arkive!($name, $ty, $repr);
+        )*
+    };
+
+    ($name:ident, $ty:ty, $repr:ty) => {
+        pub struct $name;
+
+        impl rkyv::with::ArchiveWith<$ty> for $name {
+            type Archived = rkyv::Archived<$repr>;
+
+            type Resolver = rkyv::Resolver<$repr>;
+
+            unsafe fn resolve_with(
+                field: &$ty,
+                pos: usize,
+                resolver: Self::Resolver,
+                out: *mut Self::Archived,
+            ) {
+                std::mem::transmute_copy::<_, $repr>(field).resolve(pos, resolver, out)
+            }
+        }
+
+        impl<S: Serializer + ?Sized> rkyv::with::SerializeWith<$ty, S> for $name {
+            fn serialize_with(
+                field: &$ty,
+                serializer: &mut S,
+            ) -> Result<Self::Resolver, <S as rkyv::Fallible>::Error> {
+                // SAFETY: ther is none
+                unsafe { std::mem::transmute_copy::<_, $repr>(field).serialize(serializer) }
+            }
+        }
+
+        impl<D: Fallible + ?Sized> rkyv::with::DeserializeWith<rkyv::Archived<$repr>, $ty, D> for $name {
+            fn deserialize_with(
+                field: &rkyv::Archived<$repr>,
+                _deserializer: &mut D,
+            ) -> Result<$ty, <D as rkyv::Fallible>::Error> {
+                Ok(unsafe { std::mem::transmute_copy::<_, $ty>(field) })
+            }
+        }
+    };
+}
+
 mod allocator;
-mod arena;
 mod bump_vec;
 mod frag_map;
 mod map;
@@ -36,21 +81,22 @@ mod primitives;
 
 pub use {
     crate::bump_vec::{BumpAlloc, BumpAllocRef, BumpVec, ToBumpVec, BUMP_ALLOC},
-    allocator::{Allocator, AllocatorFrame, AllocatorLow, ProtectedAllocator},
-    arc_swap,
-    arena::Arena,
-    dashmap,
+    allocator::{
+        arena::Arena,
+        code::{Align, Code, CodeAllocator, CodeGuard, CodeRelocator},
+        Allocator, AllocatorFrame,
+    },
+    arc_swap, dashmap,
     frag_map::{
         addr::{FragAddr, FragSliceAddr, NonMaxError, NonMaxU16, NonMaxU32, NonMaxU64},
         interner::{ident::Ident, Interner, InternerBase},
         relocator::{
-            DashMapFilterUnmarkedKeys, DynFragMap, FragMarks, FragRelocMarker, FragRelocator,
-            IsMarked, Relocated, RelocatedObjects,
+            DynFragMap, FragMarks, FragRelocMarker, FragRelocator, Relocated, RelocatedObjects,
         },
         shadow::{ShadowFragBase, ShadowFragMap},
         sync::{FragSliceKey, SyncFragBase, SyncFragBorrow, SyncFragMap, SyncFragView},
-        ArcSwapArchiver, DashMapArchiver, FragBase, FragMap, NoInteriorMutability,
-        SmallVecArchiver,
+        ArcSwapArchiver, Cluster, ClusterBorrow, DashMapArchiver, FragBase, FragMap,
+        NoInteriorMutability, SmallVecArchiver,
     },
     map::{CMap, CSet, FvnBuildHasher, Map, Set},
     primitives::{

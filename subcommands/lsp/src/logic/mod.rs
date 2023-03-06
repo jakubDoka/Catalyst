@@ -394,7 +394,7 @@ impl<'m> LspRuntime<'m> {
     }
 
     fn initialize(&mut self, connection: &Connection) -> Option<InitializeParams> {
-        let server_capabilities = serde_json::to_value(&ServerCapabilities {
+        let server_capabilities = serde_json::to_value(ServerCapabilities {
             ..Default::default()
         })
         .inspect_err(|e| eprintln!("failed to serialize server capabilities: {e}"))

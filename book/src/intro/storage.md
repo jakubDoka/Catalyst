@@ -123,6 +123,7 @@ to raw pointer to an element inisde the allocation. This allows us to own
 parts of data while also keeping memory safety (though one element can
 keep whole allocation alive).
 
+<!--
 ## Storing Language Constants
 
 Up until now we vere storing just array like structures, implementing
@@ -161,3 +162,6 @@ padding. We probably also want to remember where first allocated object starts
 to save some extra bytes.
 
 ### TODO... 
+--!>
+
+

@@ -92,6 +92,7 @@ pub struct Middleware {
     entry_points: Vec<FragRef<Func>>,
     incremental: Option<Incremental>,
     relocator: FragRelocator,
+    gen_relocator: GenRelocator,
     requests: CompileRequests,
     request_ctx: CompileRequestCollectorCtx,
     save_path: Option<PathBuf>,
@@ -203,15 +204,15 @@ impl Middleware {
             .split()
             .next()
             .expect("we already clamped threads between 1 and 255");
-        let changed = PackageLoader {
+
+        PackageLoader {
             resources,
             workspace: &mut self.workspace,
             interner: &mut interner,
             package_graph: &mut self.package_graph,
             db,
         }
-        .reload(path, &mut self.resource_loading_ctx);
-        changed
+        .reload(path, &mut self.resource_loading_ctx)
     }
 
     pub fn traverse_source_ast<S: AstHandler>(
@@ -248,7 +249,7 @@ impl Middleware {
             builtin_functions: &builtin_functions,
         };
 
-        let mut arena = Arena::new();
+        let mut arena = Arena::default();
         for ((key, package), i) in resources.packages.iter().zip((0..handlers.len()).cycle()) {
             let task = &mut tasks[i];
             let handler = &mut handlers[i];
@@ -379,7 +380,15 @@ impl Middleware {
         if let Some(removed) = self.reload_resources(&mut resources, &mut task_base, db, &args.path)
             && !removed.is_empty()
         {
-            Self::sweep_resources(&mut self.relocator, &mut task_base, &mut module_items, removed, thread_count, &mut builtin_functions);
+            Self::sweep_resources(
+                &mut self.relocator,
+                &mut self.gen_relocator,
+                &mut task_base,
+                &mut module_items,
+                removed,
+                thread_count,
+                &mut builtin_functions,
+            );
         };
 
         if self.workspace.has_errors() || resources.no_changes() {
@@ -606,8 +615,10 @@ impl Middleware {
         (package_tasks, threads)
     }
 
-    pub fn distribute_compile_requests(
-        &mut self,
+    fn distribute_compile_requests(
+        roots: impl IntoIterator<Item = FragRef<Func>>,
+        requests: &mut CompileRequests,
+        request_cxt: &mut CompileRequestCollectorCtx,
         task: &mut Task,
         isa: &Isa,
     ) -> (
@@ -623,27 +634,23 @@ impl Middleware {
                 &task.types,
                 &mut task.interner,
             );
-            let id = task.gen.get_or_insert_func(key, func);
+            let (id, ..) = task.gen.get_or_insert_func(key, func);
             CompileRequestChild {
                 id,
                 func,
                 params: default(),
             }
         };
-        let frontier = self
-            .entry_points
-            .drain(..)
-            .map(distributor)
-            .collect::<BumpVec<_>>();
+        let frontier = roots.into_iter().map(distributor).collect::<BumpVec<_>>();
 
         let internal = frontier.iter().map(|req| req.id).collect();
         let external = CompileRequestCollector {
-            requests: &mut self.requests,
+            requests,
             isa,
             types: &mut task.types,
             interner: &mut task.interner,
             gen: &mut task.gen,
-            ctx: &mut self.request_ctx,
+            ctx: request_cxt,
             mir: &mut task.mir,
         }
         .collect(frontier);
@@ -768,6 +775,7 @@ impl Middleware {
 
     fn sweep_resources(
         relocator: &mut FragRelocator,
+        gen_relocator: &mut GenRelocator,
         task_base: &mut TaskBase,
         module_items: &mut Map<VRef<Source>, ModuleItems>,
         removed: Vec<VRef<Source>>,
@@ -798,7 +806,7 @@ impl Middleware {
         frags.add_static_root(&Enum::ALL);
         frags.add_static_root(&Struct::ALL);
         frags.add_static_root(&SpecBase::ALL);
-        task_base.register(&mut frags);
+        task_base.register(&mut frags, gen_relocator);
         relocator.relocate(&mut threads, &mut frags);
     }
 
@@ -810,24 +818,29 @@ impl Middleware {
         worker_pool: &mut [Worker],
         resources: &Resources,
     ) -> [Vec<CompiledFuncRef>; 2] {
-        let thread_count = tasks.len() as u8;
         let _t = QuickTimer::new("codegen");
+        let thread_count = tasks.len() as u8;
         task_base.gen.prepare();
-        let (entry_points, imported) = self.distribute_compile_requests(
+
+        let (generated, imported) = Self::distribute_compile_requests(
+            self.entry_points.drain(..),
+            &mut self.requests,
+            &mut self.request_ctx,
             tasks.first_mut().expect("what are we doing then"),
             &args.isa,
         );
+
         thread::scope(|scope| {
             for ((task, requests), worker) in tasks
                 .iter_mut()
-                .zip(self.requests.split(thread_count as u8))
+                .zip(self.requests.split(thread_count))
                 .zip(worker_pool.iter_mut())
             {
                 scope.spawn(|| {
                     GeneratorThread {
                         requests,
                         mir: &mut task.mir,
-                        resources: &resources,
+                        resources,
                         types: &mut task.types,
                         ctx: &mut worker.gen,
                         interner: &mut task.interner,
@@ -839,7 +852,7 @@ impl Middleware {
                 });
             }
         });
-        [entry_points, imported]
+        [generated, imported]
     }
 }
 
@@ -883,7 +896,7 @@ impl<'a> CommandInfo<'a> {
             .fold([0; N], |acc, c| acc.zip(c).map(|(a, b)| a.max(b.len())));
 
         for elem in elems {
-            let parts = aligned_parts(elem).zip(max_lens.clone()).map(|(a, b)| {
+            let parts = aligned_parts(elem).zip(max_lens).map(|(a, b)| {
                 let mut s = a.to_string();
                 s.push_str(&" ".repeat(b - a.len()));
                 s
@@ -1207,11 +1220,7 @@ impl PackageTask {
     }
 }
 
-#[derive(Default)]
-pub struct GenTask {}
-
 #[derive(Serialize, Deserialize, Archive)]
-
 struct Incremental {
     resources: Resources,
     task_base: TaskBase,

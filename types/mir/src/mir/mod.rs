@@ -43,22 +43,6 @@ impl MirBase {
     }
 }
 
-#[derive(Serialize, Deserialize, Archive, Hash, Eq, PartialEq, Clone, Copy)]
-#[archive_attr(derive(Hash, Eq, PartialEq))]
-pub enum BodyOwner {
-    Func(FragRef<Func>),
-}
-
-impl IsMarked for BodyOwner {
-    fn is_marked(&self, marker: &FragRelocMarker) -> bool {
-        match *self {
-            BodyOwner::Func(f) => marker.is_marked(f),
-        }
-    }
-}
-
-derive_relocated!(enum BodyOwner { Func(f) => f,  });
-
 pub struct Mir {
     bodies: ShadowFragMap<Func, Option<FuncMir>>,
     modules: SyncFragMap<ModuleMir>,

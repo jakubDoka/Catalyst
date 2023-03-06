@@ -1,6 +1,6 @@
 use std::{
     alloc::AllocError,
-    cell::Cell,
+    cell::{Cell, UnsafeCell},
     fmt::Debug,
     ops::{Deref, DerefMut},
     ptr::NonNull,
@@ -26,11 +26,11 @@ impl !Sync for BumpAllocRef {}
 
 unsafe impl std::alloc::Allocator for BumpAllocRef {
     fn allocate(&self, layout: std::alloc::Layout) -> Result<NonNull<[u8]>, AllocError> {
-        Ok(BUMP_ALLOC.with(|alloc| alloc.allocator.alloc(layout)))
+        Ok(BUMP_ALLOC.with(|alloc| alloc.allocator().alloc(layout, true)))
     }
 
     unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: std::alloc::Layout) {
-        BUMP_ALLOC.with(|alloc| alloc.allocator.try_free(ptr, layout));
+        BUMP_ALLOC.with(|alloc| alloc.allocator().try_free(ptr, layout));
     }
 
     unsafe fn grow(
@@ -44,17 +44,21 @@ unsafe impl std::alloc::Allocator for BumpAllocRef {
             "`new_layout.size()` must be greater than or equal to `old_layout.size()`"
         );
 
-        Ok(BUMP_ALLOC.with(|alloc| alloc.allocator.grow(ptr.cast(), old_layout, new_layout)))
+        Ok(BUMP_ALLOC.with(|alloc| alloc.allocator().grow(ptr.cast(), old_layout, new_layout)))
     }
 }
 
 #[derive(Default)]
 pub struct BumpAlloc {
     refs: Cell<usize>,
-    allocator: AllocatorLow<true>,
+    allocator: UnsafeCell<Allocator>,
 }
 
 impl BumpAlloc {
+    fn allocator(&self) -> &mut Allocator {
+        unsafe { &mut *self.allocator.get() }
+    }
+
     #[inline]
     fn create_ref(&self) -> BumpAllocRef {
         self.refs.set(self.refs.get() + 1);
@@ -67,9 +71,7 @@ impl BumpAlloc {
             #[cold]
             #[inline(never)]
             fn clear(s: &BumpAlloc) {
-                unsafe {
-                    s.allocator.clear();
-                }
+                s.allocator().clear();
             }
 
             clear(self)

@@ -1,138 +1,53 @@
 use std::{
     alloc::Layout,
-    cell::Cell,
-    mem,
+    default::default,
     ops::{Deref, Range},
     ptr::{self, NonNull},
 };
 
-pub type Allocator = AllocatorLow<false>;
+pub mod arena;
+pub mod code;
 
-pub struct ProtectedAllocator {
-    protection: region::Protection,
-    protected: usize,
-    is_current_protected: bool,
-    inner: Allocator,
-}
-
-impl ProtectedAllocator {
-    pub fn new(protection: region::Protection) -> Self {
-        Self {
-            protection,
-            protected: 0,
-            is_current_protected: false,
-            inner: Allocator::new(),
-        }
-    }
-
-    pub fn with_chunk_size(chunk_size: usize, protection: region::Protection) -> Self {
-        Self {
-            protection,
-            protected: 0,
-            is_current_protected: false,
-            inner: Allocator::with_chunk_size(chunk_size),
-        }
-    }
-
-    pub fn seal(&mut self) {
-        if !self.is_current_protected {
-            for chunk in self.inner.chunks.get_mut().iter_mut().skip(self.protected) {
-                chunk.set_memory_protection(self.protection);
-            }
-            self.is_current_protected = true;
-        }
-    }
-
-    pub fn alloc(&mut self, layout: Layout) -> NonNull<[u8]> {
-        if mem::take(&mut self.is_current_protected) {
-            self.reset_current();
-        }
-        self.inner.alloc(layout)
-    }
-
-    #[cold]
-    #[inline(never)]
-    pub fn reset_current(&mut self) {
-        if let Some(chunk) = self.inner.chunks.get_mut().last_mut() {
-            chunk.set_memory_protection(region::Protection::READ_WRITE);
-            self.protected -= 1;
-        }
-    }
-
-    /// Frees all allocations. Protection is also released.
-    /// # Safety
-    /// Its only safe to call if the memory is no longer used.
-    pub unsafe fn clear(&mut self) {
-        for chunk in self
-            .inner
-            .chunks
-            .get_mut()
-            .iter_mut()
-            .chain(self.inner.free.get_mut())
-        {
-            chunk.set_memory_protection(region::Protection::READ_WRITE);
-        }
-        self.protected = 0;
-        self.is_current_protected = false;
-        self.inner.clear();
-    }
-}
-
-impl Drop for ProtectedAllocator {
-    fn drop(&mut self) {
-        unsafe {
-            self.clear();
-        }
-    }
-}
-
-pub struct AllocatorLow<const WRITE_PADDING: bool> {
-    free: Cell<Vec<Chunk>>,
-    chunks: Cell<Vec<Chunk>>,
-    current: Cell<*mut u8>,
-    start: Cell<*mut u8>,
+pub struct Allocator {
+    free: Vec<Chunk>,
+    chunks: Vec<Chunk>,
+    current: *mut u8,
+    start: *mut u8,
     chunk_size: usize,
 }
 
-impl<const WRITE_PADDING: bool> Default for AllocatorLow<WRITE_PADDING> {
+impl Default for Allocator {
     fn default() -> Self {
-        Self::new()
+        Self::new(Self::DEFAULT_CHUNK_SIZE)
     }
 }
 
-impl<const WRITE_PADDING: bool> AllocatorLow<WRITE_PADDING> {
+impl Allocator {
     /// Since allocator is always reused small startup penalty is acceptable.
-    const DEFAULT_CHUNK_SIZE: usize = 1024 * 1024 * 2;
+    pub const DEFAULT_CHUNK_SIZE: usize = 1024 * 1024 * 2;
 
-    pub fn new() -> Self {
-        Self::with_chunk_size(Self::DEFAULT_CHUNK_SIZE)
-    }
-
-    pub fn with_chunk_size(chunk_size: usize) -> Self {
+    pub fn new(chunk_size: usize) -> Self {
         Self {
-            free: Cell::default(),
-            chunks: Cell::default(),
-            current: Cell::new(NonNull::dangling().as_ptr()),
-            start: Cell::new(NonNull::dangling().as_ptr()),
+            free: default(),
+            chunks: default(),
+            current: NonNull::dangling().as_ptr(),
+            start: NonNull::dangling().as_ptr(),
             chunk_size,
         }
     }
 
-    pub fn alloc(&self, layout: Layout) -> NonNull<[u8]> {
-        let current = self.current.get();
-        let start = self.start.get();
-        let padding = Self::compute_padding(current, layout);
+    pub fn alloc(&mut self, layout: Layout, write_padding: bool) -> NonNull<[u8]> {
+        let padding = Self::compute_padding(self.current, layout);
         let size = layout.size() + padding;
-
-        if (current as usize) < start as usize + size {
-            self.alloc_new(layout)
+        if (self.start as usize - self.current as usize) < size {
+            self.alloc_new(layout, write_padding)
         } else {
             // SAFETY: We just checked that the current chunk has enough space
-            if WRITE_PADDING {
-                Self::write_padding(current, padding);
+            if write_padding {
+                Self::write_padding(self.current, padding);
             }
-            let new = unsafe { current.sub(size) };
-            self.current.set(new);
+            let new = unsafe { self.current.sub(size) };
+            self.current = new;
             // SAFETY: Allocation with address range range 0..n should never happen
             unsafe { NonNull::new_unchecked(ptr::slice_from_raw_parts_mut(new, size)) }
         }
@@ -162,77 +77,66 @@ impl<const WRITE_PADDING: bool> AllocatorLow<WRITE_PADDING> {
 
     #[cold]
     #[inline(never)]
-    fn alloc_new(&self, layout: Layout) -> NonNull<[u8]> {
-        let mut chunks = self.chunks.take();
-        let mut garbage = self.free.take();
-
+    fn alloc_new(&mut self, layout: Layout, write_padding: bool) -> NonNull<[u8]> {
         // we need a reserve in case the allocation is not aligned
         // for the layout
         let min_size = layout.pad_to_align().size() + layout.align();
 
-        let reuse = garbage
+        let reuse = self
+            .free
             .last_mut()
             .map_or(false, |chunk| chunk.len() >= layout.size());
         let mut new_chunk = if reuse {
             // SAFETY: Branch implies that garbage contains something.
-            unsafe { garbage.pop().unwrap_unchecked() }
+            unsafe { self.free.pop().unwrap_unchecked() }
         } else {
-            Chunk::new(self.chunk_size.max(min_size))
+            Chunk::new(
+                self.chunk_size.max(min_size),
+                region::Protection::READ_WRITE,
+            )
         };
 
         // SAFETY: we are the unique owner of the chunk
-        let Range { start, end } = new_chunk.range();
+        let Range { start, end } = new_chunk.range_mut();
         let padding = Self::compute_padding(end, layout);
-        Self::write_padding(end, padding);
+        if write_padding {
+            Self::write_padding(end, padding);
+        }
         let size = layout.size() + padding;
         // SAFETY: former code ensures that there is enough space
         let new = unsafe { end.sub(size) };
-        self.current.set(new);
-        self.start.set(start);
+        self.current = new;
+        self.start = start;
 
-        chunks.push(new_chunk);
-        self.chunks.set(chunks);
-        self.free.set(garbage);
+        self.chunks.push(new_chunk);
 
         // SAFETY: Allocation with address range range 0..n should never happen
         unsafe { NonNull::new_unchecked(ptr::slice_from_raw_parts_mut(new, size)) }
     }
 
-    /// Clears the allocator for reuse.
-    /// # Safety
-    /// Function can be called only if no references to allocated data exist.
-    pub unsafe fn clear(&self) {
-        let mut chunks = self.chunks.take();
-        let mut free = self.free.take();
-
-        free.append(&mut chunks);
-
-        self.current.set(NonNull::dangling().as_ptr());
-        self.start.set(NonNull::dangling().as_ptr());
-
-        self.chunks.set(chunks);
-        self.free.set(free);
+    pub fn clear(&mut self) {
+        self.free.append(&mut self.chunks);
+        self.current = NonNull::dangling().as_ptr();
+        self.start = NonNull::dangling().as_ptr();
     }
 
-    pub fn frame(&mut self) -> AllocatorFrame<WRITE_PADDING> {
+    pub fn frame(&mut self) -> AllocatorFrame {
         AllocatorFrame::new(self)
     }
 }
 
-pub struct AllocatorFrame<'a, const WRITE_PADDING: bool> {
-    allocator: &'a mut AllocatorLow<WRITE_PADDING>,
+pub struct AllocatorFrame<'a> {
+    allocator: &'a mut Allocator,
     previous_start: *mut u8,
     previous_current: *mut u8,
     previous_chunk_size: usize,
 }
 
-impl<'a, const WRITE_PADDING: bool> AllocatorFrame<'a, WRITE_PADDING> {
-    pub fn new(allocator: &'a mut AllocatorLow<WRITE_PADDING>) -> Self {
-        let previous_start = allocator.start.get();
-        let previous_current = allocator.current.get();
-        let temp_chunks = allocator.chunks.take();
-        let previous_chunk_size = temp_chunks.len();
-        allocator.chunks.set(temp_chunks);
+impl<'a> AllocatorFrame<'a> {
+    pub fn new(allocator: &'a mut Allocator) -> Self {
+        let previous_start = allocator.start;
+        let previous_current = allocator.current;
+        let previous_chunk_size = allocator.chunks.len();
 
         Self {
             allocator,
@@ -243,42 +147,38 @@ impl<'a, const WRITE_PADDING: bool> AllocatorFrame<'a, WRITE_PADDING> {
     }
 }
 
-impl<'a, const WRITE_PADDING: bool> Deref for AllocatorFrame<'a, WRITE_PADDING> {
-    type Target = AllocatorLow<WRITE_PADDING>;
+impl<'a> Deref for AllocatorFrame<'a> {
+    type Target = Allocator;
 
     fn deref(&self) -> &Self::Target {
         self.allocator
     }
 }
 
-impl<'a, const WRITE_PADDING: bool> Drop for AllocatorFrame<'a, WRITE_PADDING> {
+impl<'a> Drop for AllocatorFrame<'a> {
     fn drop(&mut self) {
-        let mut chunks = self.allocator.chunks.take();
-        let mut free = self.allocator.free.take();
-
-        chunks
+        self.allocator
+            .chunks
             .drain(self.previous_chunk_size..)
-            .collect_into(&mut free);
-        self.allocator.current.set(self.previous_current);
-        self.allocator.start.set(self.previous_start);
-
-        self.allocator.chunks.set(chunks);
-        self.allocator.free.set(free);
+            .collect_into(&mut self.allocator.free);
+        self.allocator.current = self.previous_current;
+        self.allocator.start = self.previous_start;
     }
 }
 
-impl AllocatorLow<true> {
+impl Allocator {
     /// # Safety
     /// `previous_size` must be the size of the allocation at `ptr`.
+    /// puadding needs to be written for top allocation
     pub unsafe fn grow(
-        &self,
+        &mut self,
         ptr: NonNull<u8>,
         previous_layout: Layout,
         new_layout: Layout,
     ) -> NonNull<[u8]> {
         let reused = self.try_free(ptr, previous_layout);
 
-        let mut new = self.alloc(new_layout);
+        let mut new = self.alloc(new_layout, true);
 
         let copy_method = if reused {
             ptr::copy
@@ -298,15 +198,15 @@ impl AllocatorLow<true> {
     /// try to free the memory at `ptr` if it is the last allocation in the current chunk
     /// # Safety
     /// `size` mush match the size of the allocation at `ptr`.
-    pub unsafe fn try_free(&self, ptr: NonNull<u8>, layout: Layout) -> bool {
-        let current = self.current.get();
+    pub unsafe fn try_free(&mut self, ptr: NonNull<u8>, layout: Layout) -> bool {
+        let current = self.current;
         if current != ptr.as_ptr() {
             return false;
         }
 
         let padding = Self::read_padding(current, layout);
         let restored = current.add(layout.size() + padding);
-        self.current.set(restored);
+        self.current = restored;
 
         true
     }
@@ -316,17 +216,28 @@ use chunk::Chunk;
 
 #[cfg(not(miri))]
 mod chunk {
-    use std::ops::Range;
+    use std::{default::default, ops::Range, ptr, slice};
+
+    use rkyv::{
+        out_field,
+        ser::{ScratchSpace, Serializer},
+        vec::{ArchivedVec, VecResolver},
+        with::DeserializeWith,
+        Archive, Archived, Deserialize, Fallible, Serialize,
+    };
+
+    transmute_arkive!(ArchivedProtection(region::Protection => usize));
 
     pub struct Chunk {
         data: region::Allocation,
+        protection: region::Protection,
     }
 
     impl Chunk {
-        pub fn new(cap: usize) -> Self {
+        pub fn new(cap: usize, protection: region::Protection) -> Self {
             Chunk {
-                data: region::alloc(cap, region::Protection::READ_WRITE)
-                    .expect("Failed to allocate memory"),
+                data: region::alloc(cap, protection).expect("Failed to allocate memory"),
+                protection,
             }
         }
 
@@ -334,16 +245,71 @@ mod chunk {
             self.data.len()
         }
 
-        pub fn range(&mut self) -> Range<*mut u8> {
+        pub fn range_mut(&mut self) -> Range<*mut u8> {
             self.data.as_mut_ptr_range()
         }
 
-        pub fn set_memory_protection(&mut self, protection: region::Protection) {
-            let range = self.range();
-            let size = range.end as usize - range.start as usize;
+        pub fn range(&self) -> Range<*const u8> {
+            self.data.as_ptr_range()
+        }
+    }
+
+    pub struct ArchivedChunk {
+        data: ArchivedVec<u8>,
+        protection: Archived<usize>,
+    }
+
+    impl Archive for Chunk {
+        type Archived = ArchivedChunk;
+
+        type Resolver = VecResolver;
+
+        unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
+            let (o, f) = out_field!(out.data);
+            ArchivedVec::<u8>::resolve_from_len(self.len(), pos + o, resolver, f);
+            let (o, f) = out_field!(out.protection);
+            <Archived<usize>>::resolve(&(self.protection.bits() as u32), pos + o, default(), f);
+        }
+    }
+
+    impl<S: Serializer + ScratchSpace> Serialize<S> for Chunk
+    where
+        u8: Serialize<S>,
+    {
+        fn serialize(
+            &self,
+            serializer: &mut S,
+        ) -> Result<Self::Resolver, <S as rkyv::Fallible>::Error> {
+            let slice = unsafe { slice::from_ptr_range(self.data.as_ptr_range::<u8>()) };
+            ArchivedVec::<u8>::serialize_from_slice(slice, serializer)
+        }
+    }
+
+    impl<D: Fallible> Deserialize<Chunk, D> for ArchivedChunk {
+        fn deserialize(&self, deserializer: &mut D) -> Result<Chunk, <D as Fallible>::Error> {
+            let slice = self.data.as_ptr() as *const u8;
+            let mut region = Chunk::new(
+                self.data.len(),
+                ArchivedProtection::deserialize_with(&self.protection, deserializer)?,
+            );
+            unsafe { ptr::copy_nonoverlapping(slice, region.data.as_mut_ptr(), self.data.len()) }
+            Ok(region)
+        }
+    }
+
+    #[cfg(test)]
+    mod test {
+        use super::*;
+
+        #[test]
+        fn test_execute_write() {
+            let mut chunk = Chunk::new(1, region::Protection::READ_WRITE_EXECUTE);
+            let range = chunk.range_mut();
+            let ptr = range.start;
             unsafe {
-                region::protect(range.start, size, protection)
-                    .expect("Failed to set memory protection");
+                *ptr = 0xc3; // ret
+                let f: fn() = std::mem::transmute(ptr);
+                f();
             }
         }
     }
@@ -363,7 +329,7 @@ mod chunk {
 
     impl Chunk {
         const ALIGN: usize = 1 << 10;
-        pub fn new(cap: usize) -> Self {
+        pub fn new(cap: usize, _protection: region::Protection) -> Self {
             Chunk {
                 data: Global
                     .allocate(Layout::from_size_align(cap, Self::ALIGN).unwrap())

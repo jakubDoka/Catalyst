@@ -110,8 +110,8 @@ impl ObjectContext {
             *offset = self.object.add_symbol_data(
                 symbol,
                 self.text_section,
-                &ent.bytecode,
-                ent.alignment,
+                gen.code(&ent.bytecode, false).data(),
+                ent.bytecode.align().value() as u64,
             );
         }
 

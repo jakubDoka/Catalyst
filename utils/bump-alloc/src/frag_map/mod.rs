@@ -4,7 +4,7 @@ use std::{
     cell::UnsafeCell,
     hash::{BuildHasher, Hash},
     iter, mem,
-    ops::{Index, IndexMut, Range},
+    ops::{Deref, DerefMut, Index, IndexMut, Range},
     process::abort,
     ptr::{self, NonNull},
     slice::{self, SliceIndex},
@@ -29,6 +29,85 @@ pub mod interner;
 pub mod relocator;
 pub mod shadow;
 pub mod sync;
+
+#[derive(Archive, Serialize, Deserialize)]
+pub struct Cluster<T> {
+    allocs: ArcVec<T>,
+}
+
+impl<T> Cluster<T> {
+    pub fn new(thread_count: u8) -> Self
+    where
+        T: Default,
+    {
+        let new = ArcVecInner::with_capacity(thread_count as usize);
+        unsafe {
+            ArcVecInner::extend(new, (0..thread_count).map(|_| T::default()));
+        }
+        Self {
+            allocs: ArcVec(new),
+        }
+    }
+
+    pub fn split(&self) -> impl Iterator<Item = ClusterBorrow<T>> + '_ {
+        unsafe {
+            assert!(ArcVecInner::is_unique(self.allocs.0));
+            ArcVecInner::full_data_mut(self.allocs.0)
+                .iter_mut()
+                .map(|borrowed| ClusterBorrow {
+                    borrowed,
+                    backing: self.allocs.clone(),
+                })
+        }
+    }
+
+    pub fn expand(&mut self, thread_count: u8)
+    where
+        T: Default,
+    {
+        assert!(self.allocs.is_unique());
+        self.allocs.extend(
+            (unsafe { crate::field!(self.allocs.0 => len) as u8 }..thread_count)
+                .map(|_| T::default()),
+        );
+    }
+
+    pub fn thread_count(&self) -> u8 {
+        unsafe { crate::field!(self.allocs.0 => len) as u8 }
+    }
+}
+
+unsafe impl<T: Send> Send for Cluster<T> {}
+unsafe impl<T: Sync> Sync for Cluster<T> {}
+
+pub struct ClusterBorrow<T> {
+    borrowed: *mut T,
+    backing: ArcVec<T>,
+}
+
+impl<T> ClusterBorrow<T> {
+    pub fn thread(&self) -> u8 {
+        let data_ptr = unsafe { crate::field!(self.backing.0 => ref data) };
+        ((self.borrowed as usize - data_ptr as usize) / std::mem::size_of::<T>()) as u8
+    }
+}
+
+unsafe impl<T: Send> Send for ClusterBorrow<T> {}
+unsafe impl<T: Sync> Sync for ClusterBorrow<T> {}
+
+impl<T> Deref for ClusterBorrow<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.borrowed }
+    }
+}
+
+impl<T> DerefMut for ClusterBorrow<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { &mut *self.borrowed }
+    }
+}
 
 /// # Safety
 /// Trait should be only used and never derived.
@@ -549,6 +628,12 @@ impl<T> ArcVec<T> {
                 *self = ArcVec(overflows);
             }
         };
+    }
+}
+
+impl<T> Default for ArcVec<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

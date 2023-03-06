@@ -367,7 +367,7 @@ impl Generator<'_> {
                 }
             };
 
-            match ty.to_base_and_params(&self.types) {
+            match ty.to_base_and_params(self.types) {
                 Ok((base, params)) => match base {
                     BaseTy::Struct(s) => {
                         layout

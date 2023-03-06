@@ -233,53 +233,6 @@ macro_rules! compose_error {
     };
 }
 
-#[macro_export]
-macro_rules! transmute_arkive {
-    ($($name:ident($ty:ty => $repr:ty))*) => {
-        $(
-            transmute_arkive!($name, $ty, $repr);
-        )*
-    };
-
-    ($name:ident, $ty:ty, $repr:ty) => {
-        pub struct $name;
-
-        impl ArchiveWith<$ty> for $name {
-            type Archived = Archived<$repr>;
-
-            type Resolver = Resolver<$repr>;
-
-            unsafe fn resolve_with(
-                field: &$ty,
-                pos: usize,
-                resolver: Self::Resolver,
-                out: *mut Self::Archived,
-            ) {
-                mem::transmute_copy::<_, $repr>(field).resolve(pos, resolver, out)
-            }
-        }
-
-        impl<S: Serializer + ?Sized> SerializeWith<$ty, S> for $name {
-            fn serialize_with(
-                field: &$ty,
-                serializer: &mut S,
-            ) -> Result<Self::Resolver, <S as rkyv::Fallible>::Error> {
-                // SAFETY: ther is none
-                unsafe { mem::transmute_copy::<_, $repr>(field).serialize(serializer) }
-            }
-        }
-
-        impl<D: Fallible + ?Sized> DeserializeWith<Archived<$repr>, $ty, D> for $name {
-            fn deserialize_with(
-                field: &Archived<$repr>,
-                _deserializer: &mut D,
-            ) -> Result<$ty, <D as rkyv::Fallible>::Error> {
-                Ok(unsafe { mem::transmute_copy::<_, $ty>(field) })
-            }
-        }
-    };
-}
-
 pub extern crate bitflags;
 
 mod bit_set;

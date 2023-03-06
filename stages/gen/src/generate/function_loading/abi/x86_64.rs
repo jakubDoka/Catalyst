@@ -138,8 +138,8 @@ fn classify_base_ty_arg(
     offset: u32,
 ) -> Result<(), Memory> {
     match base {
-        BaseTy::Struct(s) => classify_struct_arg(generator, s, &params, layout, classes, offset),
-        BaseTy::Enum(e) => classify_enum_arg(generator, e, layout, &params, classes, offset),
+        BaseTy::Struct(s) => classify_struct_arg(generator, s, params, layout, classes, offset),
+        BaseTy::Enum(e) => classify_enum_arg(generator, e, layout, params, classes, offset),
     }
 }
 

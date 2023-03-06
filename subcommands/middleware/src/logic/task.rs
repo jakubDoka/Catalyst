@@ -64,10 +64,14 @@ impl TaskBase {
         })
     }
 
-    pub fn register<'a>(&'a mut self, frags: &mut RelocatedObjects<'a>) {
+    pub fn register<'a>(
+        &'a mut self,
+        frags: &mut RelocatedObjects<'a>,
+        gen_relocator: &mut GenRelocator,
+    ) {
         self.types.register(frags);
         self.mir.register(frags);
-        self.gen.register(frags);
+        self.gen.register(frags, gen_relocator);
     }
 }
 
@@ -310,7 +314,7 @@ impl<'a> CompileRequestCollector<'a> {
                 self.ctx.frontier.push(call_req);
             }
 
-            match ty.to_base_and_params(&self.types) {
+            match ty.to_base_and_params(self.types) {
                 Ok((base, params)) => {
                     let types = match base {
                         BaseTy::Struct(s) => type_creator!(self).instantiate_fields(s, params),
@@ -336,10 +340,10 @@ impl<'a> CompileRequestCollector<'a> {
             &self.isa.triple,
             func_id,
             params.iter().cloned(),
-            &self.types,
-            &mut self.interner,
+            self.types,
+            self.interner,
         );
-        let id = self.gen.get_or_insert_func(key, func_id);
+        let (id, not_skipped) = self.gen.get_or_insert_func(key, func_id);
 
         CRNode {
             req: CompileRequestChild {
@@ -347,7 +351,7 @@ impl<'a> CompileRequestCollector<'a> {
                 id,
                 params: self.requests.ty_slices.bump_slice(&params),
             },
-            skipped: !self.ctx.seen.insert(id),
+            skipped: !not_skipped,
         }
     }
 
@@ -383,7 +387,6 @@ impl<'a> CompileRequestCollector<'a> {
 #[derive(Default)]
 pub(super) struct CompileRequestCollectorCtx {
     frontier: Vec<CRNode>,
-    seen: Set<CompiledFuncRef>,
     temp_types: PushMap<TyMir>,
     ty_frontier: Vec<Ty>,
 }
@@ -392,7 +395,6 @@ impl CompileRequestCollectorCtx {
     fn init(&mut self, roots: impl IntoIterator<Item = CompileRequestChild>) {
         assert!(self.frontier.is_empty());
         self.frontier.extend(roots.into_iter().map(CRNode::from));
-        self.seen.clear();
     }
 }
 

@@ -189,7 +189,8 @@ macro_rules! gen_kind {
 
         #[derive(Clone, Copy, Logos, Debug, PartialEq, Eq)]
         #[repr(C, u8)]
-        pub enum TokenKind {
+        #[derive(Default)]
+pub enum TokenKind {
             $(
                 #[token($keyword_repr)]
                 $keyword,
@@ -233,7 +234,8 @@ macro_rules! gen_kind {
             #[error]
             Error,
             Eof,
-            None,
+            #[default]
+None,
         }
 
         #[derive(Clone, Copy, Logos, Debug, PartialEq, Eq)]
@@ -340,10 +342,3 @@ gen_kind!(
         ) = EQUAL_SIGN_PRECEDENCE,
     }
 );
-
-impl Default for TokenKind {
-    #[inline]
-    fn default() -> Self {
-        TokenKind::None
-    }
-}

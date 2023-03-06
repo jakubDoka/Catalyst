@@ -76,7 +76,7 @@ impl BaseTy {
     pub fn from_ty(ty: Ty, types: &Types) -> Option<Self> {
         match ty {
             Ty::Base(b) => Some(b),
-            Ty::Instance(i) => Some(types[i].base.into()),
+            Ty::Instance(i) => Some(types[i].base),
             Ty::Pointer(..) | Ty::Array(..) | Ty::Param(..) | Ty::Builtin(..) => None,
         }
     }

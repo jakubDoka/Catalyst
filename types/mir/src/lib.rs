@@ -4,7 +4,7 @@
 mod mir;
 
 pub use mir::{
-    swap_mir_types, BlockMir, BodyOwner, CallMir, CallableMir, ControlFlowMir, DebugData, DropMir,
-    FuncMir, FuncMirEntities, FuncMirEntitiesView, FuncMirView, InstMir, Mir, MirBase, ModuleMir,
+    swap_mir_types, BlockMir, CallMir, CallableMir, ControlFlowMir, DebugData, DropMir, FuncMir,
+    FuncMirEntities, FuncMirEntitiesView, FuncMirView, InstMir, Mir, MirBase, ModuleMir,
     ModuleMirCheck, TyMir, ValueMir,
 };

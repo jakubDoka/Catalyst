@@ -175,7 +175,7 @@ pub mod items {
                         }
 
                         let mut out = String::new();
-                        ws.display(&res, &mut SnippetDisplayImpl::default(), &mut out);
+                        ws.display(res, &mut SnippetDisplayImpl::default(), &mut out);
                         ws.clear();
                         let path = format!("{}/{}.txt", "test_out", name);
                         if !Path::new("test_out").exists() {
@@ -472,11 +472,10 @@ pub mod items {
         }
 
         fn get_modification_time(&self, path: &Path) -> io::Result<std::time::SystemTime> {
-            Ok(self
-                .files
+            self.files
                 .get(self.canonicalize(path)?.as_path())
                 .map(|(_, time)| *time)
-                .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "file not found"))?)
+                .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "file not found"))
         }
     }
 }

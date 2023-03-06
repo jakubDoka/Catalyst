@@ -23,7 +23,7 @@ use {
     std::{
         alloc,
         default::default,
-        iter, mem,
+        mem,
         num::NonZeroU8,
         ops::{Deref, DerefMut, Range},
         sync::Arc,
@@ -55,6 +55,8 @@ pub enum ComputedConst {
     //    Memory(ComputedConstMemory),
     Unit,
 }
+
+transmute_arkive!(TripleArchive(Triple => [u8; 40]));
 
 // pub struct ComputedConstMemory {
 //     data: *mut u8,
@@ -90,25 +92,36 @@ derive_relocated!(
 #[derive(Serialize, Archive, Deserialize)]
 pub struct GenBase {
     lookup: Arc<GenLookup>,
+    code: Cluster<CodeAllocator>,
 }
 
 derive_relocated!(struct GenBase { lookup });
 
 impl GenBase {
-    pub fn new(_thread_count: u8) -> Self {
-        Self { lookup: default() }
+    pub fn new(thread_count: u8) -> Self {
+        Self {
+            lookup: default(),
+            code: Cluster::new(thread_count),
+        }
     }
 
-    pub fn expand(&mut self, _thread_count: u8) {}
+    pub fn expand(&mut self, thread_count: u8) {
+        self.code.expand(thread_count);
+    }
 
     pub fn split(&self) -> impl Iterator<Item = Gen> + '_ {
-        iter::repeat_with(|| Gen {
+        self.code.split().map(move |code| Gen {
             lookup: self.lookup.clone(),
+            code,
         })
     }
 
-    pub fn register<'a>(&'a mut self, objects: &mut RelocatedObjects<'a>) {
-        self.reallocate();
+    pub fn register<'a>(
+        &'a mut self,
+        objects: &mut RelocatedObjects<'a>,
+        gen_relocator: &mut GenRelocator,
+    ) {
+        self.reallocate(gen_relocator);
         objects.add_root(&mut self.lookup);
     }
 
@@ -119,8 +132,44 @@ impl GenBase {
             .for_each(|mut item| item.unused = true);
     }
 
-    fn reallocate(&mut self) {
-        self.lookup.funcs.retain(|_, v| !v.unused);
+    fn reallocate(&mut self, gen_relocator: &mut GenRelocator) {
+        gen_relocator.prepare(self.code.thread_count());
+        self.lookup.funcs.retain(|_, v| {
+            let ret = !v.unused;
+            if ret {
+                gen_relocator.mark(&v.bytecode);
+            }
+            ret
+        });
+        gen_relocator.relocate(&mut self.code);
+        self.lookup
+            .funcs
+            .iter_mut()
+            .for_each(|mut e| gen_relocator.remap(&mut e.value_mut().bytecode));
+    }
+}
+
+#[derive(Default)]
+pub struct GenRelocator {
+    threads: Vec<CodeRelocator>,
+}
+impl GenRelocator {
+    fn prepare(&mut self, thread_count: u8) {
+        self.threads.resize_with(thread_count as usize, default)
+    }
+
+    fn mark(&mut self, bytecode: &Code) {
+        self.threads[bytecode.thread() as usize].mark(bytecode)
+    }
+
+    fn relocate(&mut self, code: &mut Cluster<CodeAllocator>) {
+        code.split()
+            .zip(self.threads.iter_mut())
+            .for_each(|(mut code, thread)| thread.relocate(&mut code));
+    }
+
+    fn remap(&self, bytecode: &mut Code) {
+        self.threads[bytecode.thread() as usize].project(bytecode);
     }
 }
 
@@ -136,6 +185,7 @@ impl CompiledFuncRef {
 
 pub struct Gen {
     lookup: Arc<GenLookup>,
+    code: ClusterBorrow<CodeAllocator>,
 }
 
 impl Gen {
@@ -154,18 +204,23 @@ impl Gen {
         &mut self,
         id: FragRef<&'static str>,
         func: FragRef<Func>,
-    ) -> CompiledFuncRef {
+    ) -> (CompiledFuncRef, bool) {
+        let mut new = false;
         self.lookup
             .funcs
             .entry(id)
             .and_modify(|func| func.unused = false)
-            .or_insert_with(|| CompiledFunc::new(func));
+            .or_insert_with(|| {
+                new = true;
+                CompiledFunc::new(func)
+            });
 
-        CompiledFuncRef(id)
+        (CompiledFuncRef(id), new)
     }
 
     pub fn save_compiled_code(
         &mut self,
+        func: FragRef<Func>,
         id: CompiledFuncRef,
         ctx: &Context,
     ) -> Result<(), CodeSaveError> {
@@ -194,25 +249,39 @@ impl Gen {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        let mut func = self.lookup.funcs.get_mut(&id.0).unwrap();
-        func.signature = ctx.func.signature.clone();
-        func.bytecode = cc.buffer.data().to_vec();
-        func.alignment = cc.alignment as u64;
-        func.relocs = relocs;
+        let thread = self.code.thread();
+        let new = CompiledFunc {
+            func,
+            unused: false,
+            signature: ctx.func.signature.clone(),
+            bytecode: self
+                .code
+                .alloc(
+                    cc.buffer.data(),
+                    Align::project(cc.alignment as u64),
+                    thread,
+                )
+                .into(),
+            relocs,
+        };
+
+        assert!(self.lookup.funcs.insert(id.0, new).is_some());
 
         Ok(())
+    }
+
+    pub(crate) fn code<'a>(&'a self, func_ref: &Code, finishing: bool) -> CodeGuard<'a> {
+        self.code.data(func_ref, finishing)
     }
 }
 
 #[derive(Serialize, Archive, Deserialize)]
-
 pub struct CompiledFunc {
     func: FragRef<Func>,
     unused: bool,
     #[with(SignatureArchiver)]
     pub signature: ir::Signature,
-    pub bytecode: Vec<u8>,
-    pub alignment: u64,
+    pub bytecode: Code,
     pub relocs: Vec<GenReloc>,
 }
 
@@ -223,7 +292,6 @@ impl CompiledFunc {
             unused: false,
             signature: ir::Signature::new(CallConv::Fast),
             bytecode: default(),
-            alignment: default(),
             relocs: default(),
         }
     }
@@ -397,7 +465,7 @@ impl CompileRequest {
     pub fn view<'a>(&self, shard: &CompileRequestsShard<'a>) -> CompileRequestView<'a> {
         CompileRequestView {
             types: shard.ty_slices,
-            children: &shard.children,
+            children: shard.children,
             calls: &shard.children[self.children],
             drops: &shard.drop_children[self.drops],
         }
@@ -513,8 +581,7 @@ transmute_arkive! {
     ArgumentPurposeArchiver(ArgumentPurpose => u64)
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Archive, Deserialize)]
-
+#[derive(Clone, Copy, Debug, Serialize, Archive, Deserialize, PartialEq, Eq)]
 pub enum GenItemName {
     Func(CompiledFuncRef),
     LibCall(#[with(LibCallArchiver)] ir::LibCall),
