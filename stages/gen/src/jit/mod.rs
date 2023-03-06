@@ -142,7 +142,11 @@ impl JitContext {
                 Ok((
                     func,
                     InternalJittedFunc {
-                        ptr: JittedFuncPtr::Generated(compiled_func.bytecode),
+                        ptr: JittedFuncPtr::Generated(
+                            compiled_func
+                                .bytecode
+                                .ok_or(JitRelocError::MissingSymbol(GenItemName::Func(func)))?,
+                        ),
                     },
                 ))
             })

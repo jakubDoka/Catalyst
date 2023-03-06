@@ -72,11 +72,12 @@ impl CodeRelocator {
         allocator.chunks.truncate(current_cunk + 1);
     }
 
-    pub fn project(&self, code: &mut Code) -> Option<()> {
+    pub fn project(&self, code: &mut Code, codes: &mut CodeAllocator) -> Option<()> {
         let reloc = self
             .used
             .binary_search_by(|reloc| reloc.code.cmp(code))
-            .unwrap_or_else(|i| i);
+            .map(Some)
+            .unwrap_or_else(|i| i.checked_sub(1))?;
 
         let reloc = self.used.get(reloc)?;
         if reloc.code.chunk != code.chunk || code.end > reloc.code.end {
@@ -90,6 +91,8 @@ impl CodeRelocator {
         code.start = code.start - reloc.code.start + reloc.offset;
         code.chunk = reloc.chunk;
 
+        codes.reset(code);
+
         Some(())
     }
 
@@ -98,12 +101,17 @@ impl CodeRelocator {
     }
 }
 
-#[derive(Default)]
 struct Relocation {
     chunk: u32,
     offset: u32,
     code: Code,
     most_aligned: u32,
+}
+
+impl Default for Relocation {
+    fn default() -> Self {
+        unsafe { std::mem::zeroed() }
+    }
 }
 
 impl Unified for Relocation {
@@ -135,7 +143,7 @@ impl Unified for Relocation {
     }
 }
 
-#[derive(Clone, Copy, Default, Archive, Serialize, Deserialize)]
+#[derive(Clone, Copy, Archive, Serialize, Deserialize)]
 pub struct Code {
     chunk: u32,
     start: u32,
@@ -274,7 +282,7 @@ impl CodeAllocator {
     fn code(&self, padding: usize, len: usize, align: Align, thread: u8) -> Code {
         let start = padding + (self.cursor as usize - self.base as usize);
         Code {
-            chunk: self.chunks.len() as u32,
+            chunk: self.chunks.len() as u32 - 1,
             start: start as u32,
             end: (start + len) as u32,
             padding: padding as u8,
@@ -311,6 +319,12 @@ impl CodeAllocator {
         ArchivableCodeAllocator {
             chunks: ManuallyDrop::new(ptr::read(&self.chunks)),
             progress: self.cursor as usize - self.base as usize,
+        }
+    }
+
+    fn reset(&self, code: &Code) {
+        unsafe {
+            (self.data_ptr(&code) as *mut u8 as *mut CodeLock).write(CodeLock::new());
         }
     }
 }

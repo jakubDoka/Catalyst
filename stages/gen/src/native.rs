@@ -106,12 +106,15 @@ impl ObjectContext {
         // add function bodies and fill offsets
         for &mut (func, symbol, ref mut offset, ..) in funcs.iter_mut() {
             let ent = gen.get_func_direct(func);
+            let bytecode = ent
+                .bytecode
+                .ok_or(ObjectRelocationError::MissingSymbol(func))?;
 
             *offset = self.object.add_symbol_data(
                 symbol,
                 self.text_section,
-                gen.code(&ent.bytecode, false).data(),
-                ent.bytecode.align().value() as u64,
+                gen.code(&bytecode, false).data(),
+                bytecode.align().value() as u64,
             );
         }
 

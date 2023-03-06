@@ -39,7 +39,7 @@ impl Allocator {
     pub fn alloc(&mut self, layout: Layout, write_padding: bool) -> NonNull<[u8]> {
         let padding = Self::compute_padding(self.current, layout);
         let size = layout.size() + padding;
-        if (self.start as usize - self.current as usize) < size {
+        if (self.current as usize - self.start as usize) < size {
             self.alloc_new(layout, write_padding)
         } else {
             // SAFETY: We just checked that the current chunk has enough space

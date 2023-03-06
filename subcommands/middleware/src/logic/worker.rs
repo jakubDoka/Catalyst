@@ -112,10 +112,9 @@ impl Worker {
         });
         let (compiled_entry, ..) = generator.gen.get_or_insert_func(entry_name, entry_func);
         self.gen.cranelift.compile(&**isa).unwrap();
-        let arbitrary = Func::CAST;
         generator
             .gen
-            .save_compiled_code(arbitrary, compiled_entry, &self.gen.cranelift)
+            .save_compiled_code(entry_func, compiled_entry, &self.gen.cranelift)
             .unwrap();
         self.gen.cranelift.clear();
 

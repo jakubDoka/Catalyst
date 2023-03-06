@@ -136,16 +136,17 @@ impl GenBase {
         gen_relocator.prepare(self.code.thread_count());
         self.lookup.funcs.retain(|_, v| {
             let ret = !v.unused;
-            if ret {
-                gen_relocator.mark(&v.bytecode);
+            if ret && let Some(ref v) = v.bytecode {
+                gen_relocator.mark(v);
             }
             ret
         });
         gen_relocator.relocate(&mut self.code);
-        self.lookup
-            .funcs
-            .iter_mut()
-            .for_each(|mut e| gen_relocator.remap(&mut e.value_mut().bytecode));
+        let allocators = self.code.lanes();
+        for mut e in self.lookup.funcs.iter_mut() {
+            let Some(ref mut v) = e.value_mut().bytecode else {continue};
+            gen_relocator.remap(v, allocators);
+        }
     }
 }
 
@@ -168,8 +169,9 @@ impl GenRelocator {
             .for_each(|(mut code, thread)| thread.relocate(&mut code));
     }
 
-    fn remap(&self, bytecode: &mut Code) {
-        self.threads[bytecode.thread() as usize].project(bytecode);
+    fn remap(&self, bytecode: &mut Code, allocators: &mut [CodeAllocator]) {
+        self.threads[bytecode.thread() as usize]
+            .project(bytecode, &mut allocators[bytecode.thread() as usize]);
     }
 }
 
@@ -281,7 +283,7 @@ pub struct CompiledFunc {
     unused: bool,
     #[with(SignatureArchiver)]
     pub signature: ir::Signature,
-    pub bytecode: Code,
+    pub bytecode: Option<Code>,
     pub relocs: Vec<GenReloc>,
 }
 
@@ -291,7 +293,7 @@ impl CompiledFunc {
             func,
             unused: false,
             signature: ir::Signature::new(CallConv::Fast),
-            bytecode: default(),
+            bytecode: None,
             relocs: default(),
         }
     }

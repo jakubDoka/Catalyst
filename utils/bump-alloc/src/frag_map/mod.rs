@@ -49,6 +49,13 @@ impl<T> Cluster<T> {
         }
     }
 
+    pub fn lanes(&mut self) -> &mut [T] {
+        unsafe {
+            assert!(ArcVecInner::is_unique(self.allocs.0));
+            ArcVecInner::full_data_mut(self.allocs.0)
+        }
+    }
+
     pub fn split(&self) -> impl Iterator<Item = ClusterBorrow<T>> + '_ {
         unsafe {
             assert!(ArcVecInner::is_unique(self.allocs.0));
