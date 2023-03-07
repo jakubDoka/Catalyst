@@ -3,3 +3,5 @@
 **/state_gen.rs
 Cargo.lock
 **/node_modules
+**.rkiv
+**.perf

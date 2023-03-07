@@ -615,48 +615,6 @@ impl Middleware {
         (package_tasks, threads)
     }
 
-    fn distribute_compile_requests(
-        roots: impl IntoIterator<Item = FragRef<Func>>,
-        requests: &mut CompileRequests,
-        request_cxt: &mut CompileRequestCollectorCtx,
-        task: &mut Task,
-        isa: &Isa,
-    ) -> (
-        Vec<CompiledFuncRef>, // in executable
-        Vec<CompiledFuncRef>, // in lib or dll
-    ) {
-        let distributor = |func| {
-            let key = Generator::func_instance_name(
-                isa.jit,
-                &isa.triple,
-                func,
-                iter::empty(),
-                &task.types,
-                &mut task.interner,
-            );
-            let (id, ..) = task.gen.get_or_insert_func(key, func);
-            CompileRequestChild {
-                id,
-                func,
-                params: default(),
-            }
-        };
-        let frontier = roots.into_iter().map(distributor).collect::<BumpVec<_>>();
-
-        let internal = frontier.iter().map(|req| req.id).collect();
-        let external = CompileRequestCollector {
-            requests,
-            isa,
-            types: &mut task.types,
-            interner: &mut task.interner,
-            gen: &mut task.gen,
-            ctx: request_cxt,
-            mir: &mut task.mir,
-        }
-        .collect(frontier);
-        (internal, external.to_vec())
-    }
-
     fn expand(
         &mut self,
         task_base: &mut TaskBase,
@@ -822,13 +780,17 @@ impl Middleware {
         let thread_count = tasks.len() as u8;
         task_base.gen.prepare();
 
-        let (generated, imported) = Self::distribute_compile_requests(
-            self.entry_points.drain(..),
-            &mut self.requests,
-            &mut self.request_ctx,
-            tasks.first_mut().expect("what are we doing then"),
-            &args.isa,
-        );
+        let task = tasks.first_mut().expect("what are we doing then");
+        let (generated, imported) = CompileRequestCollector {
+            requests: &mut self.requests,
+            isa: &args.isa,
+            types: &mut task.types,
+            interner: &mut task.interner,
+            gen: &mut task.gen,
+            ctx: &mut self.request_ctx,
+            mir: &mut task.mir,
+        }
+        .distribute_compile_requests(self.entry_points.drain(..));
 
         thread::scope(|scope| {
             for ((task, requests), worker) in tasks

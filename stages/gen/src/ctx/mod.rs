@@ -430,7 +430,7 @@ impl CompileRequests {
         self.drop_children.clear();
     }
 
-    pub fn split(&mut self, thread_count: u8) -> impl Iterator<Item = CompileRequestsShard> {
+    pub fn split(&self, thread_count: u8) -> impl Iterator<Item = CompileRequestsShard> {
         let chunks = self
             .queue
             .chunks_exact(self.queue.len() / thread_count as usize);
@@ -444,6 +444,15 @@ impl CompileRequests {
                 children: self.children.as_view(),
                 drop_children: self.drop_children.as_view(),
             })
+    }
+
+    pub fn as_shard(&self) -> CompileRequestsShard {
+        CompileRequestsShard {
+            queue: &self.queue,
+            ty_slices: self.ty_slices.as_view(),
+            children: self.children.as_view(),
+            drop_children: self.drop_children.as_view(),
+        }
     }
 }
 

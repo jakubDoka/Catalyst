@@ -35,6 +35,8 @@ pub(super) struct Worker {
     pub(super) gen_layouts: GenLayouts,
     pub(super) interpreter: InterpreterCtx,
     pub(super) gen: GeneratorThreadCtx,
+    requests: CompileRequests,
+    request_ctx: CompileRequestCollectorCtx,
 }
 
 impl Worker {
@@ -223,7 +225,7 @@ impl Worker {
         module: VRef<Module>,
         arena: &mut Arena,
         task: &mut Task,
-        _jit_ctx: &mut JitContext,
+        jit_ctx: &mut JitContext,
         shared: &Shared,
         handler: &mut S,
     ) {
@@ -237,6 +239,7 @@ impl Worker {
                 task,
                 shared,
                 mir_module,
+                jit: jit_ctx,
             }
         }
 
@@ -509,6 +512,7 @@ impl Worker {
         arena: &'a Arena,
         task: &mut Task,
         shared: &Shared,
+        jit_ctx: &mut JitContext,
     ) -> Active<TypecTransfer<'a>> {
         let mut active = Active::take(&mut self.typec_transfer);
         let ext = TypecExternalCtx {
@@ -527,6 +531,14 @@ impl Worker {
                 mir: &mut task.mir,
                 layouts: &mut self.jit_layouts,
                 gen: &mut task.gen,
+                jitter: JitterImpl {
+                    requests: &mut self.requests,
+                    isa: shared.jit_isa,
+                    resources: shared.resources,
+                    request_ctx: &mut self.request_ctx,
+                    thread_ctx: &mut self.gen,
+                },
+                jit: jit_ctx,
             },
         };
         let meta = TypecMeta::new(shared.resources, module);
@@ -543,8 +555,17 @@ impl Worker {
         arena: &Arena,
         task: &mut Task,
         shared: &Shared,
+        jit_ctx: &mut JitContext,
     ) {
-        let active = self.type_check_chunk(module, module_ref, grouped_items, arena, task, shared);
+        let active = self.type_check_chunk(
+            module,
+            module_ref,
+            grouped_items,
+            arena,
+            task,
+            shared,
+            jit_ctx,
+        );
 
         let mut ctx = MirCompilationCtx {
             module_ent: &mut self.module,
@@ -650,14 +671,15 @@ impl Worker {
 struct ConstFolderImpl<'arena, 'ctx> {
     module: VRef<Module>,
     module_ref: FragRef<ModuleMir>,
-
     arena: &'arena Arena,
     reused: &'ctx mut BorrowcCtx,
     module_ent: &'ctx mut ModuleMir,
     interpreter: &'ctx mut InterpreterCtx,
     mir: &'ctx mut Mir,
     layouts: &'ctx mut GenLayouts,
-    gen: &'ctx Gen,
+    gen: &'ctx mut Gen,
+    jitter: JitterImpl<'ctx>,
+    jit: &'ctx mut JitContext,
 }
 
 impl<'arena, 'ctx> ConstFolderImpl<'arena, 'ctx> {
@@ -685,20 +707,8 @@ impl<'arena, 'ctx> ConstFolderImpl<'arena, 'ctx> {
         )
         .build(default(), tir_body)?;
 
-        let mut current = StackFrame {
-            params: default(),
-            block: body.entry(),
-            values: default(),
-            offsets: default(),
-            types: default(),
-            instr: 0,
-            frame_base: 0,
-            func: body,
-        };
+        let mut current = StackFrame::new(body, body.view(self.module_ent).types.values().copied());
 
-        current
-            .types
-            .extend(body.view(self.module_ent).types.values().copied());
         self.mir
             .insert_module(self.module_ref, mem::take(self.module_ent));
 
@@ -712,6 +722,8 @@ impl<'arena, 'ctx> ConstFolderImpl<'arena, 'ctx> {
             layouts: self.layouts,
             current: &mut current,
             gen: self.gen,
+            jitter: &mut self.jitter,
+            jit: &mut self.jit,
         };
 
         let value = match interp.interpret() {
@@ -746,6 +758,53 @@ impl ConstFolder for ConstFolderImpl<'_, '_> {
             IValue::Register(val) => FolderValue::new_register(val as u64),
             IValue::Memory(_) => todo!(),
         }
+    }
+}
+
+struct JitterImpl<'ctx> {
+    requests: &'ctx mut CompileRequests,
+    isa: &'ctx Isa,
+    resources: &'ctx Resources,
+    request_ctx: &'ctx mut CompileRequestCollectorCtx,
+    thread_ctx: &'ctx mut GeneratorThreadCtx,
+}
+
+impl Jitter for JitterImpl<'_> {
+    fn jit(&mut self, ctx: &mut JitterCtx) -> Result<(), JitterError> {
+        let (generated, imported) = CompileRequestCollector {
+            requests: self.requests,
+            isa: self.isa,
+            types: ctx.types,
+            interner: ctx.interner,
+            gen: ctx.gen,
+            ctx: self.request_ctx,
+            mir: ctx.mir,
+        }
+        .distribute_compile_requests(iter::once(ctx.func));
+
+        GeneratorThread {
+            requests: self.requests.as_shard(),
+            mir: ctx.mir,
+            resources: self.resources,
+            types: ctx.types,
+            ctx: self.thread_ctx,
+            interner: ctx.interner,
+            isa: self.isa,
+            layouts: ctx.layouts,
+            gen: ctx.gen,
+        }
+        .generate(&mut None);
+
+        ctx.jit
+            .load_functions(
+                generated.into_iter().chain(imported),
+                ctx.gen,
+                ctx.types,
+                ctx.interner,
+            )
+            .unwrap();
+
+        todo!()
     }
 }
 
@@ -813,6 +872,7 @@ pub struct BaseSourceCtx<'a> {
     pub arena: &'a Arena,
     pub task: &'a mut Task,
     pub shared: &'a Shared<'a>,
+    pub jit: &'a mut JitContext,
 }
 
 pub struct MacroSourceCtx;
@@ -853,6 +913,7 @@ impl AstHandler for DefaultSourceAstHandler {
             ctx.arena,
             ctx.task,
             ctx.shared,
+            ctx.jit,
         );
         items.last
     }

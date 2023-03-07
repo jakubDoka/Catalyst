@@ -1,8 +1,0 @@
-error: expected Ident | '\' | 'return' | Int | Char | Bool | 'match' | 'if' | 'let' | Operator but got 'const'
- --> compile-time\root.ctl:1:77
-  |
-1 | fn sub(a : uint, b : uint) -> uint => a - b ; #[entry] ; fn main -> uint => const sub(1, 1) ;
-  |                                                                             ^^^^^ token located here
-  |
-  = info: list -> item -> function definition -> function body -> expr -> unit expr
-

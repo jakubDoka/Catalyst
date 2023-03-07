@@ -209,6 +209,35 @@ pub(super) struct CompileRequestCollector<'a> {
 }
 
 impl<'a> CompileRequestCollector<'a> {
+    pub(super) fn distribute_compile_requests(
+        mut self,
+        roots: impl IntoIterator<Item = FragRef<Func>>,
+    ) -> (
+        Vec<CompiledFuncRef>, // in executable
+        Vec<CompiledFuncRef>, // in lib or dll
+    ) {
+        let distributor = |func| {
+            let key = Generator::func_instance_name(
+                self.isa.jit,
+                &self.isa.triple,
+                func,
+                iter::empty(),
+                &self.types,
+                &mut self.interner,
+            );
+            let (id, ..) = self.gen.get_or_insert_func(key, func);
+            CompileRequestChild {
+                id,
+                func,
+                params: default(),
+            }
+        };
+        let frontier = roots.into_iter().map(distributor).collect::<BumpVec<_>>();
+
+        let internal = frontier.iter().map(|req| req.id).collect();
+        let external = self.collect(frontier);
+        (internal, external.to_vec())
+    }
     pub(super) fn collect(
         &mut self,
         roots: impl IntoIterator<Item = CompileRequestChild>,

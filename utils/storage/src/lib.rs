@@ -225,6 +225,7 @@ macro_rules! compose_error {
                 match *self {$(
                     Self::$variant$((ref $inner_name))? => write!(f, $($fmt)*)?,
                 )*}
+                #[allow(unreachable_code)]
                 Ok(())
             }
         }

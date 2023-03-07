@@ -4,6 +4,7 @@ use std::ops::Not;
 
 use cranelift_codegen::{binemit::Reloc, ir::LibCall};
 use lexing::*;
+use mir::Mir;
 use storage::*;
 use types::*;
 
@@ -11,14 +12,22 @@ use crate::*;
 
 pub const EXPOSED_FUNCS: &[(&str, *const u8)] = &[("ctl_lexer_next", ctl_lexer_next as _)];
 
-pub trait Jitter<'a> {
-    fn jit(&mut self, ctx: &mut JitterCtx) -> Result<JittedFunc<'a>, JitterError>;
-    fn adapter(&mut self, ctx: &mut JitterCtx) -> Result<JitAdapter<'a>, JitterError>;
+pub trait Jitter {
+    fn jit(&mut self, ctx: &mut JitterCtx) -> Result<(), JitterError>;
 }
 
-pub struct JitterCtx {}
+pub struct JitterCtx<'a> {
+    pub func: FragRef<Func>,
+    pub params: &'a [Ty],
+    pub gen: &'a mut Gen,
+    pub mir: &'a Mir,
+    pub types: &'a mut Types,
+    pub interner: &'a mut Interner,
+    pub layouts: &'a mut GenLayouts,
+    pub jit: &'a mut JitContext,
+}
 
-pub enum JitterError {}
+compose_error!(JitterError {});
 
 #[derive(Clone, Copy)]
 pub struct JitAdapter<'a> {

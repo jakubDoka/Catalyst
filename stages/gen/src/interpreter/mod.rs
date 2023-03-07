@@ -3,14 +3,15 @@ use std::{
     mem,
     ops::{Deref, DerefMut},
     ptr::copy_nonoverlapping,
+    time::{Duration, Instant},
 };
 
 use mir::*;
-use storage::{FragRef, Interner, PushMap, ShadowMap, SmallVec, VRef, VRefSlice};
+use storage::{FragRef, Interner, Map, PushMap, ShadowMap, SmallVec, VRef, VRefSlice};
 use type_creator::type_creator;
 use types::*;
 
-use crate::{Gen, GenLayouts, Layout};
+use crate::{Gen, GenLayouts, JitContext, Jitter, JitterCtx, Layout};
 
 pub type IRegister = i64;
 
@@ -21,7 +22,9 @@ pub struct Interpreter<'ctx, 'ext> {
     pub mir: &'ext Mir,
     pub layouts: &'ctx mut GenLayouts,
     pub current: &'ctx mut StackFrame,
-    pub gen: &'ext Gen,
+    pub gen: &'ext mut Gen,
+    pub jitter: &'ctx mut (dyn Jitter + 'ctx),
+    pub jit: &'ctx mut JitContext,
 }
 
 impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
@@ -47,13 +50,39 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
         Err(InterpreterError::OutOfFuel)
     }
 
-    fn pop_call(&mut self, mut pushed: PushedFrame, value: Option<ISlot>) {
+    fn pop_call(&mut self, mut poped: PushedFrame, value: Option<ISlot>) {
+        if let Some(func) = poped.frame.func {
+            self.handle_heuristic(func, &poped);
+        }
+
         self.ctx.stack.truncate(self.current.frame_base as usize);
-        pushed.frame.values[pushed.return_value] = value;
-        *self.current = pushed.frame;
+        poped.frame.values[poped.return_value] = value;
+        *self.current = poped.frame;
         // when pus_call happens the instr of caller is
         // not advanced
         self.current.instr += 1;
+    }
+
+    fn handle_heuristic(&mut self, func: FragRef<Func>, poped: &PushedFrame) {
+        if !self
+            .ctx
+            .jit_heuristic
+            .needs_jit(func, &poped.frame.params, poped.timestamp.elapsed())
+        {
+            return;
+        }
+
+        let mut ctx = JitterCtx {
+            func,
+            params: &poped.frame.params,
+            gen: self.gen,
+            mir: self.mir,
+            types: self.types,
+            interner: self.interner,
+            layouts: self.layouts,
+            jit: self.jit,
+        };
+        self.jitter.jit(&mut ctx).unwrap();
     }
 
     fn push_call(
@@ -72,19 +101,15 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
         let module = &self.mir[body.module()];
         let next_view = body.view(module);
 
-        let mut frame = StackFrame {
-            params: view.ty_params[params]
+        let mut frame = StackFrame::explicit_new(
+            view.ty_params[params]
                 .iter()
                 .map(|&ty| self.current.types[ty].ty)
                 .collect(),
-            block: body.entry(),
-            values: default(),
-            offsets: default(),
-            types: default(),
-            instr: 0,
-            frame_base: self.ctx.stack.len() as u32,
-            func: body,
-        };
+            body,
+            Some(func),
+            self.ctx.stack.len(),
+        );
 
         mir::swap_mir_types(
             &next_view,
@@ -107,6 +132,7 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
         self.ctx.frames.push(PushedFrame {
             return_value,
             frame,
+            timestamp: Instant::now(),
         });
 
         Ok(())
@@ -297,8 +323,8 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
     fn load_inst(&mut self) -> Result<(InstMir, FuncMirView<'ext>), StepError> {
         let view = self
             .current
-            .func
-            .view(&self.mir[self.current.func.module()]);
+            .body
+            .view(&self.mir[self.current.body.module()]);
         self.load_inst_low(&view).map(|inst| (inst, view))
     }
 
@@ -517,6 +543,7 @@ pub struct InterpreterCtx {
     stack: Vec<u8>,
     frames: Vec<PushedFrame>,
     fuel: usize,
+    jit_heuristic: JitHeuristic,
 }
 
 impl InterpreterCtx {
@@ -540,25 +567,109 @@ impl InterpreterCtx {
             Ok(current.add(padding))
         }
     }
+
+    pub fn explicit_jits(&self) -> impl Iterator<Item = FragRef<Func>> + '_ {
+        self.jit_heuristic.explicit_jits()
+    }
+}
+
+struct JitHeuristic {
+    run_times: Map<FuncKey, FuncStats>,
+    trashold: Duration,
+}
+
+impl JitHeuristic {
+    fn needs_jit(&mut self, func: FragRef<Func>, params: &[Ty], time: Duration) -> bool {
+        let entry = self
+            .run_times
+            .entry(FuncKey {
+                id: func,
+                params: params.iter().copied().collect(),
+            })
+            .or_default();
+        entry.runtime += time;
+        entry.runs += 1;
+        entry.runtime > self.trashold
+    }
+
+    fn explicit_jits(&self) -> impl Iterator<Item = FragRef<Func>> + '_ {
+        self.run_times
+            .iter()
+            .filter_map(|(key, stats)| stats.needs_explicit_jit(self.trashold).then_some(key.id))
+    }
+}
+
+impl Default for JitHeuristic {
+    fn default() -> Self {
+        Self {
+            run_times: Map::default(),
+            trashold: Duration::from_millis(100),
+        }
+    }
+}
+
+#[derive(Default)]
+struct FuncStats {
+    runtime: Duration,
+    runs: usize,
+}
+
+impl FuncStats {
+    fn needs_explicit_jit(&self, trashold: Duration) -> bool {
+        self.runs == 1 && self.runtime > trashold
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct FuncKey {
+    id: FragRef<Func>,
+    params: SmallVec<[Ty; 2]>,
 }
 
 struct PushedFrame {
     frame: StackFrame,
     return_value: VRef<ValueMir>,
+    timestamp: Instant,
 }
 
 pub struct StackFrame {
-    pub params: Vec<Ty>,
-    pub block: VRef<BlockMir>,
-    pub values: ShadowMap<ValueMir, Option<ISlot>>,
-    pub offsets: ShadowMap<ValueMir, u32>,
-    pub types: PushMap<TyMir>,
-    pub instr: u32,
-    pub frame_base: u32,
-    pub func: FuncMir,
+    params: Vec<Ty>,
+    block: VRef<BlockMir>,
+    values: ShadowMap<ValueMir, Option<ISlot>>,
+    offsets: ShadowMap<ValueMir, u32>,
+    types: PushMap<TyMir>,
+    instr: usize,
+    frame_base: usize,
+    body: FuncMir,
+    func: Option<FragRef<Func>>,
 }
 
 impl StackFrame {
+    pub fn new(body: FuncMir, types: impl IntoIterator<Item = TyMir>) -> Self {
+        let mut s = Self::explicit_new(default(), body, None, 0);
+        s.types.extend(types);
+        s
+    }
+
+    fn explicit_new(
+        params: Vec<Ty>,
+        body: FuncMir,
+        func: Option<FragRef<Func>>,
+        frame_base: usize,
+    ) -> Self {
+        StackFrame {
+            params,
+            block: body.entry(),
+            values: default(),
+            offsets: default(),
+            types: default(),
+            instr: 0,
+            frame_base,
+            body,
+            func,
+        }
+    }
+
     fn load_register(&self, reg: VRef<ValueMir>) -> i64 {
         match self.unpack_slot(reg) {
             Some(IValue::Register(reg)) => reg,
