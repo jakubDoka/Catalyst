@@ -1,6 +1,6 @@
-use std::default::default;
 use std::ffi::CStr;
 use std::ops::Not;
+use std::{default::default, mem};
 
 use cranelift_codegen::{binemit::Reloc, ir::LibCall};
 use lexing::*;
@@ -30,29 +30,25 @@ pub struct JitterCtx<'a> {
 compose_error!(JitterError {});
 
 #[derive(Clone, Copy)]
-pub struct JitAdapter<'a> {
-    func: fn(*const u8, *mut u64, *mut u64),
+pub struct JittedFunc<'a> {
+    ptr: *const u8,
+    adapter: fn(*const u8, *mut u64, *mut u64),
     lt: std::marker::PhantomData<&'a ()>,
 }
 
-impl<'a> JitAdapter<'a> {
+impl<'a> JittedFunc<'a> {
     /// # Safety
     /// Caller has to guarantee that the function pointer has correct signature for the adapter
     /// and that arguments have correct lenght as well as rets.
-    pub unsafe fn call(&self, func: JittedFunc, args: &[u64], ret: &mut [u64]) {
-        (self.func)(func.ptr, args.as_ptr() as _, ret.as_mut_ptr())
+    pub unsafe fn call(&self, args: &[u64], ret: &mut [u64]) {
+        (self.adapter)(self.ptr, args.as_ptr() as _, ret.as_mut_ptr())
     }
-}
-
-#[derive(Clone, Copy)]
-pub struct JittedFunc<'a> {
-    ptr: *const u8,
-    lt: std::marker::PhantomData<&'a ()>,
 }
 
 #[derive(Clone, Copy)]
 struct InternalJittedFunc {
     ptr: JittedFuncPtr,
+    adapter: Code,
 }
 
 #[derive(Clone, Copy)]
@@ -64,6 +60,7 @@ enum JittedFuncPtr {
 pub struct JitContext {
     exposed_funcs: Map<&'static str, *const u8>,
     functions: Map<CompiledFuncRef, InternalJittedFunc>,
+    pub adapters: Map<CompiledFuncRef, Code>,
     runtime_lookup: RuntimeFunctionLookup,
 }
 
@@ -77,6 +74,7 @@ impl JitContext {
             //       functions: Map::default(),
             //      resources: JitResources::new(),
             functions: default(),
+            adapters: default(),
             runtime_lookup: RuntimeFunctionLookup::new(),
         }
     }
@@ -93,6 +91,11 @@ impl JitContext {
                 }
                 JittedFuncPtr::Static(s) => s,
             },
+            adapter: {
+                let mut code = gen.code(&f.adapter, false);
+                assert!(code.try_data_mut().is_err());
+                unsafe { mem::transmute(code.data().as_ptr()) }
+            },
             lt: std::marker::PhantomData,
         })
     }
@@ -102,18 +105,18 @@ impl JitContext {
     /// The caller must ensure signature of `func` matches the function pointer
     /// signature passed as `ptr`, `func` also has to have default call convention
     /// `ptr` should be `export "C"`.
-    pub unsafe fn load_runtime_function(&mut self, func: CompiledFuncRef, ptr: *const u8) {
-        if self.functions.get(&func).is_some() {
-            return;
-        }
+    // pub unsafe fn load_runtime_function(&mut self, func: CompiledFuncRef, ptr: *const u8) {
+    //     if self.functions.get(&func).is_some() {
+    //         return;
+    //     }
 
-        self.functions.insert(
-            func,
-            InternalJittedFunc {
-                ptr: JittedFuncPtr::Static(ptr),
-            },
-        );
-    }
+    //     self.functions.insert(
+    //         func,
+    //         InternalJittedFunc {
+    //             ptr: JittedFuncPtr::Static(ptr),
+    //         },
+    //     );
+    // }
 
     /// Used for loading batch of functions that are currently needed to execute.
     /// Functions can depend on each other. If some function already has implementation

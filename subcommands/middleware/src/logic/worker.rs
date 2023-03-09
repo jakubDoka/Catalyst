@@ -802,9 +802,14 @@ impl Jitter for JitterImpl<'_> {
                 ctx.types,
                 ctx.interner,
             )
+            // .map_err(|err| {
+            //     if let JitRelocError::MissingSymbol(GenItemName::Func(sym)) = err {
+            //         dbg!(ctx.interner.get(sym.ident()));
+            //     }
+            // })
             .unwrap();
 
-        todo!()
+        Ok(())
     }
 }
 

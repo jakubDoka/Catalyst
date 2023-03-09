@@ -603,7 +603,7 @@ impl Default for JitHeuristic {
     fn default() -> Self {
         Self {
             run_times: Map::default(),
-            trashold: Duration::from_millis(100),
+            trashold: Duration::from_millis(0),
         }
     }
 }

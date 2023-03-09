@@ -365,7 +365,7 @@ impl<'a> CompileRequestCollector<'a> {
         };
 
         let key = Generator::func_instance_name(
-            false,
+            self.isa.jit,
             &self.isa.triple,
             func_id,
             params.iter().cloned(),
