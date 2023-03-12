@@ -6,12 +6,12 @@ native-x86_64-unknown-linux-gnu4\main[] function u0:0() -> i64 uext fast {
     sig3 = () fast
     sig4 = () fast
     sig5 = () fast
-    fn0 = colocated u0:50 sig0
-    fn1 = colocated u0:51 sig1
-    fn2 = colocated u0:52 sig2
-    fn3 = colocated u0:53 sig3
-    fn4 = colocated u0:54 sig4
-    fn5 = colocated u0:55 sig5
+    fn0 = colocated u0:55 sig0
+    fn1 = colocated u0:56 sig1
+    fn2 = colocated u0:57 sig2
+    fn3 = colocated u0:58 sig3
+    fn4 = colocated u0:59 sig4
+    fn5 = colocated u0:60 sig5
 
 block0:
     call fn0()
@@ -28,9 +28,9 @@ native-x86_64-unknown-linux-gnu4\drop_cond[] function u0:0() fast {
     sig0 = (i32) -> i32 fast
     sig1 = (i64) fast
     sig2 = (i32) fast
-    fn0 = colocated u0:57 sig0
-    fn1 = colocated u0:56 sig1
-    fn2 = colocated u0:58 sig2
+    fn0 = colocated u0:62 sig0
+    fn1 = colocated u0:61 sig1
+    fn2 = colocated u0:63 sig2
 
 block0:
     v0 = iconst.i32 103
@@ -60,7 +60,7 @@ block4:
 native-x86_64-unknown-linux-gnu4\drop[4\A] function u0:0(i32) fast {
     ss0 = explicit_slot 8
     sig0 = (i64) fast
-    fn0 = colocated u0:56 sig0
+    fn0 = colocated u0:61 sig0
 
 block0(v0: i32):
     stack_store v0, ss0
@@ -75,7 +75,7 @@ block0(v0: i32):
 }
 native-x86_64-unknown-linux-gnu4\4\A\drop[] function u0:0(i64) fast {
     sig0 = (i32) -> i32 uext fast
-    fn0 = u0:59 sig0
+    fn0 = u0:64 sig0
 
 block0(v0: i64):
     v1 = load.i32 v0
@@ -89,8 +89,8 @@ native-x86_64-unknown-linux-gnu4\move_in_drop[] function u0:0() fast {
     ss1 = explicit_slot 8
     sig0 = (i32) -> i32 fast
     sig1 = (i64) fast
-    fn0 = colocated u0:57 sig0
-    fn1 = colocated u0:56 sig1
+    fn0 = colocated u0:62 sig0
+    fn1 = colocated u0:61 sig1
 
 block0:
     v0 = iconst.i32 101
@@ -110,9 +110,9 @@ native-x86_64-unknown-linux-gnu4\drop_refed_variable[] function u0:0() fast {
     sig0 = (i32) -> i32 fast
     sig1 = (i64, i32) fast
     sig2 = (i64) fast
-    fn0 = colocated u0:57 sig0
-    fn1 = colocated u0:60 sig1
-    fn2 = colocated u0:56 sig2
+    fn0 = colocated u0:62 sig0
+    fn1 = colocated u0:65 sig1
+    fn2 = colocated u0:61 sig2
 
 block0:
     v0 = iconst.i32 97
@@ -135,9 +135,9 @@ native-x86_64-unknown-linux-gnu4\drop_variable[] function u0:0() fast {
     sig0 = (i32) -> i32 fast
     sig1 = (i64, i32) fast
     sig2 = (i64) fast
-    fn0 = colocated u0:57 sig0
-    fn1 = colocated u0:60 sig1
-    fn2 = colocated u0:56 sig2
+    fn0 = colocated u0:62 sig0
+    fn1 = colocated u0:65 sig1
+    fn2 = colocated u0:61 sig2
 
 block0:
     v0 = iconst.i32 97
@@ -155,9 +155,9 @@ native-x86_64-unknown-linux-gnu4\drop_referenced[] function u0:0() fast {
     sig0 = (i32) -> i32 fast
     sig1 = (i64, i32) fast
     sig2 = (i64) fast
-    fn0 = colocated u0:57 sig0
-    fn1 = colocated u0:60 sig1
-    fn2 = colocated u0:56 sig2
+    fn0 = colocated u0:62 sig0
+    fn1 = colocated u0:65 sig1
+    fn2 = colocated u0:61 sig2
 
 block0:
     v0 = iconst.i32 97
@@ -174,8 +174,8 @@ native-x86_64-unknown-linux-gnu4\drop_unused[] function u0:0() fast {
     ss0 = explicit_slot 8
     sig0 = (i32) -> i32 fast
     sig1 = (i64) fast
-    fn0 = colocated u0:57 sig0
-    fn1 = colocated u0:56 sig1
+    fn0 = colocated u0:62 sig0
+    fn1 = colocated u0:61 sig1
 
 block0:
     v0 = iconst.i32 97

@@ -12,14 +12,14 @@ native-x86_64-unknown-linux-gnu1\main[] function u0:0() -> i64 uext fast {
     sig5 = (i64, i64 uext) -> i64 fast
     sig6 = (i64, i64 uext) -> i64 fast
     sig7 = (i64) fast
-    fn0 = colocated u0:73 sig0
-    fn1 = colocated u0:74 sig1
-    fn2 = colocated u0:75 sig2
-    fn3 = colocated u0:76 sig3
-    fn4 = colocated u0:77 sig4
-    fn5 = colocated u0:78 sig5
-    fn6 = colocated u0:79 sig6
-    fn7 = colocated u0:72 sig7
+    fn0 = colocated u0:78 sig0
+    fn1 = colocated u0:79 sig1
+    fn2 = colocated u0:80 sig2
+    fn3 = colocated u0:81 sig3
+    fn4 = colocated u0:82 sig4
+    fn5 = colocated u0:83 sig5
+    fn6 = colocated u0:84 sig6
+    fn7 = colocated u0:77 sig7
 
 block0:
     v0 = stack_addr.i64 ss0
@@ -97,9 +97,9 @@ native-x86_64-unknown-linux-gnu7\7\Vec\push[7\Vec[uint]] function u0:0(i64, i64 
     sig0 = (i64) fast
     sig1 = (i64, i64 uext) -> i64 fast
     sig2 = (i64, i64 sarg(24)) fast
-    fn0 = colocated u0:87 sig0
-    fn1 = colocated u0:77 sig1
-    fn2 = colocated u0:88 sig2
+    fn0 = colocated u0:92 sig0
+    fn1 = colocated u0:82 sig1
+    fn2 = colocated u0:93 sig2
 
 block0(v0: i64, v1: i64):
     v2 = load.i64 v0+8
@@ -137,7 +137,7 @@ block0(v0: i64, v1: i64):
 }
 native-x86_64-unknown-linux-gnu7\7\Vec\grow[7\Vec[uint]] function u0:0(i64) fast {
     sig0 = (i64, i64 uext) -> i64 fast
-    fn0 = u0:90 sig0
+    fn0 = u0:95 sig0
 
 block0(v0: i64):
     v1 = iconst.i64 0
@@ -180,9 +180,9 @@ native-x86_64-unknown-linux-gnu7\7\Vec\push[uint] function u0:0(i64, i64 uext) f
     sig0 = (i64) fast
     sig1 = (i64, i64 uext) -> i64 fast
     sig2 = (i64, i64 uext) fast
-    fn0 = colocated u0:92 sig0
-    fn1 = colocated u0:93 sig1
-    fn2 = colocated u0:94 sig2
+    fn0 = colocated u0:97 sig0
+    fn1 = colocated u0:98 sig1
+    fn2 = colocated u0:99 sig2
 
 block0(v0: i64, v1: i64):
     v2 = load.i64 v0+8
@@ -223,7 +223,7 @@ block0(v0: i64, v1: i64):
 }
 native-x86_64-unknown-linux-gnu7\7\Vec\grow[uint] function u0:0(i64) fast {
     sig0 = (i64, i64 uext) -> i64 fast
-    fn0 = u0:90 sig0
+    fn0 = u0:95 sig0
 
 block0(v0: i64):
     v1 = iconst.i64 0
@@ -268,10 +268,10 @@ native-x86_64-unknown-linux-gnu7\7\Vec\drop[7\Vec[uint]] function u0:0(i64) fast
     sig1 = (i64 sret, i64) fast
     sig2 = (i64) fast
     sig3 = (i64) fast
-    fn0 = colocated u0:78 sig0
-    fn1 = colocated u0:99 sig1
-    fn2 = colocated u0:98 sig2
-    fn3 = u0:100 sig3
+    fn0 = colocated u0:83 sig0
+    fn1 = colocated u0:104 sig1
+    fn2 = colocated u0:103 sig2
+    fn3 = u0:105 sig3
 
 block0(v0: i64):
     v1 = iconst.i64 0
@@ -321,9 +321,9 @@ native-x86_64-unknown-linux-gnu7\7\Vec\drop[uint] function u0:0(i64) fast {
     sig0 = (i64, i64 uext) -> i64 fast
     sig1 = (i64) -> i64 uext fast
     sig2 = (i64) fast
-    fn0 = colocated u0:79 sig0
-    fn1 = colocated u0:101 sig1
-    fn2 = u0:100 sig2
+    fn0 = colocated u0:84 sig0
+    fn1 = colocated u0:106 sig1
+    fn2 = u0:105 sig2
 
 block0(v0: i64):
     v1 = iconst.i64 0
