@@ -258,7 +258,7 @@ impl CodeAllocator {
         }
     }
 
-    pub fn alloc(&mut self, data: &[u8], align: Align, thread: u8) -> Code {
+    pub fn alloc(&mut self, data: &[u8], align: Align, thread: u8, finished: bool) -> Code {
         let size = data.len();
         let offset = self.align_offset(align);
         let taken = offset + size;
@@ -270,7 +270,7 @@ impl CodeAllocator {
         let code = self.code(offset, size, align, thread);
 
         unsafe {
-            (self.cursor as *mut CodeLock).write(CodeLock::new());
+            (self.cursor as *mut CodeLock).write(CodeLock::new(finished));
             let ptr = self.cursor.add(offset);
             ptr::copy_nonoverlapping(data.as_ptr(), ptr, size);
             self.cursor = self.cursor.add(taken);
@@ -324,7 +324,7 @@ impl CodeAllocator {
 
     fn reset(&self, code: &Code) {
         unsafe {
-            (self.data_ptr(&code) as *mut u8 as *mut CodeLock).write(CodeLock::new());
+            (self.data_ptr(&code) as *mut u8 as *mut CodeLock).write(CodeLock::new(false));
         }
     }
 }
@@ -368,8 +368,8 @@ impl CodeLock {
     const FINISHED: u8 = 1;
     const LOCKED: u8 = 2;
 
-    fn new() -> Self {
-        Self(AtomicU8::new(Self::UNLOCKED))
+    fn new(finished: bool) -> Self {
+        Self(AtomicU8::new(finished as u8))
     }
 
     fn lock(&self) -> bool {

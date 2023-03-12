@@ -6,12 +6,13 @@ use std::{
     time::{Duration, Instant},
 };
 
+use cranelift_frontend::FunctionBuilderContext;
 use mir::*;
-use storage::{FragRef, Interner, Map, PushMap, ShadowMap, SmallVec, VRef, VRefSlice};
+use storage::{BumpVec, FragRef, Interner, Map, PushMap, ShadowMap, SmallVec, VRef, VRefSlice};
 use type_creator::type_creator;
 use types::*;
 
-use crate::{Gen, GenLayouts, JitContext, Jitter, JitterCtx, Layout};
+use crate::{Gen, GenLayouts, Generator, Isa, JitContext, Jitter, JitterCtx, Layout};
 
 pub type IRegister = i64;
 
@@ -25,6 +26,7 @@ pub struct Interpreter<'ctx, 'ext> {
     pub gen: &'ext mut Gen,
     pub jitter: &'ctx mut (dyn Jitter + 'ctx),
     pub jit: &'ctx mut JitContext,
+    pub isa: &'ctx Isa,
 }
 
 impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
@@ -100,16 +102,48 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
             .to_owned();
         let module = &self.mir[body.module()];
         let next_view = body.view(module);
+        let params = view.ty_params[params]
+            .iter()
+            .map(|&ty| self.current.types[ty].ty)
+            .collect::<Vec<_>>();
 
-        let mut frame = StackFrame::explicit_new(
-            view.ty_params[params]
-                .iter()
-                .map(|&ty| self.current.types[ty].ty)
-                .collect(),
-            body,
-            Some(func),
-            self.ctx.stack.len(),
+        let func_name = Generator::func_instance_name(
+            self.isa.jit,
+            &self.isa.triple,
+            func,
+            params.iter().cloned(),
+            self.types,
+            self.interner,
         );
+
+        let ty = self.current.value_ty(return_value, &next_view);
+        let layout = self.layout(ty);
+
+        if let Some(func) = self.gen.get_func(func_name)
+            && let Some(jit_func) = self.jit.get_function(
+                func,
+                self.gen,
+                &mut self.ctx.0.cranelift,
+                &mut self.ctx.0.function_builder_ctx,
+                self.isa
+            )
+        {
+            let args = view.value_args[args]
+                .iter()
+                .filter_map(|&arg| self.current.unpack_slot(arg))
+                .map(|arg| match arg {
+                    IValue::Register(v) => v,
+                    IValue::Memory(p) => p as IRegister,
+                })
+                .collect::<BumpVec<_>>();
+            let ss = self.ctx.create_stack_slot(layout)?;
+
+            unsafe { jit_func.call(args.as_slice(), ss as _) }
+
+            self.current.values[return_value] = Some(ISlot::Value(IValue::Memory(ss)));
+        }
+
+        let mut frame = StackFrame::explicit_new(params, body, Some(func), self.ctx.stack.len());
 
         mir::swap_mir_types(
             &next_view,
@@ -124,8 +158,6 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
             self.assign(source_value, frame.offsets[source], targer, &next_view)?;
         }
 
-        let ty = self.current.value_ty(return_value, &next_view);
-        let layout = self.layout(ty);
         self.ensure_dest(return_value, view, layout)?;
         self.current.values[next_view.ret] = frame.values[return_value];
 
@@ -538,12 +570,26 @@ impl DerefMut for PreparedInterpreterCtx<'_> {
     }
 }
 
-#[derive(Default)]
 pub struct InterpreterCtx {
     stack: Vec<u8>,
     frames: Vec<PushedFrame>,
     fuel: usize,
     jit_heuristic: JitHeuristic,
+    cranelift: cranelift_codegen::Context,
+    function_builder_ctx: FunctionBuilderContext,
+}
+
+impl Default for InterpreterCtx {
+    fn default() -> Self {
+        Self {
+            stack: Vec::new(),
+            frames: Vec::new(),
+            fuel: 0,
+            jit_heuristic: JitHeuristic::default(),
+            cranelift: cranelift_codegen::Context::new(),
+            function_builder_ctx: FunctionBuilderContext::new(),
+        }
+    }
 }
 
 impl InterpreterCtx {

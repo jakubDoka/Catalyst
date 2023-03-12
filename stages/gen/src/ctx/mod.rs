@@ -3,7 +3,10 @@
 //    ptr::{self, NonNull},
 //};
 
-use cranelift_codegen::ir::{AbiParam, StackSlotData, StackSlotKind};
+use cranelift_codegen::{
+    ir::{AbiParam, StackSlotData, StackSlotKind},
+    CompiledCode,
+};
 
 use {
     crate::*,
@@ -262,6 +265,7 @@ impl Gen {
                     cc.buffer.data(),
                     Align::project(cc.alignment as u64),
                     thread,
+                    false,
                 )
                 .into(),
             relocs,
@@ -272,8 +276,24 @@ impl Gen {
         Ok(())
     }
 
+    pub(crate) fn save_adapter(&mut self, adapter_code: &CompiledCode) -> Code {
+        let thread = self.code.thread();
+        self.code.alloc(
+            adapter_code.buffer.data(),
+            Align::project(adapter_code.alignment as u64),
+            thread,
+            true,
+        )
+    }
+
     pub(crate) fn code<'a>(&'a self, func_ref: &Code, finishing: bool) -> CodeGuard<'a> {
         self.code.data(func_ref, finishing)
+    }
+
+    pub(crate) fn finalized_code<'a>(&'a self, func_ref: &Code) -> CodeGuard<'a> {
+        let mut code = self.code(func_ref, false);
+        assert!(code.try_data_mut().is_err());
+        code
     }
 }
 

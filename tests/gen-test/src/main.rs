@@ -187,6 +187,21 @@ fn main() {
             fn main -> uint => PTR_TEST - NUM;
         }
 
+        simple "long-const-compute" {
+            fn expensive() -> uint => {
+                let mut i = 0;
+                loop if i == 100000 => break else {
+                    i = i + 1;
+                };
+                i
+            };
+            break;
+            const C = expensive();
+            const D = expensive();
+            #[entry];
+            fn main -> uint => C - D;
+        }
+
         simple "constant-structures" {
             struct Test {
                 a: uint;

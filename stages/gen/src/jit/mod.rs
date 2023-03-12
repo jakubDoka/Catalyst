@@ -2,7 +2,10 @@ use std::ffi::CStr;
 use std::ops::Not;
 use std::{default::default, mem};
 
+use cranelift_codegen::ir::{self, ArgumentPurpose, InstBuilder};
+use cranelift_codegen::CompiledCode;
 use cranelift_codegen::{binemit::Reloc, ir::LibCall};
+use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use lexing::*;
 use mir::Mir;
 use storage::*;
@@ -32,7 +35,7 @@ compose_error!(JitterError {});
 #[derive(Clone, Copy)]
 pub struct JittedFunc<'a> {
     ptr: *const u8,
-    adapter: fn(*const u8, *mut u64, *mut u64),
+    adapter: extern "C" fn(*const u8, *const i64, *mut i64),
     lt: std::marker::PhantomData<&'a ()>,
 }
 
@@ -40,15 +43,15 @@ impl<'a> JittedFunc<'a> {
     /// # Safety
     /// Caller has to guarantee that the function pointer has correct signature for the adapter
     /// and that arguments have correct lenght as well as rets.
-    pub unsafe fn call(&self, args: &[u64], ret: &mut [u64]) {
-        (self.adapter)(self.ptr, args.as_ptr() as _, ret.as_mut_ptr())
+    pub unsafe fn call(&self, args: &[i64], ret: *mut i64) {
+        (self.adapter)(self.ptr, args.as_ptr(), ret);
     }
 }
 
 #[derive(Clone, Copy)]
 struct InternalJittedFunc {
     ptr: JittedFuncPtr,
-    adapter: Code,
+    adapter: Option<Code>,
 }
 
 #[derive(Clone, Copy)]
@@ -57,10 +60,21 @@ enum JittedFuncPtr {
     Static(*const u8),
 }
 
+impl JittedFuncPtr {
+    fn as_raw_ptr(self, gen: &Gen) -> *const u8 {
+        match self {
+            JittedFuncPtr::Generated(code) => {
+                let code = gen.finalized_code(&code);
+                code.data().as_ptr()
+            }
+            JittedFuncPtr::Static(s) => s,
+        }
+    }
+}
+
 pub struct JitContext {
     exposed_funcs: Map<&'static str, *const u8>,
     functions: Map<CompiledFuncRef, InternalJittedFunc>,
-    pub adapters: Map<CompiledFuncRef, Code>,
     runtime_lookup: RuntimeFunctionLookup,
 }
 
@@ -74,30 +88,41 @@ impl JitContext {
             //       functions: Map::default(),
             //      resources: JitResources::new(),
             functions: default(),
-            adapters: default(),
             runtime_lookup: RuntimeFunctionLookup::new(),
         }
     }
 
     /// # Safety
     /// Caller has to guarantee that the function pointer has correct signature.
-    pub fn get_function<'a>(&self, func: CompiledFuncRef, gen: &'a Gen) -> Option<JittedFunc<'a>> {
-        self.functions.get(&func).map(|f| JittedFunc {
-            ptr: match f.ptr {
-                JittedFuncPtr::Generated(code) => {
-                    let mut code = gen.code(&code, false);
-                    assert!(code.try_data_mut().is_err());
-                    code.data().as_ptr()
-                }
-                JittedFuncPtr::Static(s) => s,
-            },
-            adapter: {
-                let mut code = gen.code(&f.adapter, false);
-                assert!(code.try_data_mut().is_err());
-                unsafe { mem::transmute(code.data().as_ptr()) }
-            },
+    pub fn get_function<'a>(
+        &mut self,
+        func: CompiledFuncRef,
+        gen: &'a mut Gen,
+        ctx: &mut cranelift_codegen::Context,
+        fctx: &mut FunctionBuilderContext,
+        isa: &Isa,
+    ) -> Option<JittedFunc<'a>> {
+        let f = self.functions.get_mut(&func)?;
+        let ptr = f.ptr.as_raw_ptr(gen);
+        let adapter = {
+            let code = f.adapter.get_or_insert_with(|| {
+                let func = gen.get_func_direct(func);
+                let compiled = adapter_for(&func.signature, ctx, fctx, isa);
+                drop(func);
+                gen.save_adapter(compiled)
+            });
+            let code = gen.finalized_code(code);
+            unsafe { mem::transmute(code.data().as_ptr()) }
+        };
+        Some(JittedFunc {
+            ptr,
+            adapter,
             lt: std::marker::PhantomData,
         })
+    }
+
+    pub fn get_function_ptr(&self, func: CompiledFuncRef, gen: &Gen) -> Option<*const u8> {
+        self.functions.get(&func).map(|f| f.ptr.as_raw_ptr(gen))
     }
 
     /// If function is already loaded this call does nothing.
@@ -147,6 +172,7 @@ impl JitContext {
                         func,
                         InternalJittedFunc {
                             ptr: JittedFuncPtr::Static(code),
+                            adapter: None,
                         },
                     ));
                 }
@@ -159,6 +185,7 @@ impl JitContext {
                                 .bytecode
                                 .ok_or(JitRelocError::MissingSymbol(GenItemName::Func(func)))?,
                         ),
+                        adapter: None,
                     },
                 ))
             })
@@ -176,7 +203,7 @@ impl JitContext {
                 gen.code(code, true).try_data_mut().unwrap(),
                 &func_ent.relocs,
                 |name| match name {
-                    GenItemName::Func(func) => self.get_function(func, gen).map(|f| f.ptr),
+                    GenItemName::Func(func) => self.get_function_ptr(func, gen),
                     GenItemName::LibCall(libcall) => {
                         RuntimeFunctionLookup::new().lookup(match libcall {
                             LibCall::Probestack => todo!(),
@@ -323,6 +350,70 @@ impl JitContext {
 
         Ok(())
     }
+}
+
+pub fn adapter_for<'a>(
+    sig: &ir::Signature,
+    ctx: &'a mut cranelift_codegen::Context,
+    fctx: &mut FunctionBuilderContext,
+    isa: &Isa,
+) -> &'a CompiledCode {
+    ctx.func.signature.clear(isa.default_call_conv());
+    ctx.func
+        .signature
+        .params
+        .extend([isa.pointer_type(); 3].map(ir::AbiParam::new));
+
+    let mut builder = FunctionBuilder::new(&mut ctx.func, fctx);
+    let entry = builder.create_block();
+    builder.append_block_params_for_function_params(entry);
+    builder.switch_to_block(entry);
+
+    let &[func, args, ret] = builder.block_params(entry) else {
+        unreachable!();
+    };
+
+    let loaded_args = sig.params.iter().enumerate().map(|(i, param)| {
+        builder.ins().load(
+            param.value_type,
+            ir::MemFlags::trusted(),
+            args,
+            i as i32 * 8,
+        )
+    });
+
+    let ret_arg = sig
+        .params
+        .first()
+        .filter(|arg| arg.purpose == ArgumentPurpose::StructReturn)
+        .map(|_| ret);
+
+    let final_args = ret_arg
+        .into_iter()
+        .chain(loaded_args)
+        .collect::<BumpVec<_>>();
+
+    let sig = builder.import_signature(sig.clone());
+    let call = builder.ins().call_indirect(sig, func, &final_args);
+
+    for (i, ret_component) in builder
+        .inst_results(call)
+        .to_bumpvec()
+        .into_iter()
+        .enumerate()
+    {
+        builder
+            .ins()
+            .store(ir::MemFlags::trusted(), ret_component, ret, i as i32 * 8);
+    }
+
+    builder.ins().return_(&[]);
+
+    builder.finalize();
+
+    ctx.compile(&**isa).unwrap();
+
+    ctx.compiled_code().unwrap()
 }
 
 // macro_rules! gen_macro_structs {

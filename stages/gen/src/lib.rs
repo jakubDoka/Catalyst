@@ -24,7 +24,7 @@ pub use {
     generate::function_loading::abi::{PassMode, PassSignature},
     generate::Generator,
     interpreter::{IRegister, IValue, Interpreter, InterpreterCtx, InterpreterError, StackFrame},
-    jit::{JitAdapter, JitContext, JitRelocError, JittedFunc, Jitter, JitterCtx, JitterError},
+    jit::{JitContext, JitRelocError, JittedFunc, Jitter, JitterCtx, JitterError},
     native::{ObjectContext, ObjectCreationError, ObjectRelocationError},
 };
 

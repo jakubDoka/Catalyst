@@ -712,7 +712,7 @@ impl<'arena, 'ctx> ConstFolderImpl<'arena, 'ctx> {
         self.mir
             .insert_module(self.module_ref, mem::take(self.module_ent));
 
-        let prepared_ctx = self.interpreter.prepare(1 << 20, 10_000);
+        let prepared_ctx = self.interpreter.prepare(1 << 20, 10_000_000);
 
         let mut interp = Interpreter {
             ctx: prepared_ctx,
@@ -722,20 +722,12 @@ impl<'arena, 'ctx> ConstFolderImpl<'arena, 'ctx> {
             layouts: self.layouts,
             current: &mut current,
             gen: self.gen,
+            isa: self.jitter.isa,
             jitter: &mut self.jitter,
             jit: &mut self.jit,
         };
 
-        let value = match interp.interpret() {
-            Ok(v) => v,
-            Err(err) => {
-                let snip = TodoSnippet {
-                    message: format!("Failed to fold constant: {err:?}"),
-                    loc: meta.source_loc(tir_body.span),
-                };
-                ctx.workspace.push(snip)?;
-            }
-        };
+        let value = interp.interpret();
 
         *self.module_ent = self
             .mir
@@ -744,7 +736,16 @@ impl<'arena, 'ctx> ConstFolderImpl<'arena, 'ctx> {
 
         self.module_ent.roll_back(body);
 
-        value
+        match value {
+            Ok(v) => v,
+            Err(err) => {
+                let snip = TodoSnippet {
+                    message: format!("Failed to fold constant: {err:?}"),
+                    loc: meta.source_loc(tir_body.span),
+                };
+                ctx.workspace.push(snip)?;
+            }
+        }
     }
 }
 
