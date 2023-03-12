@@ -1,5 +1,5 @@
 info: generated ir:
-native-x86_64-unknown-linux-gnu1\main[] function u0:0() -> i64 uext fast {
+native-x86_64-unknown-linux-gnu4\main[] function u0:0() -> i64 uext fast {
     ss0 = explicit_slot 32
     ss1 = explicit_slot 24
 

@@ -1,5 +1,5 @@
 info: generated ir:
-native-x86_64-unknown-linux-gnu4\main[] function u0:0() -> i64 uext fast {
+native-x86_64-unknown-linux-gnu1\main[] function u0:0() -> i64 uext fast {
     ss0 = explicit_slot 8
     ss1 = explicit_slot 8
     ss2 = explicit_slot 8
@@ -59,11 +59,11 @@ block0:
     v26 = call fn1(v25)
     return v26
 }
-native-x86_64-unknown-linux-gnu4\uint\dereference[] function u0:0(i64 uext) -> i64 uext fast {
+native-x86_64-unknown-linux-gnu1\uint\dereference[] function u0:0(i64 uext) -> i64 uext fast {
 block0(v0: i64):
     return v0
 }
-native-x86_64-unknown-linux-gnu4\uint\reference[] function u0:0(i64) -> i64 fast {
+native-x86_64-unknown-linux-gnu1\uint\reference[] function u0:0(i64) -> i64 fast {
 block0(v0: i64):
     return v0
 }

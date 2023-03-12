@@ -1,5 +1,5 @@
 info: generated ir:
-native-x86_64-unknown-linux-gnu4\main[] function u0:0() -> i64 uext fast {
+native-x86_64-unknown-linux-gnu1\main[] function u0:0() -> i64 uext fast {
     ss0 = explicit_slot 16
     ss1 = explicit_slot 16
     ss2 = explicit_slot 16
@@ -94,7 +94,7 @@ block9:
     v27 = iconst.i64 0
     return v27  ; v27 = 0
 }
-native-x86_64-unknown-linux-gnu4\4\A\drop[] function u0:0(i64) fast {
+native-x86_64-unknown-linux-gnu1\1\A\drop[] function u0:0(i64) fast {
     sig0 = (i32) -> i32 uext fast
     fn0 = u0:64 sig0
 
