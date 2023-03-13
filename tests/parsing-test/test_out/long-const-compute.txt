@@ -1,0 +1,20 @@
+info: formatted:
+ fn expensive(num: uint) -> uint =>
+	{
+		let mut i = 0
+		loop if i == num => break
+		else {
+			i = i + 1
+		}
+		i
+	}
+
+break
+
+const C = expensive(1000) * 100
+
+const D = expensive(100000)
+#[entry]
+
+fn main -> uint => C * 100 - D
+
