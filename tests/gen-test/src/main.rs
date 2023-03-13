@@ -188,16 +188,16 @@ fn main() {
         }
 
         simple "long-const-compute" {
-            fn expensive() -> uint => {
+            fn expensive(num: uint) -> uint => {
                 let mut i = 0;
-                loop if i == 100000 => break else {
+                loop if i == num => break else {
                     i = i + 1;
                 };
                 i
             };
             break;
-            const C = expensive();
-            const D = expensive();
+            const C = expensive(1000) * 100;
+            const D = expensive(100000);
             #[entry];
             fn main -> uint => C - D;
         }

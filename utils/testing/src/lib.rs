@@ -140,6 +140,8 @@ pub mod items {
             .map(|x| x.get())
             .unwrap_or(1);
 
+        let filter = std::env::args().skip(1).next().unwrap_or_default();
+
         #[derive(Default)]
         struct Thread<T> {
             testable: T,
@@ -159,6 +161,10 @@ pub mod items {
                 scope.spawn(|| {
                     while let Ok(mut handle) = queue.lock() && let Some((name, mut task)) = handle.next() {
                         drop(handle);
+
+                        if !filter.is_empty() && !name.starts_with(&filter) {
+                            continue;
+                        }
 
                         task.add_water();
 

@@ -2,13 +2,15 @@ use std::{
     default::default,
     mem,
     ops::{Deref, DerefMut},
-    ptr::copy_nonoverlapping,
+    ptr::{self, copy_nonoverlapping},
     time::{Duration, Instant},
 };
 
 use cranelift_frontend::FunctionBuilderContext;
 use mir::*;
-use storage::{BumpVec, FragRef, Interner, Map, PushMap, ShadowMap, SmallVec, VRef, VRefSlice};
+use storage::{
+    BumpVec, FragRef, Interner, Map, PushMap, ShadowMap, SmallVec, ToSmallVec, VRef, VRefSlice,
+};
 use type_creator::type_creator;
 use types::*;
 
@@ -38,7 +40,8 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
 
             match err {
                 StepError::Return(data) => {
-                    if let Some(pushed) = self.ctx.frames.pop() {
+                    if let Some(mut pushed) = self.ctx.frames.pop() {
+                        mem::swap(self.current, &mut pushed.frame);
                         self.pop_call(pushed, data);
                     } else {
                         return Ok(data.and_then(|data| self.current.unpack_slot_low(data)));
@@ -53,7 +56,8 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
     }
 
     fn pop_call(&mut self, mut poped: PushedFrame, value: Option<ISlot>) {
-        if let Some(func) = poped.frame.func {
+        dbg!("POP CALL");
+        if let Some(func) = dbg!(poped.frame.func) {
             self.handle_heuristic(func, &poped);
         }
 
@@ -71,6 +75,7 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
             .jit_heuristic
             .needs_jit(func, &poped.frame.params, poped.timestamp.elapsed())
         {
+            dbg!("NOT JITTED");
             return;
         }
 
@@ -85,6 +90,8 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
             jit: self.jit,
         };
         self.jitter.jit(&mut ctx).unwrap();
+
+        dbg!("JITTED");
     }
 
     fn push_call(
@@ -94,7 +101,7 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
         params: VRefSlice<TyMir>,
         args: VRefSlice<ValueMir>,
         return_value: VRef<ValueMir>,
-    ) -> Result<(), StepError> {
+    ) -> Result<Option<ISlot>, StepError> {
         let body = self
             .mir
             .get_func(func, &self.types.cache.funcs)
@@ -138,12 +145,15 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
                 .collect::<BumpVec<_>>();
             let ss = self.ctx.create_stack_slot(layout)?;
 
+            let now = Instant::now();
             unsafe { jit_func.call(args.as_slice(), ss as _) }
+            dbg!(now.elapsed());
 
-            self.current.values[return_value] = Some(ISlot::Value(IValue::Memory(ss)));
+            return Ok(Some(ISlot::Value(IValue::Memory(ss).normalize(layout))));
         }
 
-        let mut frame = StackFrame::explicit_new(params, body, Some(func), self.ctx.stack.len());
+        let mut frame =
+            StackFrame::explicit_new(params, body, dbg!(Some(func)), self.ctx.stack.len());
 
         mir::swap_mir_types(
             &next_view,
@@ -167,7 +177,7 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
             timestamp: Instant::now(),
         });
 
-        Ok(())
+        Err(StepError::Call)
     }
 
     fn step(&mut self) -> Result<(), StepError> {
@@ -252,8 +262,7 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
             return self.call_builtin(func, params, args, view);
         }
 
-        self.push_call(view, func, params, args, return_value)?;
-        Err(StepError::Call)
+        self.push_call(view, func, params, args, return_value)
     }
 
     fn call_builtin(
@@ -267,22 +276,26 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
             name, signature, ..
         } = self.types[func];
 
-        let op_str = name
-            .get(self.interner)
-            .split_whitespace()
-            .nth(1)
-            .unwrap_or(name.get(self.interner));
-
         let args = view.value_args[args]
             .iter()
-            .map(|&arg| match self.current.unpack_slot(arg) {
-                Some(IValue::Register(value)) => value,
-                _ => unreachable!(),
+            .map(|&arg| {
+                let layout = self.layout(self.current.value_ty(arg, view));
+                match self.current.unpack_slot(arg).map(|a| a.normalize(layout)) {
+                    Some(IValue::Register(value)) => value,
+                    Some(IValue::Memory(x)) => x as IRegister,
+                    _ => unreachable!(),
+                }
             })
             .collect::<SmallVec<[_; 2]>>();
 
         let signed = signature.ret.is_signed();
         let float = signature.ret.is_float();
+
+        let op_str = name
+            .get(self.interner)
+            .split_whitespace()
+            .nth(1)
+            .unwrap_or(name.get(self.interner));
 
         let value = match op_str {
             "sizeof" => {
@@ -630,7 +643,7 @@ impl JitHeuristic {
             .run_times
             .entry(FuncKey {
                 id: func,
-                params: params.iter().copied().collect(),
+                params: params.to_smallvec(),
             })
             .or_default();
         entry.runtime += time;
@@ -758,7 +771,24 @@ pub enum IValue {
     Memory(*mut u8),
 }
 
-impl IValue {}
+impl IValue {
+    fn normalize(self, layout: Layout) -> IValue {
+        match self {
+            IValue::Memory(x) if layout.size <= mem::size_of::<IRegister>() as u32 => {
+                let mut array = [0u8; mem::size_of::<IRegister>()];
+                unsafe {
+                    ptr::copy_nonoverlapping(
+                        x as *const u8,
+                        array.as_mut_ptr(),
+                        layout.size as usize,
+                    );
+                }
+                Self::Register(IRegister::from_ne_bytes(array))
+            }
+            val => val,
+        }
+    }
+}
 
 unsafe impl Send for IValue {}
 

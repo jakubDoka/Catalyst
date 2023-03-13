@@ -408,6 +408,7 @@ pub fn adapter_for<'a>(
     }
 
     builder.ins().return_(&[]);
+    builder.seal_block(entry);
 
     builder.finalize();
 
