@@ -80,16 +80,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in library 'bump-alloc'",
+            "name": "Debug unit tests in library 'entities'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
                     "--lib",
-                    "--package=bump-alloc"
+                    "--package=entities"
                 ],
                 "filter": {
-                    "name": "bump-alloc",
+                    "name": "entities",
                     "kind": "lib"
                 }
             },

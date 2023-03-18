@@ -6,7 +6,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use bump_alloc::*;
+use entities::*;
 
 use rkyv::{Archive, Deserialize, Serialize};
 
@@ -158,11 +158,11 @@ pub struct PushMap<T> {
 }
 
 impl<T: Relocated> Relocated for PushMap<T> {
-    fn mark(&self, marker: &mut bump_alloc::FragRelocMarker) {
+    fn mark(&self, marker: &mut entities::FragRelocMarker) {
         self.data.mark(marker);
     }
 
-    fn remap(&mut self, ctx: &bump_alloc::FragMarks) -> Option<()> {
+    fn remap(&mut self, ctx: &entities::FragMarks) -> Option<()> {
         self.data.remap(ctx)
     }
 }

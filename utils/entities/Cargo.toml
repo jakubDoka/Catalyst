@@ -1,0 +1,13 @@
+[package]
+name = "catalyst_entities"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Low level data structures for multithreaded compilation."
+
+[dependencies]
+region = "3.0.0"
+dashmap = "5.4.0"
+smallvec = { version = "1.10.0", features = ["union"] }
+arc-swap = { version = "1.5.1" }
+rkyv = { version = "0.7.39", features = ["copy"] }

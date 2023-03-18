@@ -250,8 +250,8 @@ mod shadow_map;
 
 pub use {
     bit_set::BitSet,
-    bump_alloc::*,
     clear::{map_in_place, Clear},
+    entities::*,
     frames::Frames,
     lifetime_erasure::{Active, Erasable},
     ordered_map::OrderedMap,
