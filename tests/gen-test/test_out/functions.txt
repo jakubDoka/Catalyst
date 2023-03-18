@@ -1,14 +1,14 @@
 info: generated ir:
-native-x86_64-unknown-linux-gnu3\main[] function u0:0() -> i64 uext fast {
+native-x86_64-unknown-linux-gnu6\main[] function u0:0() -> i64 uext fast {
     sig0 = (i64 uext) -> i64 uext fast
-    fn0 = colocated u0:9 sig0
+    fn0 = colocated u0:10 sig0
 
 block0:
     v0 = iconst.i64 0
     v1 = call fn0(v0)  ; v0 = 0
     return v1
 }
-native-x86_64-unknown-linux-gnu3\pass[] function u0:0(i64 uext) -> i64 uext fast {
+native-x86_64-unknown-linux-gnu6\pass[] function u0:0(i64 uext) -> i64 uext fast {
 block0(v0: i64):
     return v0
 }

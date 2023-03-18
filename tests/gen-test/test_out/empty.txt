@@ -1,0 +1,7 @@
+info: generated ir:
+
+
+info: status: exit status: 0
+ = info: stdout: 
+ = info: stderr: 
+
