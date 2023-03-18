@@ -1,7 +1,7 @@
 info: generated ir:
 native-x86_64-unknown-linux-gnu4\main[] function u0:0() -> i64 uext fast {
     sig0 = (i64 uext) -> i64 uext fast
-    fn0 = colocated u0:49 sig0
+    fn0 = colocated u0:47 sig0
 
 block0:
     v0 = iconst.i64 10
@@ -26,8 +26,7 @@ block1(v6: i64, v14: i64, v15: i64):
     v4 = iconst.i64 1
     v5 = isub.i64 v0, v4  ; v4 = 1
     v7 = icmp eq v6, v5
-    brnz v7, block2
-    jump block3
+    brif v7, block2, block3
 
 block3:
     v10 = iadd.i64 v8, v9

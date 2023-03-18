@@ -4,7 +4,7 @@ native-x86_64-unknown-linux-gnu1\main[] function u0:0() -> i64 uext fast {
     ss1 = explicit_slot 16
     ss2 = explicit_slot 16
     sig0 = (i64) fast
-    fn0 = colocated u0:64 sig0
+    fn0 = colocated u0:62 sig0
 
 block0:
     v0 = iconst.i8 0
@@ -14,8 +14,7 @@ block0:
     v2 = stack_addr.i64 ss0
     v3 = load.i8 v2
     v4 = icmp_imm eq v3, 0
-    brnz v4, block3
-    jump block2
+    brif v4, block3, block2
 
 block3:
     v5 = iadd_imm.i64 v2, 4
@@ -24,8 +23,7 @@ block3:
 
 block2:
     v6 = icmp_imm.i8 eq v3, 1
-    brnz v6, block4
-    jump block1
+    brif v6, block4, block1
 
 block4:
     v7 = iadd_imm.i64 v2, 4
@@ -44,8 +42,7 @@ block1:
     v12 = stack_addr.i64 ss1
     v13 = load.i8 v12
     v14 = icmp_imm eq v13, 0
-    brnz v14, block7
-    jump block6
+    brif v14, block7, block6
 
 block7:
     v15 = iadd_imm.i64 v12, 4
@@ -54,8 +51,7 @@ block7:
 
 block6:
     v16 = icmp_imm.i8 eq v13, 1
-    brnz v16, block8
-    jump block5
+    brif v16, block8, block5
 
 block8:
     v17 = iadd_imm.i64 v12, 4
@@ -70,8 +66,7 @@ block5:
     v20 = stack_addr.i64 ss2
     v21 = load.i8 v20
     v22 = icmp_imm eq v21, 0
-    brnz v22, block11
-    jump block10
+    brif v22, block11, block10
 
 block11:
     v23 = iadd_imm.i64 v20, 4
@@ -80,8 +75,7 @@ block11:
 
 block10:
     v24 = icmp_imm.i8 eq v21, 1
-    brnz v24, block12
-    jump block9
+    brif v24, block12, block9
 
 block12:
     v25 = iadd_imm.i64 v20, 4
@@ -96,7 +90,7 @@ block9:
 }
 native-x86_64-unknown-linux-gnu1\1\A\drop[] function u0:0(i64) fast {
     sig0 = (i32) -> i32 uext fast
-    fn0 = u0:67 sig0
+    fn0 = u0:65 sig0
 
 block0(v0: i64):
     v1 = load.i32 v0
