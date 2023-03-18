@@ -14,6 +14,7 @@ pub type Map<K, V> = HashMap<K, V, FvnBuildHasher>;
 pub type Set<T> = HashSet<T, FvnBuildHasher>;
 pub type CSet<K> = Arc<DashSet<K, FvnBuildHasher>>;
 
+/// Wrapper around DashMap that implements `rkyv` traits.
 #[repr(transparent)]
 #[derive(Archive, Serialize, Deserialize)]
 pub struct CMap<K, V> {
@@ -64,6 +65,7 @@ const FVN_OFFSET: u64 = 0xcbf29ce484222325;
 
 pub type FvnBuildHasher = BuildHasherDefault<FvnHasher>;
 
+/// Simply because pulling a crate for this is overkill.
 pub struct FvnHasher(u64);
 
 impl Default for FvnHasher {

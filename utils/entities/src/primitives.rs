@@ -6,7 +6,8 @@ use std::{
     ops::Range,
 };
 
-use rkyv::with::Skip;
+use crate::{frag_map::addr::NonMaxU32, FragAddr, FragSliceAddr};
+use rkyv::{Archive, Deserialize, Serialize};
 
 macro_rules! gen_derives {
     ($ident:ident) => {
@@ -61,6 +62,12 @@ macro_rules! gen_derives {
     };
 }
 
+pub type OptFragRef<T> = Option<FragRef<T>>;
+pub type FragRefSlice<T> = FragSlice<FragRef<T>>;
+pub type OptVRef<T> = Option<VRef<T>>;
+pub type VRefSlice<T> = VSlice<VRef<T>>;
+
+/// An id pointing to some item in frag storage family. Wrapper aroung untyped `FragAddr`.
 #[repr(transparent)]
 #[derive(Archive, Serialize, Deserialize)]
 pub struct FragRef<T: ?Sized>(pub(crate) FragAddr, pub(crate) PhantomData<*const T>);
@@ -85,27 +92,24 @@ impl<T: ?Sized> FragRef<T> {
         Self(addr, PhantomData)
     }
 
+    /// Converts ref to slice with length 1.
     pub const fn as_slice(self) -> FragSlice<T> {
         FragSlice::new(self.0.as_slice())
     }
 
-    pub const fn right_after(self, key: FragRef<T>) -> bool {
-        self.0.right_after(key.0)
-    }
-
+    /// Returns inner adress.
     pub const fn addr(self) -> FragAddr {
         self.0
     }
 
+    /// returns self encoded into u64. Encoding tries to make resulting value as small as possible.
     pub const fn bits(self) -> u64 {
         (self.0.index as u64) << 8 | self.0.thread as u64
     }
 }
 
-pub type OptFragRef<T> = Option<FragRef<T>>;
-
+/// An id pointing to 0..n items in frag storage family. Wrapper aroung untyped `FragSliceAddr`.
 #[derive(Archive, Serialize, Deserialize)]
-
 pub struct FragSlice<T: ?Sized>(pub(crate) FragSliceAddr, pub(crate) PhantomData<*const T>);
 gen_derives!(FragSlice);
 
@@ -123,8 +127,6 @@ impl<T: ?Sized> PartialEq for ArchivedFragSlice<T> {
 
 impl<T: ?Sized> Eq for ArchivedFragSlice<T> {}
 
-pub type FragRefSlice<T> = FragSlice<FragRef<T>>;
-
 impl<T: ?Sized> FragSlice<T> {
     pub const fn new(addr: FragSliceAddr) -> Self {
         Self(addr, PhantomData)
@@ -138,12 +140,14 @@ impl<T: ?Sized> FragSlice<T> {
         self.len() == 0
     }
 
+    /// Returns iterator over adresses inside the slice.
     pub fn keys(
         &self,
     ) -> impl Iterator<Item = FragRef<T>> + DoubleEndedIterator + ExactSizeIterator {
         self.0.keys().map(|addr| FragRef(addr, PhantomData))
     }
 
+    /// Projects slice local index to collection global index.
     pub fn index(self, index: usize) -> FragRef<T> {
         self.keys().nth(index).expect("index out of bounds")
     }
@@ -152,6 +156,7 @@ impl<T: ?Sized> FragSlice<T> {
         Self(FragSliceAddr::default(), PhantomData)
     }
 
+    /// Returns inner adress.
     pub const fn addr(self) -> FragSliceAddr {
         self.0
     }
@@ -163,6 +168,7 @@ impl<T: ?Sized> Default for FragSlice<T> {
     }
 }
 
+/// Option type that has same layout as Catalyst Option type.
 #[repr(C, u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CtlOption<T> {
@@ -193,52 +199,9 @@ impl<T> From<CtlOption<T>> for Option<T> {
     }
 }
 
-pub trait TransposeOption: Sized {
-    fn transpose(self) -> Self;
-}
-
-impl<T> TransposeOption for Option<Option<T>> {
-    fn transpose(self) -> Self {
-        match self {
-            Some(Some(x)) => Some(Some(x)),
-            Some(None) => None,
-            None => Some(None),
-        }
-    }
-}
-
-pub trait NoShortCircuitCollect {
-    type Item;
-    fn nsc_collect<T: FromIterator<Self::Item>>(self) -> T;
-}
-
-impl<E, I> NoShortCircuitCollect for I
-where
-    I: Iterator<Item = E>,
-{
-    type Item = E;
-
-    #[inline]
-    fn nsc_collect<T: FromIterator<Self::Item>>(mut self) -> T {
-        let res = self.by_ref().collect();
-        self.for_each(drop);
-        res
-    }
-}
-
-use rkyv::{Archive, Deserialize, Serialize};
-
-use crate::{frag_map::addr::NonMaxU32, FragAddr, FragSliceAddr};
-
-pub type VRefSlice<T> = VSlice<VRef<T>>;
-
-pub trait VRefDefault {
-    fn default_state() -> VRef<Self>;
-}
-
+/// Virtual pointer of just an index to some collection.
 #[repr(transparent)]
 #[derive(Archive, Serialize, Deserialize)]
-
 pub struct VRef<T: ?Sized>(NonMaxU32, PhantomData<*const T>);
 
 impl<T: ?Sized> Hash for ArchivedVRef<T> {
@@ -255,14 +218,10 @@ impl<T: ?Sized> PartialEq for ArchivedVRef<T> {
 
 impl<T: ?Sized> Eq for ArchivedVRef<T> {}
 
-pub type OptVRef<T> = Option<VRef<T>>;
-
 gen_derives!(VRef);
 
 impl<T: ?Sized> VRef<T> {
     /// Creates new VRef from index.
-    /// # Safety
-    /// The index must be valid for using collection.
     #[inline(always)]
     pub const fn new(id: usize) -> Self {
         Self(unsafe { NonMaxU32::new_unchecked(id as u32) }, PhantomData)
@@ -279,19 +238,9 @@ impl<T: ?Sized> VRef<T> {
     }
 
     /// Casts VRef to VRef of another type.
-    /// # Safety
-    /// The index must be valid for using collection or cannot
-    /// be used in any collection.
     #[inline(always)]
-    pub unsafe fn cast<V: ?Sized>(self) -> VRef<V> {
-        std::mem::transmute(self)
-    }
-}
-
-impl<T: VRefDefault + ?Sized> Default for VRef<T> {
-    #[inline(always)]
-    fn default() -> Self {
-        T::default_state()
+    pub fn cast<V: ?Sized>(self) -> VRef<V> {
+        unsafe { std::mem::transmute(self) }
     }
 }
 
@@ -307,9 +256,9 @@ impl const ReprComply for u32 {
     }
 }
 
+/// Virtual slice, usually attached to some collection. Uses indexing instead of pointers.
 #[derive(Archive, Serialize, Deserialize)]
-
-pub struct VSlice<T: ?Sized>(u32, u32, #[with(Skip)] PhantomData<*const T>);
+pub struct VSlice<T: ?Sized>(u32, u32, PhantomData<*const T>);
 
 impl<T> VSlice<T> {
     /// Creates new VSlice from index.
@@ -363,3 +312,36 @@ impl<T> Default for VSlice<T> {
 }
 
 gen_derives!(VSlice);
+
+pub trait TransposeOption: Sized {
+    fn transpose(self) -> Self;
+}
+
+impl<T> TransposeOption for Option<Option<T>> {
+    fn transpose(self) -> Self {
+        match self {
+            Some(Some(x)) => Some(Some(x)),
+            Some(None) => None,
+            None => Some(None),
+        }
+    }
+}
+
+pub trait NoShortCircuitCollect {
+    type Item;
+    fn nsc_collect<T: FromIterator<Self::Item>>(self) -> T;
+}
+
+impl<E, I> NoShortCircuitCollect for I
+where
+    I: Iterator<Item = E>,
+{
+    type Item = E;
+
+    #[inline]
+    fn nsc_collect<T: FromIterator<Self::Item>>(mut self) -> T {
+        let res = self.by_ref().collect();
+        self.for_each(drop);
+        res
+    }
+}

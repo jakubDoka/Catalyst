@@ -30,12 +30,15 @@ pub mod relocator;
 pub mod shadow;
 pub mod sync;
 
+/// Helps splitting arrays of owned values into separate items without lifetimes.
+/// Everithing is dropped when all cluster borrows and the cluster is dropped.
 #[derive(Archive, Serialize, Deserialize)]
 pub struct Cluster<T> {
     allocs: ArcVec<T>,
 }
 
 impl<T> Cluster<T> {
+    /// Creates a new cluster with the given number of threads.
     pub fn new(thread_count: u8) -> Self
     where
         T: Default,
@@ -49,16 +52,22 @@ impl<T> Cluster<T> {
         }
     }
 
+    /// gives mutable access to stored data
+    ///
+    /// # Panics
+    /// Panics if the cluster is still shared.
     pub fn lanes(&mut self) -> &mut [T] {
-        unsafe {
-            assert!(ArcVecInner::is_unique(self.allocs.0));
-            ArcVecInner::full_data_mut(self.allocs.0)
-        }
+        assert!(self.allocs.is_unique());
+        unsafe { ArcVecInner::full_data_mut(self.allocs.0) }
     }
 
+    /// gives mutable access to stored data and an iterator over the borrows
+    ///
+    /// # Panics
+    /// Panics if the cluster is still shared.
     pub fn split(&self) -> impl Iterator<Item = ClusterBorrow<T>> + '_ {
+        assert!(self.allocs.is_unique());
         unsafe {
-            assert!(ArcVecInner::is_unique(self.allocs.0));
             ArcVecInner::full_data_mut(self.allocs.0)
                 .iter_mut()
                 .map(|borrowed| ClusterBorrow {
@@ -68,6 +77,7 @@ impl<T> Cluster<T> {
         }
     }
 
+    /// extends cluster up to the given thread count
     pub fn expand(&mut self, thread_count: u8)
     where
         T: Default,
@@ -79,6 +89,7 @@ impl<T> Cluster<T> {
         );
     }
 
+    /// thread count getter
     pub fn thread_count(&self) -> u8 {
         unsafe { crate::field!(self.allocs.0 => len) as u8 }
     }
@@ -87,12 +98,14 @@ impl<T> Cluster<T> {
 unsafe impl<T: Send> Send for Cluster<T> {}
 unsafe impl<T: Sync> Sync for Cluster<T> {}
 
+/// Borrowed cluster item. It holds refcount to cluster.
 pub struct ClusterBorrow<T> {
     borrowed: *mut T,
     backing: ArcVec<T>,
 }
 
 impl<T> ClusterBorrow<T> {
+    /// thread id getter (within the cluster)
     pub fn thread(&self) -> u8 {
         let data_ptr = unsafe { crate::field!(self.backing.0 => ref data) };
         ((self.borrowed as usize - data_ptr as usize) / std::mem::size_of::<T>()) as u8
@@ -116,19 +129,27 @@ impl<T> DerefMut for ClusterBorrow<T> {
     }
 }
 
+/// Implemented by anything that does not contain interior mutability.
 /// # Safety
-/// Trait should be only used and never derived.
+/// Trait should be only used as bound and never derived.
 pub unsafe auto trait NoInteriorMutability {}
 
 impl<T: ?Sized> !NoInteriorMutability for UnsafeCell<T> {}
 
+/// Think of it as paralell Vector. Its contents can be accessed by `FragRef` and `FragSlice`. It
+/// can produce valid FragRefs that are initially mutable and thread local, and later can be
+/// promoted to shared and immutable. The access complexity is O(1) but involves double
+/// indirection. This structure does bound checks of each access.
+///
+/// Structure is designed to be sent between main and worker thread, worker thread can push new
+/// items and main thread commits them to the `FragBase` and pulls updates from it.
 pub struct FragMap<T> {
     others: Box<[FragVec<T>]>,
     thread_local: FragVec<T>,
 }
 
 impl<T> FragMap<T> {
-    fn new_in(others: Box<[FragVec<T>]>, thread: usize) -> Self {
+    fn new(others: Box<[FragVec<T>]>, thread: usize) -> Self {
         let thread_local = others[thread].clone();
         Self {
             others,
@@ -136,12 +157,15 @@ impl<T> FragMap<T> {
         }
     }
 
+    /// Returned `FragRef` is initially mutable and thread local, after calling `commit` it will be
+    /// promoted to shared and immutable.
     pub fn push(&mut self, value: T) -> FragRef<T> {
         let (id, reallocated) = self.thread_local.push(value);
         self.handle_reallocation(reallocated);
         id
     }
 
+    /// Analogous to push but handles sequences.
     pub fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) -> FragSlice<T>
     where
         I::IntoIter: ExactSizeIterator,
@@ -151,16 +175,19 @@ impl<T> FragMap<T> {
         addr
     }
 
+    /// Freezes the thread local data and makes it shared.
     pub fn commit(&mut self, base: &mut FragBase<T>) {
         self.thread_local.freeze();
         base.threads[self.thread_local.thread as usize] = self.thread_local.clone();
     }
 
+    /// Freezes the thread local data and makes it shared. Consuming version avoids cloning.
     pub fn commit_unique(self, base: &mut FragBase<T>) {
         let thread = self.thread_local.thread as usize;
         base.threads[thread] = self.thread_local;
     }
 
+    /// Pulls updates from possibli commited by other `FragMap`s.
     pub fn pull(&mut self, base: &FragBase<T>) {
         self.others.clone_from_slice(&base.threads);
     }
@@ -173,6 +200,7 @@ impl<T> FragMap<T> {
         self.others[self.thread_local.thread as usize] = self.thread_local.clone();
     }
 
+    /// Returns iterator over slice items along with their `FragRef`.
     pub fn indexed(
         &self,
         slice: FragSlice<T>,
@@ -183,6 +211,7 @@ impl<T> FragMap<T> {
         slice.keys().zip(self[slice].iter())
     }
 
+    /// Returns next `FragRef` that will be returned by `push`.
     pub fn next(&self) -> FragRef<T> {
         self.thread_local.next()
     }
@@ -273,12 +302,16 @@ impl<T: NoInteriorMutability> IndexMut<FragSlice<T>> for FragMap<T> {
     }
 }
 
+/// Structure is able to create `FragMaps` that can be distributed to other threads. Its a
+/// synchronization point for all threads but does not require any synchronization primitives,
+/// rather it is designed for channel based communication.
 #[derive(Archive, Deserialize, Serialize)]
 pub struct FragBase<T> {
     threads: Box<[FragVec<T>]>,
 }
 
 impl<T> FragBase<T> {
+    /// Creates new `FragBase` with `thread_count` threads.
     pub fn new(thread_count: u8) -> Self {
         let threads = (0..thread_count)
             .map(|thread| FragVec::new(thread))
@@ -287,6 +320,7 @@ impl<T> FragBase<T> {
         Self { threads }
     }
 
+    /// Extend `FragBase` to `thread_count` threads.
     pub fn expand(&mut self, thread_count: u8) {
         let threads = (self.threads.len() as u8..thread_count).map(|thread| FragVec::new(thread));
         let current = mem::take(&mut self.threads);
@@ -299,11 +333,17 @@ impl<T> FragBase<T> {
         &ArcVecInner::full_data(thread.inner.0)[index as usize..index as usize + len as usize]
     }
 
+    /// Returns iterator of fragmaps, distributing access to threads.
+    ///
+    /// # Panics
+    /// Panics `FragMaps` belonging to this `FragBase` still exists. (eg. Subsequent call to
+    /// split while keeping `FragMaps` alive)
     pub fn split(&mut self) -> impl Iterator<Item = FragMap<T>> + '_ {
         assert!(self.is_unique());
-        (0..self.threads.len()).map(|thread| FragMap::new_in(self.threads.clone(), thread))
+        (0..self.threads.len()).map(|thread| FragMap::new(self.threads.clone(), thread))
     }
 
+    /// Returns whether all `FragMaps` belonging to this `FragBase` are dropped.
     pub fn is_unique(&mut self) -> bool {
         self.threads
             .iter()

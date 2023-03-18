@@ -142,7 +142,7 @@ pub use {
     map::{CMap, CSet, FvnBuildHasher, Map, Set},
     primitives::{
         CtlOption, FragRef, FragRefSlice, FragSlice, NoShortCircuitCollect, OptFragRef, OptVRef,
-        TransposeOption, VRef, VRefDefault, VRefSlice, VSlice,
+        TransposeOption, VRef, VRefSlice, VSlice,
     },
     smallvec,
 };
