@@ -89,7 +89,7 @@ macro_rules! transmute_arkive {
                 resolver: Self::Resolver,
                 out: *mut Self::Archived,
             ) {
-                std::mem::transmute_copy::<_, $repr>(field).resolve(pos, resolver, out)
+                std::mem::transmute::<_, $repr>(*field).resolve(pos, resolver, out)
             }
         }
 
@@ -99,7 +99,7 @@ macro_rules! transmute_arkive {
                 serializer: &mut S,
             ) -> Result<Self::Resolver, <S as rkyv::Fallible>::Error> {
                 // SAFETY: ther is none
-                unsafe { std::mem::transmute_copy::<_, $repr>(field).serialize(serializer) }
+                unsafe { std::mem::transmute::<_, $repr>(*field).serialize(serializer) }
             }
         }
 
@@ -108,7 +108,7 @@ macro_rules! transmute_arkive {
                 field: &rkyv::Archived<$repr>,
                 _deserializer: &mut D,
             ) -> Result<$ty, <D as rkyv::Fallible>::Error> {
-                Ok(unsafe { std::mem::transmute_copy::<_, $ty>(field) })
+                Ok(unsafe { std::mem::transmute::<_, $ty>(*field) })
             }
         }
     };

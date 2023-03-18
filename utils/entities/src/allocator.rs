@@ -235,7 +235,7 @@ mod chunk {
         Archive, Archived, Deserialize, Fallible, Serialize,
     };
 
-    transmute_arkive!(ArchivedProtection(region::Protection => usize));
+    transmute_arkive!(ArchivedProtection(region::Protection => u64));
 
     pub struct Chunk {
         data: region::Allocation,
@@ -265,7 +265,7 @@ mod chunk {
 
     pub struct ArchivedChunk {
         data: ArchivedVec<u8>,
-        protection: Archived<usize>,
+        protection: Archived<u64>,
     }
 
     impl Archive for Chunk {
@@ -277,7 +277,7 @@ mod chunk {
             let (o, f) = out_field!(out.data);
             ArchivedVec::<u8>::resolve_from_len(self.len(), pos + o, resolver, f);
             let (o, f) = out_field!(out.protection);
-            <Archived<usize>>::resolve(&(self.protection.bits() as u32), pos + o, default(), f);
+            <Archived<u64>>::resolve(&(self.protection.bits() as u64), pos + o, default(), f);
         }
     }
 

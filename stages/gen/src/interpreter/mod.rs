@@ -55,17 +55,13 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
         Err(InterpreterError::OutOfFuel)
     }
 
-    fn pop_call(&mut self, mut poped: PushedFrame, value: Option<ISlot>) {
-        dbg!("POP CALL");
-        if let Some(func) = dbg!(poped.frame.func) {
+    fn pop_call(&mut self, poped: PushedFrame, value: Option<ISlot>) {
+        if let Some(func) = poped.frame.func {
             self.handle_heuristic(func, &poped);
         }
 
         self.ctx.stack.truncate(self.current.frame_base as usize);
-        poped.frame.values[poped.return_value] = value;
-        *self.current = poped.frame;
-        // when pus_call happens the instr of caller is
-        // not advanced
+        self.current.values[poped.return_value] = value;
         self.current.instr += 1;
     }
 
@@ -75,7 +71,6 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
             .jit_heuristic
             .needs_jit(func, &poped.frame.params, poped.timestamp.elapsed())
         {
-            dbg!("NOT JITTED");
             return;
         }
 
@@ -90,8 +85,6 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
             jit: self.jit,
         };
         self.jitter.jit(&mut ctx).unwrap();
-
-        dbg!("JITTED");
     }
 
     fn push_call(
@@ -145,15 +138,12 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
                 .collect::<BumpVec<_>>();
             let ss = self.ctx.create_stack_slot(layout)?;
 
-            let now = Instant::now();
             unsafe { jit_func.call(args.as_slice(), ss as _) }
-            dbg!(now.elapsed());
 
             return Ok(Some(ISlot::Value(IValue::Memory(ss).normalize(layout))));
         }
 
-        let mut frame =
-            StackFrame::explicit_new(params, body, dbg!(Some(func)), self.ctx.stack.len());
+        let mut frame = StackFrame::explicit_new(params, body, Some(func), self.ctx.stack.len());
 
         mir::swap_mir_types(
             &next_view,

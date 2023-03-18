@@ -236,14 +236,10 @@ impl<'ctx> PackageLoader<'ctx> {
 
         let getter = |package: VRef<Package>| {
             let path = &self.resources.packages[package].root_module;
-            ctx.modules
-                .get(path)
-                .map(|m| m.ordering)
-                .map(VRef::new)
-                .expect("it was in the frontier so it must exist")
+            ctx.modules.get(path).map(|m| m.ordering).map(VRef::new)
         };
 
-        Some([getter(package), getter(Resources::BUILTIN_PACKAGE)])
+        Some([getter(package)?, getter(Resources::BUILTIN_PACKAGE)?])
     }
 
     fn load_module(

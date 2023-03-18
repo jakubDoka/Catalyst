@@ -126,6 +126,8 @@ fn main() {
     gen_test! {
         TestState,
         false,
+        simple "empty" {}
+
         simple "functions" {
             #[entry];
             fn main -> uint => pass(0);

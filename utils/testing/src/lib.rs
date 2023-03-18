@@ -154,14 +154,17 @@ pub mod items {
             .take(thread_count)
             .collect::<Vec<_>>();
 
-        let queue = Mutex::new(tests.into_iter());
+        let mut tasks = iter::repeat_with(Vec::new)
+            .take(thread_count)
+            .collect::<Vec<_>>();
+        for ((name, task), i) in tests.into_iter().zip((0..thread_count).cycle()) {
+            tasks[i].push((name, task));
+        }
 
         std::thread::scope(|scope| {
-            for thread in threads.iter_mut() {
+            for (thread, tasks) in threads.iter_mut().zip(tasks) {
                 scope.spawn(|| {
-                    while let Ok(mut handle) = queue.lock() && let Some((name, mut task)) = handle.next() {
-                        drop(handle);
-
+                    for (name, mut task) in tasks {
                         if !filter.is_empty() && !name.starts_with(&filter) {
                             continue;
                         }
@@ -175,7 +178,10 @@ pub mod items {
 
                         io::set_output_capture(None);
                         if let Ok(mut handle) = thread.stdout.lock() {
-                            let message = format!("Test {name} stdout:\n{}", String::from_utf8_lossy(&handle));
+                            let message = format!(
+                                "Test {name} stdout:\n{}",
+                                String::from_utf8_lossy(&handle)
+                            );
                             handle.clear();
                             println!("{}", message);
                         }

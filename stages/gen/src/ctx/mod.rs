@@ -59,8 +59,6 @@ pub enum ComputedConst {
     Unit,
 }
 
-transmute_arkive!(TripleArchive(Triple => [u8; 40]));
-
 // pub struct ComputedConstMemory {
 //     data: *mut u8,
 //     layout: alloc::Layout,
@@ -453,7 +451,7 @@ impl CompileRequests {
     pub fn split(&self, thread_count: u8) -> impl Iterator<Item = CompileRequestsShard> {
         let chunks = self
             .queue
-            .chunks_exact(self.queue.len() / thread_count as usize);
+            .chunks_exact((self.queue.len() / thread_count as usize).max(1));
         let reminder = chunks.remainder();
         chunks
             .chain(std::iter::once(reminder))

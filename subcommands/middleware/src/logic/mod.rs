@@ -521,7 +521,7 @@ impl Middleware {
             )
             .map_err(|err| {
                 if let ObjectRelocationError::MissingSymbol(id) = err {
-                    dbg!(main_task.interner.get(id.ident()));
+                    main_task.interner.get(id.ident());
                 }
             })
             .unwrap();
