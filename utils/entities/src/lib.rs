@@ -1,3 +1,22 @@
+//! # Catalyst Enities
+//!
+//! Crate contains core datastructures used by the catalyst programming language.
+//! This crate uses tons of nightly features, keep that in mind.
+//!
+//! ## Contents
+//!
+//! Main purpose of this crate is offer paralelized datastructiures with incremental
+//! compilation in mind. Things are highly specialized for processing acyclic dependency
+//! graphs, but also offers thread local specialized allocators for performant temporary
+//! allocations.
+//!
+//! Some datastructures need to be persistent, and so they implement
+//! [rkyv](https://crates.io/crates/rkyv) traits.
+//!
+//! Package also reexports some crates for convenience of catalyst compiler.
+//!
+//! More information in respective item docs.
+
 #![allow(incomplete_features)]
 #![feature(
     allocator_api,
@@ -9,7 +28,6 @@
     rustc_attrs,
     const_trait_impl,
     const_discriminant,
-    atomic_mut_ptr,
     never_type,
     default_free_fn,
     iter_collect_into,
@@ -26,6 +44,29 @@
     slice_iter_mut_as_mut_slice
 )]
 
+/// Whevever `ArckiveWith` needs to be implemented on for example fieldless enum,
+/// this macro can implement it by transmuting it to type that implements `Archive`.
+///
+/// ```rust
+/// use catalyst_entities::transmute_arkive;
+/// use rkyv::{Archive, Serialize, Deserialize};
+///
+/// enum Foo {
+///    A, B, B,
+/// }
+///
+/// transmute_arkive! {
+///    FooArchiver(Foo => u8),
+/// }
+///
+/// #[derive(Archive, Serialize, Deserialize)]
+/// struct Bar {
+///     #[with(FooArchiver)]
+///     foo: Foo,
+/// }
+/// ```
+/// Note that this macro can be missued if type contains indirection, simpli transmuting
+/// references and pointers will almost certainly lead to UB upon deserialization.
 #[macro_export]
 macro_rules! transmute_arkive {
     ($($name:ident($ty:ty => $repr:ty))*) => {

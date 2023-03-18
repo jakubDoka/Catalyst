@@ -61,14 +61,6 @@ macro_rules! gen_derives {
     };
 }
 
-pub trait FragRefType {
-    type Meta;
-}
-
-impl<T> FragRefType for T {
-    default type Meta = ();
-}
-
 #[repr(transparent)]
 #[derive(Archive, Serialize, Deserialize)]
 pub struct FragRef<T: ?Sized>(pub(crate) FragAddr, pub(crate) PhantomData<*const T>);
@@ -134,8 +126,6 @@ impl<T: ?Sized> Eq for ArchivedFragSlice<T> {}
 pub type FragRefSlice<T> = FragSlice<FragRef<T>>;
 
 impl<T: ?Sized> FragSlice<T> {
-    /// # Safety
-    /// See [`FragSliceAddr::new`].
     pub const fn new(addr: FragSliceAddr) -> Self {
         Self(addr, PhantomData)
     }

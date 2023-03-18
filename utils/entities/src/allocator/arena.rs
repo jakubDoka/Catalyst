@@ -8,6 +8,8 @@ use std::{
     ptr::{copy_nonoverlapping, NonNull},
 };
 
+/// Arena is safe wrapper around `Allocator` that allows to allocate values that dont need
+/// dropping.
 #[derive(Default)]
 #[repr(transparent)]
 pub struct Arena {
@@ -17,16 +19,20 @@ pub struct Arena {
 unsafe impl Send for Arena {}
 
 impl Arena {
+    /// Create new arena with given allocator.
     pub fn new(allocator: Allocator) -> Self {
         Self {
             allocator: allocator.into(),
         }
     }
 
+    // THE FUNCTION IS NOT SOUND, USE WITH CAUTION
     fn allocator(&self) -> &mut Allocator {
         unsafe { &mut *self.allocator.get() }
     }
 
+    /// Allocate value in arena. Value must not need dropping which will be asserted at compile
+    /// time.
     #[inline]
     pub fn alloc<T>(&self, value: T) -> &T {
         const { assert!(!mem::needs_drop::<T>()) };
@@ -44,6 +50,7 @@ impl Arena {
         }
     }
 
+    /// Analogous to `alloc` but for slices.
     #[inline]
     pub fn alloc_slice<T>(&self, value: &[T]) -> &[T] {
         const { assert!(!mem::needs_drop::<T>()) };
@@ -62,6 +69,7 @@ impl Arena {
         }
     }
 
+    /// Analogous to `alloc_slice` but for iterators.
     pub fn alloc_iter<T, I>(&self, iter: I) -> &[T]
     where
         I: IntoIterator<Item = T>,
@@ -85,21 +93,31 @@ impl Arena {
         unsafe { mem::transmute(slice) }
     }
 
+    /// More low level function that allocates sequence of arbitrary bytes compatible with passed
+    /// layout.
     #[allow(clippy::mut_from_ref)]
     pub fn alloc_byte_layout(&self, layout: Layout) -> &mut [u8] {
         let mut ptr = self.allocator().alloc(layout, false);
         unsafe { ptr.as_mut() }
     }
 
+    /// Clear arena, since all allocated values dont need dropping, we can just reset allocator.
+    /// This function is safe since it requires mutable arena whitch implies all allocations are
+    /// dropped.
     pub fn clear(&mut self) {
-        self.allocator.get_mut().clear();
+        unsafe {
+            self.allocator.get_mut().clear();
+        }
     }
 
+    /// Get allocator from arena.
     pub fn into_allocator(mut self) -> Allocator {
         self.clear();
         self.allocator.into_inner()
     }
 
+    /// Get frame from arena. This creates checkpoint that can be used to rollback arena to state
+    /// before frame was created.
     pub fn frame(&mut self) -> ArenaFrame {
         ArenaFrame {
             allocator: self.allocator.get_mut().frame(),

@@ -8,6 +8,7 @@ use std::{
 pub mod arena;
 pub mod code;
 
+/// A simple bump allocator that allocates memory into fixed size chunks.
 pub struct Allocator {
     free: Vec<Chunk>,
     chunks: Vec<Chunk>,
@@ -23,9 +24,11 @@ impl Default for Allocator {
 }
 
 impl Allocator {
-    /// Since allocator is always reused small startup penalty is acceptable.
+    /// Something with linux page size
     pub const DEFAULT_CHUNK_SIZE: usize = 1024 * 1024 * 2;
 
+    /// Create a new allocator with a chunk size of `chunk_size`.
+    /// The constructor by it self does not allocate anything.
     pub fn new(chunk_size: usize) -> Self {
         Self {
             free: default(),
@@ -36,6 +39,9 @@ impl Allocator {
         }
     }
 
+    /// Allocate a new chunk of memory. This rarely causes system calls if the layout size is small
+    /// compared to the chunk size. Lifetime of the returned memory is tied to the lifetime of the
+    /// allocator.
     pub fn alloc(&mut self, layout: Layout, write_padding: bool) -> NonNull<[u8]> {
         let padding = Self::compute_padding(self.current, layout);
         let size = layout.size() + padding;
@@ -114,12 +120,15 @@ impl Allocator {
         unsafe { NonNull::new_unchecked(ptr::slice_from_raw_parts_mut(new, size)) }
     }
 
-    pub fn clear(&mut self) {
+    /// Declares all memory freed. Using the pointers after this call is UB.
+    pub unsafe fn clear(&mut self) {
         self.free.append(&mut self.chunks);
         self.current = NonNull::dangling().as_ptr();
         self.start = NonNull::dangling().as_ptr();
     }
 
+    /// Creates allocator frame, frame takes snapshot of the allocator and frees subsequent
+    /// allocations on drop.
     pub fn frame(&mut self) -> AllocatorFrame {
         AllocatorFrame::new(self)
     }

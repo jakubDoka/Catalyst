@@ -9,10 +9,13 @@ use std::{
 use crate::*;
 
 thread_local! {
+    /// Thread local instance of `BumpAlloc` used by `BumpVec`.
     pub static BUMP_ALLOC: BumpAlloc = BumpAlloc::default();
 }
 
-pub struct BumpAllocRef;
+/// The allocator passed to `Vec` embedded in bumpved. It optimizes cases where tail allocation
+/// tries to grow or deallocate.
+pub struct BumpAllocRef(());
 
 impl Drop for BumpAllocRef {
     #[inline]
@@ -48,6 +51,8 @@ unsafe impl std::alloc::Allocator for BumpAllocRef {
     }
 }
 
+/// Thread local allocator used by `BumpVec`. It is very simple bump allocator
+/// that frees memory when all `BumpAllocRef` are dropped.
 #[derive(Default)]
 pub struct BumpAlloc {
     refs: Cell<usize>,
@@ -62,7 +67,7 @@ impl BumpAlloc {
     #[inline]
     fn create_ref(&self) -> BumpAllocRef {
         self.refs.set(self.refs.get() + 1);
-        BumpAllocRef
+        BumpAllocRef(())
     }
 
     #[inline]
@@ -71,7 +76,7 @@ impl BumpAlloc {
             #[cold]
             #[inline(never)]
             fn clear(s: &BumpAlloc) {
-                s.allocator().clear();
+                unsafe { s.allocator().clear() };
             }
 
             clear(self)
@@ -79,6 +84,9 @@ impl BumpAlloc {
     }
 }
 
+/// `Vec` wrapper that uses `BumpAlloc` as allocator. Great for short lived temporary
+/// allocations, offers cache locality since allocations are placed next to each other and
+/// are deallocated when located at the end of the bump allocator.
 pub struct BumpVec<T> {
     inner: Vec<T, BumpAllocRef>,
 }
@@ -96,12 +104,14 @@ impl<T> From<BumpVec<T>> for Vec<T, BumpAllocRef> {
 }
 
 impl<T> BumpVec<T> {
+    /// Analogous to `Vec::new`.
     pub fn new() -> Self {
         Self {
             inner: Vec::new_in(BUMP_ALLOC.with(|b| b.create_ref())),
         }
     }
 
+    /// Analogous to `Vec::with_capacity`.
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             inner: Vec::with_capacity_in(capacity, BUMP_ALLOC.with(|b| b.create_ref())),
@@ -166,6 +176,13 @@ impl<T: Clone> ToBumpVec<T> for [T] {
     }
 }
 
+/// Offers a convenient way to create `BumpVec`s.
+/// ```
+/// use catalyst_entities::bumpvec;
+/// let enumerated = bumpvec![1, 2, 3];
+/// let repeated = bumpvec![0; 10];
+/// let with_capacity = bumpvec!(cap 10);
+/// ```
 #[macro_export]
 macro_rules! bumpvec {
     () => {

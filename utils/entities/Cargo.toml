@@ -3,7 +3,9 @@ name = "catalyst_entities"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Low level data structures for multithreaded compilation."
+description = "Low level data-structures for multithreaded and incremental compilation."
+repository = "https://github.com/jakubDoka/Catalyst"
+documentation = "https://docs.rs/crate/catalyst_entities"
 
 [dependencies]
 region = "3.0.0"

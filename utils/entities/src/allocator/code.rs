@@ -15,12 +15,14 @@ use rkyv::{
     Archive, Deserialize, Fallible, Serialize,
 };
 
+/// Contains reusable resources used to prerform relocation on `CodeAllocator`.
 #[derive(Default)]
 pub struct CodeRelocator {
     used: Vec<Relocation>,
 }
 
 impl CodeRelocator {
+    /// Marks a `Code` as used.
     pub fn mark(&mut self, code: &Code) {
         self.used.push(Relocation {
             chunk: 0,
@@ -30,6 +32,7 @@ impl CodeRelocator {
         });
     }
 
+    /// Performs the relocation, all unmarked codes are removed.
     pub fn relocate(&mut self, allocator: &mut CodeAllocator) {
         Unified::unify_vec(&mut self.used);
 
@@ -72,6 +75,7 @@ impl CodeRelocator {
         allocator.chunks.truncate(current_cunk + 1);
     }
 
+    /// Projects a `Code` to the new location after relocation.
     pub fn project(&self, code: &mut Code, codes: &mut CodeAllocator) -> Option<()> {
         let reloc = self
             .used
@@ -96,6 +100,7 @@ impl CodeRelocator {
         Some(())
     }
 
+    /// Clears the relocator, prepared for next run.
     pub fn clear(&mut self) {
         self.used.clear();
     }
@@ -143,6 +148,7 @@ impl Unified for Relocation {
     }
 }
 
+/// Opaque reference to compiled code.
 #[derive(Clone, Copy, Archive, Serialize, Deserialize)]
 pub struct Code {
     chunk: u32,
@@ -197,6 +203,8 @@ pub struct ArchivableCodeAllocator {
     progress: usize,
 }
 
+/// Used for allocating executable memory, serializing compiled code and
+/// synchronizing code relocations.
 pub struct CodeAllocator {
     chunks: Vec<Chunk>,
     base: *mut u8,
@@ -217,6 +225,8 @@ impl CodeAllocator {
     const PROTECTION: Protection = Protection::READ_WRITE_EXECUTE;
     const CHUNK_SIZE: usize = Allocator::DEFAULT_CHUNK_SIZE;
 
+    /// Creates a new `CodeAllocator`. No memory is allocated until the first
+    /// call to `alloc`.
     pub fn new() -> Self {
         Self {
             chunks: default(),
@@ -226,7 +236,7 @@ impl CodeAllocator {
         }
     }
 
-    pub fn data_ptr(&self, code: &Code) -> *const u8 {
+    fn data_ptr(&self, code: &Code) -> *const u8 {
         let chunk = &self.chunks[code.chunk as usize];
         let len = code.len() as usize;
         let offset = code.start as usize;
@@ -234,6 +244,9 @@ impl CodeAllocator {
         unsafe { chunk.range().start.add(offset) }
     }
 
+    /// Gives access to Allocated code. More in `CodeGuard` docs. This function uses spin lock. If
+    /// you are holding mutable guard, try to hold it for as short as possible. When `finishing` is
+    /// true the code will be frozen after guard is dropped.
     pub fn data<'a>(&'a self, code: &Code, finishing: bool) -> CodeGuard<'a> {
         let addr = self.data_ptr(code);
         let lock = unsafe {
@@ -258,8 +271,11 @@ impl CodeAllocator {
         }
     }
 
-    pub fn alloc(&mut self, data: &[u8], align: Align, thread: u8, finished: bool) -> Code {
-        let size = data.len();
+    /// Allocates the `instructions` in the executable memory. The `align` is the align of
+    /// allocation. The `thread` is stored in resulting code. If finished is true, the code is
+    /// frozen from the start.
+    pub fn alloc(&mut self, instructions: &[u8], align: Align, thread: u8, finished: bool) -> Code {
+        let size = instructions.len();
         let offset = self.align_offset(align);
         let taken = offset + size;
 
@@ -272,7 +288,7 @@ impl CodeAllocator {
         unsafe {
             (self.cursor as *mut CodeLock).write(CodeLock::new(finished));
             let ptr = self.cursor.add(offset);
-            ptr::copy_nonoverlapping(data.as_ptr(), ptr, size);
+            ptr::copy_nonoverlapping(instructions.as_ptr(), ptr, size);
             self.cursor = self.cursor.add(taken);
         }
 
@@ -329,6 +345,9 @@ impl CodeAllocator {
     }
 }
 
+/// Guard hods a lock on code, but not always blocking. If the guarded code is not finished, lock
+/// will block and disallow shared access from other threads, in case of finished code, lock will
+/// not block but disallow exclusive access from other threads.
 pub struct CodeGuard<'a> {
     code: Result<&'a mut [u8], &'a [u8]>,
     finish: bool,
@@ -336,14 +355,17 @@ pub struct CodeGuard<'a> {
 }
 
 impl<'a> CodeGuard<'a> {
-    pub fn data(&self) -> &[u8] {
+    /// Returns guaranteed immutable reference to code instructions.
+    pub fn instructions(&self) -> &[u8] {
         match &self.code {
             Ok(o) => &*o,
             Err(e) => e,
         }
     }
 
-    pub fn try_data_mut(&mut self) -> Result<&mut [u8], &[u8]> {
+    /// Returns mutable reference to code instructions. If the code is not finished, this will
+    /// return Ok, otherwise Err.
+    pub fn try_instructions_mut(&mut self) -> Result<&mut [u8], &[u8]> {
         match &mut self.code {
             Ok(o) => Ok(&mut **o),
             Err(e) => Err(e),
