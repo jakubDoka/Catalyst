@@ -292,7 +292,7 @@ impl Gen {
 
     pub(crate) fn finalized_code<'a>(&'a self, func_ref: &Code) -> CodeGuard<'a> {
         let mut code = self.code(func_ref, false);
-        assert!(code.try_data_mut().is_err());
+        assert!(code.try_instructions_mut().is_err());
         code
     }
 }
@@ -648,7 +648,7 @@ impl GenItemName {
 pub struct Isa {
     pub triple: String,
     pub pointer_ty: Type,
-    pub inner: Box<dyn TargetIsa>,
+    pub inner: Arc<dyn TargetIsa>,
     pub jit: bool,
 }
 

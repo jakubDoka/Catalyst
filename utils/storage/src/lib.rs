@@ -12,6 +12,7 @@
 #![feature(allocator_api)]
 #![feature(let_chains)]
 #![feature(inline_const)]
+#![feature(slice_group_by)]
 
 #[macro_export]
 macro_rules! wrapper_enum {
@@ -237,28 +238,21 @@ macro_rules! compose_error {
 pub extern crate bitflags;
 
 mod bit_set;
-mod clear;
 mod frames;
 mod lifetime_erasure;
-mod map;
 mod ordered_map;
-mod partial_ordered_map;
 mod pool_map;
 mod push_map;
-mod rw_swap;
 mod shadow_map;
 
 pub use {
     bit_set::BitSet,
-    clear::{map_in_place, Clear},
     entities::*,
     frames::Frames,
     lifetime_erasure::{Active, Erasable},
     ordered_map::OrderedMap,
-    partial_ordered_map::PartialOrderedMap,
     pool_map::PoolMap,
     push_map::{PushMap, PushMapCheck, PushMapView},
-    rw_swap::{RWSwapReadAccess, RWSwapReader, RWSwapWriter},
     shadow_map::ShadowMap,
     smallvec::{smallvec, SmallVec, ToSmallVec},
 };

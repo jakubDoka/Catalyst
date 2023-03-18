@@ -65,7 +65,7 @@ impl JittedFuncPtr {
         match self {
             JittedFuncPtr::Generated(code) => {
                 let code = gen.finalized_code(&code);
-                code.data().as_ptr()
+                code.instructions().as_ptr()
             }
             JittedFuncPtr::Static(s) => s,
         }
@@ -112,7 +112,7 @@ impl JitContext {
                 gen.save_adapter(compiled)
             });
             let code = gen.finalized_code(code);
-            unsafe { mem::transmute(code.data().as_ptr()) }
+            unsafe { mem::transmute(code.instructions().as_ptr()) }
         };
         Some(JittedFunc {
             ptr,
@@ -200,7 +200,7 @@ impl JitContext {
             let func_ent = gen.get_func_direct(func);
             Self::perform_jit_relocations(
                 func,
-                gen.code(code, true).try_data_mut().unwrap(),
+                gen.code(code, true).try_instructions_mut().unwrap(),
                 &func_ent.relocs,
                 |name| match name {
                     GenItemName::Func(func) => self.get_function_ptr(func, gen),

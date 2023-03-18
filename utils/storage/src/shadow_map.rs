@@ -1,6 +1,7 @@
 use std::{
     default::default,
     marker::PhantomData,
+    mem,
     ops::{Index, IndexMut},
 };
 
@@ -46,6 +47,20 @@ impl<T, V: Default> ShadowMap<T, V> {
 
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V> {
         self.data.iter_mut()
+    }
+
+    pub fn get_array<const SIZE: usize>(&mut self, keys: [VRef<T>; SIZE]) -> [&mut V; SIZE]
+    where
+        V: Clone,
+    {
+        // assert no duplicates, array is expected to be small
+        assert!({
+            keys.iter()
+                .all(|key| keys.iter().filter(|&k| k == key).count() == 1)
+        });
+
+        // SAFETY: we have no duplicate indexes
+        keys.map(|key| unsafe { mem::transmute(&mut self[key]) })
     }
 }
 

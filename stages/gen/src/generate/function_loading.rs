@@ -101,6 +101,7 @@ pub mod abi {
                 CallConv::WasmtimeSystemV => todo!(),
                 CallConv::WasmtimeFastcall => todo!(),
                 CallConv::WasmtimeAppleAarch64 => todo!(),
+                CallConv::Tail => todo!(),
             },
             XTensa => todo!(),
             _ => todo!(),

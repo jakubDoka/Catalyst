@@ -8,7 +8,5 @@ edition = "2021"
 [dependencies]
 logos = "0.12.0"
 
-storage = { path = "../../utils/storage" }
 span = { path = "../../types/span" }
-
 rkyv = { version = "0.7.39", features = ["copy"] }

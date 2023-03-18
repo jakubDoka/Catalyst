@@ -117,7 +117,7 @@ impl Arena {
     }
 
     /// Get frame from arena. This creates checkpoint that can be used to rollback arena to state
-    /// before frame was created.
+    /// before frame was created. Rollback is performed implicitly when frame is dropped.
     pub fn frame(&mut self) -> ArenaFrame {
         ArenaFrame {
             allocator: self.allocator.get_mut().frame(),

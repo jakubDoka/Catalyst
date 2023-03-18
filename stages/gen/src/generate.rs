@@ -1,5 +1,5 @@
 use core::slice;
-use std::cmp::Ordering;
+use std::{array, cmp::Ordering};
 
 use cranelift_codegen::ir::{
     self,
@@ -275,8 +275,7 @@ impl Generator<'_> {
                 } => {
                     let equal = builder.ins().icmp_imm(IntCC::Equal, cond, flag as i64);
                     let cond_block = builder.create_block();
-                    builder.ins().brnz(equal, cond_block, &[]);
-                    builder.ins().jump(dest, &[]);
+                    builder.ins().brif(equal, cond_block, &[], dest, &[]);
                     let current_block = builder.current_block().expect("seems impossible");
                     builder.seal_block(current_block);
                     builder.switch_to_block(cond_block);
@@ -299,8 +298,7 @@ impl Generator<'_> {
                     br,
                 } => {
                     let finished = builder.ins().icmp_imm(IntCC::Equal, counter, max as i64);
-                    builder.ins().brnz(finished, br, &[]);
-                    builder.ins().jump(repeat, &[counter]);
+                    builder.ins().brif(finished, br, &[], repeat, &[counter]);
                     builder.seal_block(repeat);
                     builder.switch_to_block(br);
                     continue;
@@ -436,11 +434,8 @@ impl Generator<'_> {
                 otherwise,
             } => {
                 let cond = self.load_value(cond, builder, None)[0].unwrap();
-                self.instantiate_block(then, builder, |b, _, builder| {
-                    builder.ins().brnz(cond, b, &[])
-                });
-                self.instantiate_block(otherwise, builder, |b, _, builder| {
-                    builder.ins().jump(b, &[])
+                self.instantiate_block([then, otherwise], builder, |[then, otherwise], builder| {
+                    builder.ins().brif(cond, then, &[], otherwise, &[])
                 });
             }
             ControlFlowMir::Goto { dest, ret } => {
@@ -448,7 +443,7 @@ impl Generator<'_> {
                     .filter(|&ret| !self.gen_resources.values[ret].must_load)
                     .and_then(|ret| self.load_value(ret, builder, None)[0]);
                 let args = ret.as_ref().map(slice::from_ref).unwrap_or_default();
-                self.instantiate_block(dest, builder, |b, _, builder| builder.ins().jump(b, args));
+                self.instantiate_block([dest], builder, |[b], builder| builder.ins().jump(b, args));
             }
         }
     }
@@ -825,40 +820,47 @@ impl Generator<'_> {
         }
     }
 
-    fn instantiate_block<W>(
+    fn instantiate_block<W, const BLOCK_COUNT: usize>(
         &mut self,
-        block: VRef<BlockMir>,
+        blocks: [VRef<BlockMir>; BLOCK_COUNT],
         builder: &mut GenBuilder,
-        access: impl FnOnce(ir::Block, &mut Self, &mut GenBuilder) -> W,
+        access: impl FnOnce([ir::Block; BLOCK_COUNT], &mut GenBuilder) -> W,
     ) {
-        let gen_block = self.gen_resources.blocks[block].get_or_insert_with(|| GenBlock {
-            id: builder.create_block(),
-            forward_visit_count: builder.body.blocks[block].ref_count
-                - builder.body.blocks[block].cycles,
-            backward_visit_count: builder.body.blocks[block].cycles,
-        });
+        let gen_blocks =
+            self.gen_resources
+                .blocks
+                .get_array(blocks)
+                .zip(blocks)
+                .map(|(slot, block)| {
+                    slot.get_or_insert_with(|| GenBlock {
+                        id: builder.create_block(),
+                        forward_visit_count: builder.body.blocks[block].ref_count
+                            - builder.body.blocks[block].cycles,
+                        backward_visit_count: builder.body.blocks[block].cycles,
+                    })
+                });
 
-        if gen_block.forward_visit_count == 0 {
-            if gen_block.backward_visit_count != 1 {
-                gen_block.backward_visit_count -= 1;
+        let ids = array::from_fn(|i| gen_blocks[i].id);
+        access(ids, builder);
+
+        for (gen_block, block) in gen_blocks.zip(blocks) {
+            if gen_block.forward_visit_count == 0 {
+                if gen_block.backward_visit_count != 1 {
+                    gen_block.backward_visit_count -= 1;
+                } else {
+                    builder.seal_block(gen_block.id);
+                }
             } else {
-                let id = gen_block.id;
-                access(id, self, builder);
-                builder.seal_block(id);
-                return;
+                if gen_block.forward_visit_count == 1 {
+                    self.gen_resources.block_stack.push((
+                        block,
+                        gen_block.backward_visit_count == 0,
+                        gen_block.id,
+                    ));
+                }
+                gen_block.forward_visit_count -= 1;
             }
-        } else {
-            if gen_block.forward_visit_count == 1 {
-                self.gen_resources.block_stack.push((
-                    block,
-                    gen_block.backward_visit_count == 0,
-                    gen_block.id,
-                ));
-            }
-            gen_block.forward_visit_count -= 1;
         }
-
-        access(gen_block.id, self, builder);
     }
 
     fn assign_value(

@@ -6,6 +6,7 @@
 #![feature(int_roundings)]
 #![feature(allocator_api)]
 #![feature(slice_ptr_get)]
+#![feature(array_zip)]
 
 mod ctx;
 mod generate;

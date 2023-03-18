@@ -1,7 +1,5 @@
 use std::ops::Range;
 
-use crate::Clear;
-
 /// Holds a Vector of `T` that is split into frames and makes it easy
 /// to modify and view them.
 pub struct Frames<T> {
@@ -107,17 +105,15 @@ impl<T> Frames<T> {
             .push(self.data.len() as u32 - top_frame_length as u32);
         self.top().iter().rev().nth(top_frame_length - 1).unwrap()
     }
+
+    pub fn clear(&mut self) {
+        self.data.clear();
+        self.indices.clear();
+    }
 }
 
 impl<T> Default for Frames<T> {
     fn default() -> Self {
         Frames::new()
-    }
-}
-
-impl<T> Clear for Frames<T> {
-    fn clear(&mut self) {
-        self.data.clear();
-        self.indices.clear();
     }
 }
