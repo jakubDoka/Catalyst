@@ -36,7 +36,7 @@ Untested but should work:
 ### Installation
 
 ```bash
-git clone --depth 1 http://gighub.com/jakubDoka/Catalyst
+git clone --depth 1 http://github.com/jakubDoka/Catalyst
 cd Catalyst
 cargo install --path .
 ```
