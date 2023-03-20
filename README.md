@@ -1,36 +1,65 @@
 # Catalyst
 
-## Motivation
+General purpose Programming language, focused on metaprogramming (not quite
+threre yet). Language is designed with simple syntax that does not face any
+parsing edge cases. Catalist tries to offer similar to same features as
+[Rust](https://www.rust-lang.org/) and [Nim](https://nim-lang.org/)
+combined. Language is low level, powered by
+[Cranelift](https://github.com/bytecodealliance/wasmtime/tree/main/cranelift)
+backend. Compiler is highly paralelized and incemental, I in general consider
+performance for better or worse.
 
-I love meta-programming, it brings me joy to create DSL-s that make my code expressive, optimal and beautiful. I am lazy, newer wanting to repeat my self. I crave for smooth development cycle. I want to feel confident about every line I write. I desire low level control that can be wrapped in high level zero cost abstraction. I hate garbage collector and weak type system. And finally, I want my own programming language.
+## Quick-Start
 
-As a bonus, I improve my skills.
+### Requirements
 
-## Inspiration
+Either of:
+- [gcc](https://gcc.gnu.org/)
+- [clang](https://clang.llvm.org/)
+- [vs tools](https://visualstudio.microsoft.com/downloads/)
+- [mold](https://github.com/rui314/mold) - fastest
 
-Nim, Rust and Go in that order. Also encapsulation and methods from OOP.
+All of:
+- [Rust](https://www.rust-lang.org/tools/install)
+- [Git](https://git-scm.com/downloads)
 
-## Features
+### Support
 
-Main features of this project are
+Tested on:
+- Arch Linux
 
-- program validation
-- binary generation
-- formatting source
-- dependency management
+Untested but should work:
+- Windows - maybe
+- Mac - unlikely
+- Linux - likely
 
-I will address this project as a compiler for sanity reasons but Catalyst is not only compiler. Compiler in general just translates code to other code. Goal of this project is to make a tool to help with building software as much as possible.
+### Installation
 
-## TODO
+```bash
+git clone --depth 1 http://gighub.com/jakubDoka/Catalyst
+cd Catalyst
+cargo install --path .
+```
 
-- describe features in more detail
+### Trouble-Shooting
 
-## Contribution
+TODO
 
-Is not recommended, code is not documented and changes quickly. I want to improve this as state of project stabilizes. On the other hand open critics on my code are welcomed and can be performed trough issues.
+## Why should I try Catalyst?
 
-### How to run Tests
+Its a baby language that needs some stress testing. By that I mean I need
+someone who does not know how language works internally, to use the language.
+Tests that are performed are more of a sanity checks that verify key features
+work but in general dont test for correct error messages.
 
-My development environment is `Windows 10` (sorry) and only dependant part of project are `.bat` files though I kept them simple and rewriting them to bash should be easy (contribution opportunity)
+To put it simply, using Catalyst is charitative deed, not nesscesarly something
+you would do to be produdctive yet.
 
-0x564d961f9340
+## Why should I contribute to Catalyst?
+
+If you tryed the language, and feel like some feature is missing or you are
+annoyed by some bug, and waiting for me to fix it is boring, you can take things
+into your own hands and make a pull request. Note though that pull request needs
+issue first.
+
+Typos are categorized under bugs you can fix. (I do a lot of them :])
