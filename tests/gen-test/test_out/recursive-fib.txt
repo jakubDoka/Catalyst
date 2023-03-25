@@ -1,7 +1,7 @@
 info: generated ir:
 native-x86_64-unknown-linux-gnu4\main[] function u0:0() -> i64 uext fast {
     sig0 = (i64 uext) -> i64 uext fast
-    fn0 = colocated u0:47 sig0
+    fn0 = colocated u0:48 sig0
 
 block0:
     v0 = iconst.i64 10
@@ -12,7 +12,7 @@ block0:
 }
 native-x86_64-unknown-linux-gnu4\fib[] function u0:0(i64 uext) -> i64 uext fast {
     sig0 = (i64 uext) -> i64 uext fast
-    fn0 = colocated u0:47 sig0
+    fn0 = colocated u0:48 sig0
 
 block0(v0: i64):
     v1 = iconst.i64 0
