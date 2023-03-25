@@ -28,7 +28,7 @@ impl GenLayouts {
             Ty::Base(base) => self.base_layout(base, params, cr),
             Ty::Pointer(..) => Layout::from_type(self.ptr_ty),
             Ty::Builtin(bt) => self.builtin_layout(bt),
-            Ty::Param(index) => self.ty_layout(params[index as usize], &[], cr),
+            Ty::Param(param) => self.ty_layout(params[param.index.get()], &[], cr),
             Ty::Instance(inst) => self.instance_layout(inst, params, cr),
             Ty::Array(a) => self.array_layout(a, params, cr),
         };
@@ -152,7 +152,7 @@ impl GenLayouts {
         use Builtin::*;
 
         let repr = match bt {
-            Unit | Mutable | Immutable | Terminal => return Layout::EMPTY,
+            Unit | Terminal => return Layout::EMPTY,
             Uint => self.ptr_ty,
             Char | U32 => ir::types::I32,
             U16 => ir::types::I16,

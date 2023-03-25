@@ -35,7 +35,7 @@ impl<'ctx> TypeCreator<'ctx> {
             Err(NonBaseTy::Pointer(..) | NonBaseTy::Builtin(..) | NonBaseTy::Array(..)) => {
                 return (false, false);
             }
-            Err(NonBaseTy::Param(i)) if let Some(ty) = params.get(i as usize) => {
+            Err(NonBaseTy::Param(i)) if let Some(ty) = params.get(i.index.get()) => {
                 self.may_need_drop_low(*ty, params)
             }
             Err(NonBaseTy::Param(..)) => return (true, true),
@@ -126,8 +126,12 @@ impl<'ctx> TypeCreator<'ctx> {
             generics: self.types.cache.params.extend([default(), default()]), // F, T
             signature: Signature {
                 cc: default(),
-                args: self.types.cache.args.extend([Ty::Param(1)]),
-                ret: Ty::Param(0),
+                args: self
+                    .types
+                    .cache
+                    .args
+                    .extend([TyParamIdx::new(0, 1).unwrap().to_ty()]),
+                ret: TyParamIdx::new(0, 0).unwrap().to_ty(),
             },
             name: Interner::CAST,
             flags: FuncFlags::BUILTIN,
@@ -226,7 +230,7 @@ impl<'ctx> TypeCreator<'ctx> {
             .for_each(create_conv)
     }
 
-    pub fn pointer_to(&mut self, mutability: RawMutability, base: Ty) -> Pointer {
+    pub fn pointer_to(&mut self, mutability: TyParamIdx, base: Ty) -> Pointer {
         let id = self.interner.intern_with(|s, t| {
             t.push_str("ptr ");
             base.display(self.types, s, t)
@@ -323,8 +327,8 @@ impl<'ctx> TypeCreator<'ctx> {
         params: impl TypecCtxSlice<FragSlice<Spec>>,
         missing_keys: &mut Option<&mut BumpVec<ImplKey>>,
     ) -> Option<Option<(FragRef<Impl>, FragSlice<Ty>)>> {
-        if let Ty::Param(index) = ty {
-            let mut frontier = self.types[params.get(self.types)[index as usize]].to_bumpvec();
+        if let Ty::Param(param) = ty {
+            let mut frontier = self.types[params.get(self.types)[param.index.get()]].to_bumpvec();
             while let Some(other_spec) = frontier.pop() {
                 if spec == other_spec {
                     return Some(None);
@@ -515,7 +519,7 @@ impl<'ctx> TypeCreator<'ctx> {
                 let mutability = pointer.mutability.instantiate(params.get(self.types));
                 Ty::Pointer(self.pointer_to(mutability, base))
             }
-            Ty::Param(index) => params.get(self.types)[index as usize],
+            Ty::Param(param) => params.get(self.types)[param.index.get()],
             Ty::Array(array) => {
                 let Array { item: ty, len } = self.types[array];
                 let ty = self.instantiate(ty, params);
@@ -539,7 +543,7 @@ impl<'ctx> TypeCreator<'ctx> {
                 let mutability = pointer.mutability.try_instantiate(params)?;
                 Ty::Pointer(self.pointer_to(mutability, base))
             }
-            Ty::Param(index) => return params[index as usize],
+            Ty::Param(param) => return params[param.index.get()],
             Ty::Array(array) => {
                 let Array { item: ty, len } = self.types[array];
                 let ty = self.try_instantiate(ty, params)?;

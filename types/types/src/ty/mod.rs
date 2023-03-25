@@ -9,6 +9,8 @@ use span::*;
 use rkyv::{Archive, Deserialize, Serialize};
 use storage::*;
 
+use self::spec::TyParam;
+
 pub mod data;
 pub mod pointer;
 pub mod spec;
@@ -98,7 +100,7 @@ pub type ParamRepr = u16;
 pub enum NonBaseTy {
     Pointer(Pointer),
     Array(FragRef<Array>),
-    Param(ParamRepr),
+    Param(TyParam),
     Builtin(Builtin),
 }
 
@@ -112,7 +114,7 @@ wrapper_enum! {
         Instance: FragRef<Instance>,
         Pointer: Pointer,
         Array: FragRef<Array>,
-        Param: ParamRepr,
+        Param: TyParam,
         Builtin: Builtin,
     }
 }
@@ -148,7 +150,7 @@ impl Display for Ty {
             Ty::Pointer(p) => {
                 write!(f, "{} ptr{:x}", p.mutability.to_mutability(), p.ty().bits())
             }
-            Ty::Param(i) => write!(f, "param{i}"),
+            Ty::Param(param) => write!(f, "param{}", param),
             Ty::Builtin(b) => write!(f, "{}", b.name()),
             Ty::Array(a) => write!(f, "array{:x}", a.bits()),
         }
@@ -236,10 +238,10 @@ impl Ty {
         }
     }
 
-    pub fn mutability(self) -> RawMutability {
+    pub fn mutability(self) -> TyParamIdx {
         match self {
             Self::Pointer(p) => p.mutability,
-            _ => RawMutability::IMMUTABLE,
+            _ => TyParamIdx::IMMUTABLE,
         }
     }
 
@@ -333,8 +335,6 @@ gen_builtin!(
     atoms {
         UNIT => Unit => "()",
         TERMINAL => Terminal => "!",
-        MUTABLE => Mutable => "mutable",
-        IMMUTABLE => Immutable => "immutable",
         UINT => Uint => "uint",
         U32 => U32 => "u32",
         U16 => U16 => "u16",
@@ -392,10 +392,10 @@ pub struct SpecSet {
 }
 
 impl SpecSet {
-    pub fn extend(&mut self, index: u32, specs: impl IntoIterator<Item = Spec>) {
+    pub fn extend(&mut self, index: usize, specs: impl IntoIterator<Item = Spec>) {
         for spec in specs {
-            if let Err(i) = self.storage.binary_search(&(index, spec)) {
-                self.storage.insert(i, (index, spec));
+            if let Err(i) = self.storage.binary_search(&(index as u32, spec)) {
+                self.storage.insert(i, (index as u32, spec));
             }
         }
     }

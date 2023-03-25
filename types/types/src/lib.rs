@@ -87,8 +87,11 @@ pub use {
     },
     ty::{
         data::{Array, ArraySize, Const, Enum, Field, FieldFlags, Instance, Struct, Variant},
-        pointer::{Mutability, Pointer, RawMutability},
-        spec::{Impl, ImplKey, SpecBase, SpecFunc, SpecInstance},
+        pointer::{Mutability, Pointer},
+        spec::{
+            Impl, ImplKey, SpecBase, SpecFunc, SpecInstance, TyParam, TyParamIdx,
+            TypeParameterError, WhereClause, WherePredicate,
+        },
         BaseTy, Builtin, ComputedTypecItem, Generics, Humid, NonBaseTy, ParamRepr, Spec, SpecSet,
         Ty, TyFlags,
     },

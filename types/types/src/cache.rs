@@ -307,7 +307,7 @@ impl Types {
         spec_set: &mut SpecSet,
     ) {
         match ty {
-            Ty::Param(index) => spec_set.extend(index as u32, self[generic].iter().copied()),
+            Ty::Param(param) => spec_set.extend(param.index.get(), self[generic].iter().copied()),
             Ty::Instance(i) => {
                 let Instance { base, args } = self[i];
                 let params = match base {
@@ -468,7 +468,7 @@ impl Types {
             match (reference, template) {
                 (Ty::Pointer(reference_p), Ty::Pointer(template_p)) => {
                     match (reference_p.mutability.to_mutability(), template_p.mutability.to_mutability()) {
-                        (val, Mutability::Param(i)) => params[i as usize] = Some(val.as_ty()),
+                        (val, Mutability::Param(i)) => params[i.get()] = Some(val.as_ty()),
                         _ if reference_p.mutability.compatible(template_p.mutability) => (),
                         _ => return Err((reference, template)),
                     }
@@ -483,10 +483,10 @@ impl Types {
                             .zip(self[self[template].args].iter().copied()),
                     );
                 }
-                (_, Ty::Param(index)) if let Some(inferred) = params[index as usize] => {
+                (_, Ty::Param(param)) if let Some(inferred) = params[param.index.get()] => {
                     check(reference, inferred)?;
                 }
-                (_, Ty::Param(index)) => params[index as usize] = Some(reference),
+                (_, Ty::Param(param)) => params[param.index.get()] = Some(reference),
                 _ => return Err((reference, template)),
             }
         }
@@ -502,7 +502,6 @@ pub enum SpecCmpError {
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize, Archive)]
-
 pub struct Loc {
     source: VRef<Source>,
     item: Option<VRef<ModuleItem>>,

@@ -204,6 +204,10 @@ impl<T> From<CtlOption<T>> for Option<T> {
 #[derive(Archive, Serialize, Deserialize)]
 pub struct VRef<T: ?Sized>(NonMaxU32, PhantomData<*const T>);
 
+const _: () = {
+    assert!(std::mem::size_of::<Option<VRef<()>>>() == std::mem::size_of::<u32>());
+};
+
 impl<T: ?Sized> Hash for ArchivedVRef<T> {
     fn hash<H: ~const std::hash::Hasher>(&self, state: &mut H) {
         self.0.hash(state);

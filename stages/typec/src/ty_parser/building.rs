@@ -142,7 +142,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
 
         let generics_len = self.ctx.insert_generics(generics, 0);
         self.ctx
-            .push_self(Ty::Param(generics_len as ParamRepr), name.span);
+            .push_self(TyParamIdx::new(0, generics_len).unwrap().to_ty(), name.span);
         let mut spec_set = SpecSet::default();
         self.generics(generics, &mut spec_set, 0);
         let inherits = self.build_inherits(inherits, &mut spec_set);

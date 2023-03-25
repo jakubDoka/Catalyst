@@ -344,8 +344,11 @@ impl TypecCtx {
     }
 
     fn insert_param(&mut self, index: usize, name: NameAst) {
-        self.scope
-            .push(name.ident, Ty::Param(index as ParamRepr), name.span);
+        self.scope.push(
+            name.ident,
+            TyParamIdx::new(0, index).unwrap().to_ty(),
+            name.span,
+        );
     }
 
     pub fn generics(&self) -> &[FragSlice<Spec>] {
@@ -540,7 +543,7 @@ impl TypecCtx {
         let functions = types[spec_base].methods;
 
         for (key, &func) in functions.keys().zip(&types[functions]) {
-            let id = interner.intern_scoped(Ty::Param(index as ParamRepr), func.name);
+            let id = interner.intern_scoped(TyParamIdx::new(0, index).unwrap().to_ty(), func.name);
             self.scope.push(id, key, func.span);
         }
     }

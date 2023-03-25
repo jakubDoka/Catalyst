@@ -66,7 +66,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         for (i, &ParamAst { specs, .. }) in generic_ast.iter().enumerate() {
             let Some(ParamSpecsAst { first, rest, .. }) = specs else {continue};
             set.extend(
-                (i + offset) as u32,
+                i + offset,
                 rest.iter()
                     .map(|(.., s)| s)
                     .chain(iter::once(&first))
@@ -156,11 +156,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
     fn pointer(&mut self, TyPointerAst { mutability, ty, .. }: TyPointerAst) -> Option<Pointer> {
         let base = self.ty(ty)?;
         let mutability = self.mutability(mutability)?;
-        Some(
-            self.ext
-                .creator()
-                .pointer_to(RawMutability::new(mutability).expect("todo"), base),
-        )
+        Some(self.ext.creator().pointer_to(mutability.as_param(), base))
     }
 
     pub(crate) fn mutability(
@@ -178,7 +174,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
                     segments: &[],
                 },
             )) => match lookup!(Ty self, start.ident, start.span) {
-                Ty::Param(i) => Mutability::Param(i),
+                Ty::Param(param) => Mutability::Param(param.index),
                 _ => todo!(),
             },
             Some(MutabilityAst::Generic(..)) => todo!(),

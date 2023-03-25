@@ -152,7 +152,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     pub(super) fn balance_pointers(&mut self, node: &mut TirNode<'arena>, ty: Ty) -> Option<()> {
         let (desired_pointer_depth, mutability) = match ty {
             Ty::Pointer(ptr) => (ptr.depth, ptr.mutability),
-            _ => (0, RawMutability::IMMUTABLE),
+            _ => (0, TyParamIdx::IMMUTABLE),
         };
         let mut total_mutability = true;
         loop {
@@ -161,7 +161,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                 Ordering::Less => {
                     let ty = self.ext.types.dereference(node.ty);
                     let mutability = node.ty.mutability();
-                    let mutable = mutability == RawMutability::MUTABLE && total_mutability;
+                    let mutable = mutability == TyParamIdx::MUTABLE && total_mutability;
                     total_mutability = mutable;
                     *node = TirNode::with_flags(
                         ty,
@@ -171,8 +171,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                     );
                 }
                 Ordering::Greater => {
-                    if mutability == RawMutability::MUTABLE
-                        && node.flags.contains(TirFlags::IMMUTABLE)
+                    if mutability == TyParamIdx::MUTABLE && node.flags.contains(TirFlags::IMMUTABLE)
                     {
                         NotMutable {
                             loc: self.meta.loc(node.span),
@@ -190,7 +189,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             }
         }
 
-        if node.ty.mutability() != RawMutability::MUTABLE && mutability == RawMutability::MUTABLE {
+        if node.ty.mutability() != TyParamIdx::MUTABLE && mutability == TyParamIdx::MUTABLE {
             NotMutable {
                 loc: self.meta.loc(node.span),
             }
@@ -280,7 +279,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             base,
             TirKind::Deref(self.arena.alloc(expr)),
             TirFlags::IMMUTABLE
-                & (ptr.mutability == RawMutability::IMMUTABLE
+                & (ptr.mutability == TyParamIdx::IMMUTABLE
                     || (expr.flags.contains(TirFlags::IMMUTABLE)
                         && !matches!(expr.kind, TirKind::Access(..)))),
             expr.span,
@@ -298,7 +297,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         let ptr = self
             .ext
             .creator()
-            .pointer_to(RawMutability::new(mutability).expect("todo"), expr.ty);
+            .pointer_to(mutability.as_param(), expr.ty);
 
         if mutability == Mutability::Mutable && expr.flags.contains(TirFlags::IMMUTABLE) {
             NotMutable {
