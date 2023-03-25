@@ -23,7 +23,7 @@ derive_relocated!(struct Struct { generics fields });
 #[derive(Clone, Copy, Default, Serialize, Deserialize, Archive)]
 pub struct Struct {
     pub name: Ident,
-    pub generics: Generics,
+    pub generics: WhereClause,
     pub fields: FragSlice<Field>,
     pub loc: Loc,
 }
@@ -64,7 +64,7 @@ derive_relocated!(struct Enum { generics variants });
 #[derive(Clone, Copy, Default, Serialize, Deserialize, Archive)]
 pub struct Enum {
     pub name: Ident,
-    pub generics: Generics,
+    pub generics: WhereClause,
     pub variants: FragSlice<Variant>,
     pub loc: Loc,
 }

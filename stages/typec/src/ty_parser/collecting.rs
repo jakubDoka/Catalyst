@@ -123,7 +123,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         spec: Spec,
         ty: Ty,
         span: Span,
-        generics: Generics,
+        generics: WhereClause,
         explicit_methods: BumpVec<(FragRef<Func>, Span)>,
     ) -> OptFragRef<Impl> {
         let spec_base = spec.base(self.ext.types);
@@ -382,7 +382,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         }: FuncSigAst,
         spec_set: &mut SpecSet,
         offset: usize,
-    ) -> Option<(Signature, Generics)> {
+    ) -> Option<(Signature, WhereClause)> {
         let frame = self.ctx.start_frame();
 
         let generics_len = self.ctx.insert_generics(generics, offset);
@@ -417,7 +417,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         offset: usize,
         len: usize,
         spec_set: &mut SpecSet,
-    ) -> Generics {
+    ) -> WhereClause {
         let mut collected_generics = spec_set.iter();
         let prev_len = collected_generics
             .by_ref()

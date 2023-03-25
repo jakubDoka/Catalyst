@@ -14,8 +14,7 @@ use self::spec::TyParam;
 pub mod data;
 pub mod pointer;
 pub mod spec;
-
-pub type Generics = FragSlice<FragSlice<Spec>>;
+pub mod spec_set;
 
 wrapper_enum! {
     #[derive(
@@ -61,11 +60,15 @@ impl BaseTy {
         self.into()
     }
 
-    pub fn is_generic(self, types: &Types) -> bool {
-        !match self {
-            BaseTy::Struct(s) => types[s].generics.is_empty(),
-            BaseTy::Enum(e) => types[e].generics.is_empty(),
+    pub fn generics(self, types: &Types) -> WhereClause {
+        match self {
+            BaseTy::Struct(s) => types[s].generics,
+            BaseTy::Enum(e) => types[e].generics,
         }
+    }
+
+    pub fn is_generic(self, types: &Types) -> bool {
+        !self.generics(types).is_empty()
     }
 
     pub fn span(self, types: &Types) -> Option<Span> {
@@ -384,42 +387,4 @@ pub trait Humid: Sized + Clone + NoInteriorMutability {
     fn lookup_water_drop(key: &str) -> Option<FragRef<Self>>;
     fn name(&self) -> Ident;
     fn storage(types: &mut Types) -> &mut FragMap<Self>;
-}
-
-#[derive(Default)]
-pub struct SpecSet {
-    storage: Vec<(u32, Spec)>,
-}
-
-impl SpecSet {
-    pub fn extend(&mut self, index: usize, specs: impl IntoIterator<Item = Spec>) {
-        for spec in specs {
-            if let Err(i) = self.storage.binary_search(&(index as u32, spec)) {
-                self.storage.insert(i, (index as u32, spec));
-            }
-        }
-    }
-
-    pub fn truncate(&mut self, length: usize) {
-        self.storage.truncate(length);
-    }
-
-    pub fn iter(
-        &self,
-    ) -> impl Iterator<
-        Item = (
-            u32,
-            impl Iterator<Item = Spec> + '_ + Clone + ExactSizeIterator,
-        ),
-    >
-           + '_
-           + DoubleEndedIterator {
-        self.storage
-            .group_by(|(a, ..), (b, ..)| a == b)
-            .map(|group| (group[0].0, group.iter().map(|&(.., s)| s)))
-    }
-
-    pub fn clear(&mut self) {
-        self.storage.clear();
-    }
 }

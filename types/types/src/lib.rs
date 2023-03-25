@@ -14,6 +14,7 @@
 #![feature(try_blocks)]
 #![feature(never_type)]
 #![feature(trivial_bounds)]
+#![feature(iter_collect_into)]
 
 macro_rules! gen_water_drops {
     (
@@ -89,10 +90,10 @@ pub use {
         data::{Array, ArraySize, Const, Enum, Field, FieldFlags, Instance, Struct, Variant},
         pointer::{Mutability, Pointer},
         spec::{
-            Impl, ImplKey, SpecBase, SpecFunc, SpecInstance, TyParam, TyParamIdx,
+            AsocTy, Impl, ImplKey, SpecBase, SpecFunc, SpecInstance, TyParam, TyParamIdx,
             TypeParameterError, WhereClause, WherePredicate,
         },
-        BaseTy, Builtin, ComputedTypecItem, Generics, Humid, NonBaseTy, ParamRepr, Spec, SpecSet,
-        Ty, TyFlags,
+        spec_set::{SpecSet, SpecSetFrame, SpecSetGroup},
+        BaseTy, Builtin, ComputedTypecItem, Humid, NonBaseTy, ParamRepr, Spec, Ty, TyFlags,
     },
 };

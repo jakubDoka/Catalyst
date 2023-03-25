@@ -10,9 +10,9 @@ pub type FuncSlices = FragMap<FragRef<Func>>;
 #[derive(Clone, Copy, Default, Deserialize, Serialize, Archive)]
 
 pub struct Func {
-    pub generics: Generics,
+    pub generics: WhereClause,
     pub owner: Option<Ty>,
-    pub upper_generics: Generics,
+    pub upper_generics: WhereClause,
     pub signature: Signature,
     pub flags: FuncFlags,
     pub visibility: FuncVisibility,

@@ -518,7 +518,7 @@ impl TypecCtx {
 
     pub fn insert_spec_functions(
         &mut self,
-        generics: Generics,
+        generics: WhereClause,
         offset: usize,
         types: &Types,
         interner: &mut Interner,

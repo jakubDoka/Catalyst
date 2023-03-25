@@ -6,6 +6,7 @@ use std::{
 };
 use std::{mem, ops::Deref};
 
+use crate::ty::spec_set::SpecSetParamRepr;
 use crate::*;
 
 use diags::{SourceLoc, Workspace};
@@ -268,12 +269,12 @@ gen_cache! {
     funcs: Func,
     fields: Field,
     impls: Impl,
-    params: FragSlice<Spec>,
     func_slices: FragRef<Func>,
     spec_funcs: SpecFunc,
     variants: Variant,
     enums: Enum,
     consts: Const,
+    predicates: WherePredicate,
     [sync]
     pointers: Pointer,
     spec_sums: Spec,
@@ -297,33 +298,33 @@ impl Types {
     }
 
     pub fn register_ty_generics(&self, ty: Ty, spec_set: &mut SpecSet) {
-        self.register_ty_generics_low(ty, default(), spec_set);
+        self.register_ty_generics_low(ty, None, default(), spec_set);
     }
 
     pub fn register_ty_generics_low(
         &self,
         ty: Ty,
+        source: Option<SpecSetParamRepr>,
         generic: FragSlice<Spec>,
         spec_set: &mut SpecSet,
     ) {
         match ty {
-            Ty::Param(param) => spec_set.extend(param.index.get(), self[generic].iter().copied()),
+            Ty::Param(param) => spec_set.extend(
+                param.index,
+                source.expect("every param should have source"),
+                param.asoc(),
+                self[generic].iter().copied(),
+            ),
             Ty::Instance(i) => {
                 let Instance { base, args } = self[i];
-                let params = match base {
-                    BaseTy::Struct(s) => self[s].generics,
-                    BaseTy::Enum(e) => self[e].generics,
-                };
-
-                for (&param, &arg) in self[params].iter().zip(self[args].iter()) {
-                    self.register_ty_generics_low(arg, param, spec_set);
-                }
+                let generics = base.generics(self);
+                self.add_param_bounds(generics, args, spec_set)
             }
             Ty::Pointer(p, ..) => {
                 // TODO: handle mutability
-                self.register_ty_generics_low(self[p.ty()], generic, spec_set)
+                self.register_ty_generics_low(self[p.ty()], None, generic, spec_set)
             }
-            Ty::Array(a) => self.register_ty_generics_low(self[a].item, generic, spec_set),
+            Ty::Array(a) => self.register_ty_generics_low(self[a].item, None, generic, spec_set),
             Ty::Base(..) | Ty::Builtin(..) => (),
         }
     }
@@ -333,12 +334,40 @@ impl Types {
             Spec::Instance(i) => {
                 let SpecInstance { base, args } = self[i];
                 let params = self[base].generics;
-
-                for (&param, &arg) in self[params].iter().zip(self[args].iter()) {
-                    self.register_ty_generics_low(arg, param, spec_set);
-                }
+                self.add_param_bounds(params, args, spec_set)
             }
             Spec::Base(..) => (),
+        }
+    }
+
+    pub fn add_param_bounds(
+        &self,
+        generics: WhereClause,
+        args: FragSlice<Ty>,
+        spec_set: &mut SpecSet,
+    ) {
+        let mut counter = TyParamIdx::generator();
+        let mut param_predicates = generics.root_predicates(self).zip(&mut counter);
+        for ((bounds, i), &arg) in param_predicates.zip(self[args].iter()) {
+            self.register_ty_generics_low(arg, Some(i), bounds, spec_set);
+        }
+
+        let mut other_predicates = generics.other_predicates(self).zip(&mut counter);
+        for ((ty, bounds), i) in other_predicates {
+            let Ty::Param(param) = ty else {
+                todo!("handle non-param ty in predicate");
+            };
+
+            let projeted_index = spec_set
+                .project(param.index)
+                .expect("predicates should be sorted");
+
+            spec_set.extend(
+                projeted_index,
+                i,
+                param.asoc(),
+                self[bounds].iter().copied(),
+            );
         }
     }
 

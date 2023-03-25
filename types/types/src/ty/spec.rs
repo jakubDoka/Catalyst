@@ -8,7 +8,7 @@ use storage::*;
 derive_relocated!(struct Impl { generics key methods });
 #[derive(Clone, Copy, Serialize, Deserialize, Archive)]
 pub struct Impl {
-    pub generics: Generics,
+    pub generics: WhereClause,
     pub key: ImplKey,
     pub methods: FragRefSlice<Func>,
     pub loc: GuaranteedLoc,
@@ -28,7 +28,7 @@ derive_relocated!(struct SpecBase { generics inherits methods });
 #[derive(Clone, Copy, Default, Deserialize, Archive, Serialize)]
 pub struct SpecBase {
     pub name: Ident,
-    pub generics: Generics,
+    pub generics: WhereClause,
     pub inherits: FragSlice<Spec>,
     pub methods: FragSlice<SpecFunc>,
     pub asoc_tys: FragSlice<AsocTy>,
@@ -58,7 +58,7 @@ pub struct SpecInstance {
 derive_relocated!(struct SpecFunc { generics signature parent });
 #[derive(Clone, Copy, Serialize, Deserialize, Archive)]
 pub struct SpecFunc {
-    pub generics: Generics,
+    pub generics: WhereClause,
     pub signature: Signature,
     pub name: Ident,
     pub span: Span,
@@ -76,13 +76,27 @@ derive_relocated!(
 );
 #[derive(Clone, Copy, Serialize, Deserialize, Archive)]
 pub struct AsocTy {
-    pub generics: Generics,
+    pub generics: WhereClause,
     pub parent: FragRef<SpecBase>,
     pub name: Ident,
     pub span: Span,
 }
 
 type ParameterCountRepr = u16;
+#[derive(
+    Clone,
+    Copy,
+    PartialEq,
+    Default,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Debug,
+    Serialize,
+    Deserialize,
+    Archive,
+)]
 pub struct ParameterCount(ParameterCountRepr);
 
 impl ParameterCount {
@@ -138,6 +152,10 @@ impl TyParamIdx {
         let index = Self::is_valid_index(index)?;
         let inner = scope.wrapping_shl(Self::INDEX_SIZE as u32) | index;
         Ok(Self(inner))
+    }
+
+    pub fn generator() -> impl Iterator<Item = Self> {
+        (0..=Self::MAX_INDEX as TypeParameterRepr).map(Self)
     }
 
     pub fn is_valid_scope(scope: usize) -> Result<TypeParameterRepr, TypeParameterError> {
@@ -291,10 +309,73 @@ impl Display for TyParam {
     }
 }
 
+derive_relocated!(struct WhereClause { predicates });
+#[derive(
+    Clone,
+    Default,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Debug,
+    Serialize,
+    Deserialize,
+    Archive,
+)]
 pub struct WhereClause {
+    pub parameter_cound: ParameterCount,
     pub predicates: FragSlice<WherePredicate>,
 }
 
+impl WhereClause {
+    pub fn is_empty(&self) -> bool {
+        self.predicates.is_empty()
+    }
+
+    pub fn root_predicates<'a>(
+        &self,
+        types: &'a Types,
+    ) -> impl Iterator<Item = FragSlice<Spec>> + 'a {
+        types[self.predicates]
+            .iter()
+            .take(self.parameter_cound.get())
+            .map(|pred| pred.bounds)
+    }
+
+    pub fn other_predicates<'a>(
+        &self,
+        types: &'a Types,
+    ) -> impl Iterator<Item = (Ty, FragSlice<Spec>)> + 'a {
+        types[self.predicates]
+            .iter()
+            .skip(self.parameter_cound.get())
+            .map(|pred| {
+                (
+                    pred.ty
+                        .expect("all predicated after parameters has to have a type"),
+                    pred.bounds,
+                )
+            })
+    }
+}
+
+derive_relocated!(struct WherePredicate { ty bounds });
+#[derive(
+    Clone,
+    Copy,
+    PartialEq,
+    Default,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Debug,
+    Serialize,
+    Deserialize,
+    Archive,
+)]
 pub struct WherePredicate {
     pub ty: Option<Ty>,
     pub bounds: FragSlice<Spec>,
