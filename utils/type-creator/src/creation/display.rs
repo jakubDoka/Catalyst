@@ -81,7 +81,6 @@ impl TypeDisplay for Func {
         let Func {
             signature,
             generics,
-            upper_generics,
             name,
             ..
         } = self;
@@ -94,10 +93,7 @@ impl TypeDisplay for Func {
         display_list(
             types,
             interner,
-            types[upper_generics]
-                .iter()
-                .chain(&types[generics])
-                .copied(),
+            generics.root_predicates(types).iter().map(|p| p.bounds),
             out,
             ['[', ',', ']'],
         )?;

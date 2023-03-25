@@ -1,4 +1,4 @@
-use std::mem;
+use std::{default::default, mem};
 
 use crate::{ctx::*, TirBuilder};
 
@@ -45,7 +45,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         self.ctx.detect_infinite_types(&mut self.ext, &self.meta);
 
         let funcs = mem::take(&mut self.ext.transfer.funcs);
-        self.build_funcs(&funcs, 0);
+        self.build_funcs(&funcs, TyParamIter::default());
         self.ext.transfer.funcs = funcs;
 
         self.build_impl_funcs();
@@ -59,14 +59,16 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         &mut self,
         generic_ast: Option<ListAst<ParamAst>>,
         set: &mut SpecSet,
-        offset: usize,
+        mut params: impl AsMut<TyParamIter>,
     ) {
         let Some(generic_ast) = generic_ast else {return};
 
-        for (i, &ParamAst { specs, .. }) in generic_ast.iter().enumerate() {
+        for (&ParamAst { specs, .. }, i) in generic_ast.iter().zip(params.as_mut()) {
             let Some(ParamSpecsAst { first, rest, .. }) = specs else {continue};
             set.extend(
-                i + offset,
+                i,
+                i,
+                default(),
                 rest.iter()
                     .map(|(.., s)| s)
                     .chain(iter::once(&first))

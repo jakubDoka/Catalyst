@@ -55,7 +55,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             ..
         }: FuncDefAst,
         func: FragRef<Func>,
-        offset: usize,
+        params: TyParamIter,
     ) -> Option<Option<TirFunc<'arena>>> {
         let Func {
             signature,
@@ -69,14 +69,17 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             FuncBodyAst::Extern(..) => return Some(None),
         };
 
-        self.ctx
-            .load_generics(self.ext.types.pack_func_param_specs(func));
+        self.ctx.load_generics(
+            self.ext.types[self.ext.types[func].generics.predicates]
+                .iter()
+                .copied(),
+        );
 
         let frame = self.ctx.start_frame();
 
-        self.ctx.insert_generics(generics, offset);
+        self.ctx.insert_generics(generics, params);
         self.ctx
-            .insert_spec_functions(self_generics, offset, self.ext.types, self.ext.interner);
+            .insert_spec_functions(self_generics, params, self.ext.types, self.ext.interner);
         let args = self.args(signature.args, args);
 
         let tir_body = match body {

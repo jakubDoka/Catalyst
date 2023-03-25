@@ -91,7 +91,7 @@ pub use {
         pointer::{Mutability, Pointer},
         spec::{
             AsocTy, Impl, ImplKey, SpecBase, SpecFunc, SpecInstance, TyParam, TyParamIdx,
-            TypeParameterError, WhereClause, WherePredicate,
+            TyParamIter, TypeParameterError, WhereClause, WherePredicate,
         },
         spec_set::{SpecSet, SpecSetFrame, SpecSetGroup},
         BaseTy, Builtin, ComputedTypecItem, Humid, NonBaseTy, ParamRepr, Spec, Ty, TyFlags,

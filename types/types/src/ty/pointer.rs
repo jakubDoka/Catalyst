@@ -4,7 +4,7 @@ use crate::*;
 use rkyv::{Archive, Deserialize, Serialize};
 use storage::*;
 
-use super::{spec::TyParamIdx, ParamRepr};
+use super::spec::TyParamIdx;
 
 #[derive(
     Clone, Serialize, Deserialize, Archive, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug,

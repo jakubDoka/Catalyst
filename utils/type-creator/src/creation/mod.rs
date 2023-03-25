@@ -123,7 +123,7 @@ impl<'ctx> TypeCreator<'ctx> {
     fn init_builtin_funcs(&mut self, builtin_functions: &mut Vec<FragRef<Func>>) {
         builtin_functions.extend(Func::WATER_DROPS.map(|(.., func)| func));
         self.types.cache.funcs[Func::CAST] = Func {
-            generics: self.types.cache.params.extend([default(), default()]), // F, T
+            generics: WhereClause::basic(2, &mut self.types).unwrap(), // F, T
             signature: Signature {
                 cc: default(),
                 args: self
@@ -138,7 +138,7 @@ impl<'ctx> TypeCreator<'ctx> {
             ..default()
         };
         self.types.cache.funcs[Func::SIZEOF] = Func {
-            generics: self.types.cache.params.extend([default()]), // T
+            generics: WhereClause::basic(1, &mut self.types).unwrap(), // T
             signature: Signature {
                 cc: default(),
                 args: default(),
@@ -302,7 +302,7 @@ impl<'ctx> TypeCreator<'ctx> {
         &mut self,
         ty: Ty,
         sum: FragSlice<Spec>,
-        params: impl TypecCtxSlice<FragSlice<Spec>>,
+        params: impl TypecCtxSlice<WherePredicate>,
         inferred: &[Ty],
         missing_keys: &mut Option<&mut BumpVec<ImplKey>>,
     ) -> bool {
@@ -324,11 +324,12 @@ impl<'ctx> TypeCreator<'ctx> {
         &mut self,
         ty: Ty,
         spec: Spec,
-        params: impl TypecCtxSlice<FragSlice<Spec>>,
+        params: impl TypecCtxSlice<WherePredicate>,
         missing_keys: &mut Option<&mut BumpVec<ImplKey>>,
     ) -> Option<Option<(FragRef<Impl>, FragSlice<Ty>)>> {
         if let Ty::Param(param) = ty {
-            let mut frontier = self.types[params.get(self.types)[param.index.get()]].to_bumpvec();
+            let mut frontier =
+                self.types[params.get(self.types)[param.index.get()].bounds].to_bumpvec();
             while let Some(other_spec) = frontier.pop() {
                 if spec == other_spec {
                     return Some(None);
@@ -387,19 +388,21 @@ impl<'ctx> TypeCreator<'ctx> {
                 .collect::<Option<BumpVec<_>>>()
                 .expect("generic slots should not be empty since we validate the implementation");
 
-            let implements = impl_ent
-                .generics
-                .keys()
-                .zip(params.iter())
-                .all(|(specs, &ty)| {
-                    self.implements_sum(
-                        ty,
-                        self.types[specs],
-                        impl_ent.generics,
-                        &params,
-                        missing_keys,
-                    )
-                });
+            let implements =
+                impl_ent
+                    .generics
+                    .predicates
+                    .keys()
+                    .zip(params.iter())
+                    .all(|(specs, &ty)| {
+                        self.implements_sum(
+                            ty,
+                            self.types[specs].bounds,
+                            impl_ent.generics.predicates,
+                            &params,
+                            missing_keys,
+                        )
+                    });
 
             if !implements {
                 continue;
@@ -637,7 +640,7 @@ impl<'ctx> TypeCreator<'ctx> {
     pub fn is_drop(
         &mut self,
         ty: Ty,
-        params: &[FragSlice<Spec>],
+        params: &[WherePredicate],
     ) -> Option<Option<(FragRef<Impl>, FragSlice<Ty>)>> {
         match ty {
             Ty::Pointer(..) | Ty::Builtin(..) => Some(None),
@@ -657,7 +660,7 @@ impl<'ctx> TypeCreator<'ctx> {
         }
     }
 
-    pub fn is_copy(&mut self, ty: Ty, params: &[FragSlice<Spec>]) -> bool {
+    pub fn is_copy(&mut self, ty: Ty, params: &[WherePredicate]) -> bool {
         match ty {
             Ty::Pointer(..) | Ty::Builtin(..) => true,
             Ty::Array(a) => self

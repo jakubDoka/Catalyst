@@ -1,3 +1,5 @@
+use std::iter;
+
 use crate::*;
 use storage::*;
 
@@ -43,15 +45,38 @@ impl SpecSet {
         self.storage.truncate(frame.0);
     }
 
-    pub fn iter(&mut self) -> impl DoubleEndedIterator<Item = SpecSetGroup<'_>> {
+    pub fn iter(&mut self) -> impl Iterator<Item = SpecSetGroup<'_>> {
         self.temp.clear();
         self.temp.extend(&self.storage);
         self.temp.sort_unstable_by(SpecSetItem::order);
         self.temp.dedup();
 
-        self.temp
-            .group_by(SpecSetItem::common_group)
-            .map(|group| SpecSetGroup { group })
+        // its complicated since we want to insert empty groups
+        let mut params = TyParamIter::default();
+        let mut progress = self.temp.as_slice();
+        iter::from_fn(move || {
+            let (initial, rest) = progress.split_first()?;
+            let param = params.next()?;
+            if param != initial.index && initial.asoc_ty.is_none() {
+                return Some(SpecSetGroup {
+                    index: param,
+                    asoc_ty: None,
+                    bounds: &[],
+                });
+            }
+            let len = rest
+                .iter()
+                .take_while(|&item| item.common_group(initial))
+                .count();
+            let (group, rest) = progress.split_at(len + 1);
+            progress = rest;
+
+            Some(SpecSetGroup {
+                index: initial.index,
+                asoc_ty: initial.asoc_ty,
+                bounds: group,
+            })
+        })
     }
 
     pub fn clear(&mut self) {
@@ -61,29 +86,29 @@ impl SpecSet {
 
 pub struct SpecSetFrame(usize);
 
+impl SpecSetFrame {
+    pub fn base() -> Self {
+        SpecSetFrame(0)
+    }
+}
+
 pub struct SpecSetGroup<'a> {
-    group: &'a [SpecSetItem],
+    pub index: SpecSetParamRepr,
+    pub asoc_ty: OptFragRef<AsocTy>,
+    bounds: &'a [SpecSetItem],
 }
 
 impl<'a> SpecSetGroup<'a> {
-    pub fn index(&self) -> SpecSetParamRepr {
-        self.group[0].index
-    }
-
-    pub fn asoc_ty(&self) -> OptFragRef<AsocTy> {
-        self.group[0].asoc_ty
-    }
-
-    pub fn specs(&self) -> impl ExactSizeIterator<Item = Spec> + '_ + Clone {
-        self.group.iter().map(|item| item.spec)
+    pub fn specs(&self) -> impl ExactSizeIterator<Item = Spec> + Clone + 'a {
+        self.bounds.iter().map(|item| item.spec)
     }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-struct SpecSetItem {
-    index: SpecSetParamRepr,
-    asoc_ty: OptFragRef<AsocTy>,
-    spec: Spec,
+pub struct SpecSetItem {
+    pub index: SpecSetParamRepr,
+    pub asoc_ty: OptFragRef<AsocTy>,
+    pub spec: Spec,
 }
 
 impl SpecSetItem {

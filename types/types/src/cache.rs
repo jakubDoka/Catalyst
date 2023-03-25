@@ -346,13 +346,13 @@ impl Types {
         args: FragSlice<Ty>,
         spec_set: &mut SpecSet,
     ) {
-        let mut counter = TyParamIdx::generator();
-        let mut param_predicates = generics.root_predicates(self).zip(&mut counter);
-        for ((bounds, i), &arg) in param_predicates.zip(self[args].iter()) {
-            self.register_ty_generics_low(arg, Some(i), bounds, spec_set);
+        let mut counter = TyParamIter::default();
+        let param_predicates = generics.root_predicates(self).iter().zip(&mut counter);
+        for ((pred, i), &arg) in param_predicates.zip(self[args].iter()) {
+            self.register_ty_generics_low(arg, Some(i), pred.bounds, spec_set);
         }
 
-        let mut other_predicates = generics.other_predicates(self).zip(&mut counter);
+        let other_predicates = generics.other_predicates(self).zip(&mut counter);
         for ((ty, bounds), i) in other_predicates {
             let Ty::Param(param) = ty else {
                 todo!("handle non-param ty in predicate");
@@ -398,38 +398,6 @@ impl Types {
             Ty::Param(..) => Present,
             Ty::Base(..) | Ty::Builtin(..) => Absent,
         }
-    }
-
-    pub fn pack_func_param_specs(
-        &self,
-        func: FragRef<Func>,
-    ) -> impl Iterator<Item = FragSlice<Spec>> + '_ {
-        let Func {
-            generics,
-            upper_generics,
-            ..
-        } = self[func];
-        iter::empty()
-            .chain(&self[upper_generics])
-            .chain(&self[generics])
-            .copied()
-    }
-
-    pub fn pack_spec_func_param_specs(
-        &self,
-        func: SpecFunc,
-    ) -> impl Iterator<Item = FragSlice<Spec>> + '_ {
-        let SpecFunc {
-            generics, parent, ..
-        } = func;
-        let SpecBase {
-            generics: upper_generics,
-            ..
-        } = self[parent];
-        iter::empty()
-            .chain(self[upper_generics].iter().copied())
-            .chain(iter::once(FragSlice::empty()))
-            .chain(self[generics].iter().copied())
     }
 
     pub fn dereference(&self, ty: Ty) -> Ty {

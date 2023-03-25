@@ -1,4 +1,7 @@
-use std::fmt::{Display, Formatter};
+use std::{
+    default::default,
+    fmt::{Display, Formatter},
+};
 
 use crate::*;
 use rkyv::{Archive, Deserialize, Serialize};
@@ -112,6 +115,7 @@ impl ParameterCount {
     }
 }
 
+#[derive(Debug)]
 pub struct ParameterCountError(usize);
 
 impl std::fmt::Display for ParameterCountError {
@@ -152,10 +156,6 @@ impl TyParamIdx {
         let index = Self::is_valid_index(index)?;
         let inner = scope.wrapping_shl(Self::INDEX_SIZE as u32) | index;
         Ok(Self(inner))
-    }
-
-    pub fn generator() -> impl Iterator<Item = Self> {
-        (0..=Self::MAX_INDEX as TypeParameterRepr).map(Self)
     }
 
     pub fn is_valid_scope(scope: usize) -> Result<TypeParameterRepr, TypeParameterError> {
@@ -215,6 +215,33 @@ impl TyParamIdx {
             Self::MUTABLE => Self::MUTABLE,
             _ => Self::from_ty(params[self.get()]?),
         })
+    }
+}
+
+#[derive(Default, Clone, Copy)]
+pub struct TyParamIter {
+    scope: usize,
+    index: usize,
+}
+
+impl TyParamIter {
+    pub fn progress(&self) -> usize {
+        self.index
+    }
+}
+
+impl Iterator for TyParamIter {
+    type Item = TyParamIdx;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.index += 1;
+        TyParamIdx::new(self.scope, self.index - 1).ok()
+    }
+}
+
+impl AsMut<TyParamIter> for TyParamIter {
+    fn as_mut(&mut self) -> &mut Self {
+        self
     }
 }
 
@@ -325,23 +352,37 @@ derive_relocated!(struct WhereClause { predicates });
     Archive,
 )]
 pub struct WhereClause {
-    pub parameter_cound: ParameterCount,
+    pub parameter_count: ParameterCount,
     pub predicates: FragSlice<WherePredicate>,
 }
 
 impl WhereClause {
+    pub fn basic(len: usize, types: &mut Types) -> Result<WhereClause, ParameterCountError> {
+        Self::new((0..len).map(|_| default()), len, types)
+    }
+
+    pub fn new<I>(
+        predicates: I,
+        parameter_count: usize,
+        types: &mut Types,
+    ) -> Result<Self, ParameterCountError>
+    where
+        I: IntoIterator<Item = WherePredicate>,
+        I::IntoIter: ExactSizeIterator,
+    {
+        let predicates = types.cache.predicates.extend(predicates);
+        Ok(Self {
+            parameter_count: ParameterCount::new(parameter_count)?,
+            predicates,
+        })
+    }
+
     pub fn is_empty(&self) -> bool {
         self.predicates.is_empty()
     }
 
-    pub fn root_predicates<'a>(
-        &self,
-        types: &'a Types,
-    ) -> impl Iterator<Item = FragSlice<Spec>> + 'a {
-        types[self.predicates]
-            .iter()
-            .take(self.parameter_cound.get())
-            .map(|pred| pred.bounds)
+    pub fn root_predicates<'a>(&self, types: &'a Types) -> &'a [WherePredicate] {
+        &types[self.predicates][..self.parameter_count.get()]
     }
 
     pub fn other_predicates<'a>(
@@ -350,7 +391,7 @@ impl WhereClause {
     ) -> impl Iterator<Item = (Ty, FragSlice<Spec>)> + 'a {
         types[self.predicates]
             .iter()
-            .skip(self.parameter_cound.get())
+            .skip(self.parameter_count.get())
             .map(|pred| {
                 (
                     pred.ty
@@ -358,6 +399,10 @@ impl WhereClause {
                     pred.bounds,
                 )
             })
+    }
+
+    pub fn len(&self) -> usize {
+        self.predicates.len()
     }
 }
 

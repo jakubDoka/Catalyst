@@ -11,8 +11,8 @@ pub type FuncSlices = FragMap<FragRef<Func>>;
 
 pub struct Func {
     pub generics: WhereClause,
+    pub outer_param_count: u16,
     pub owner: Option<Ty>,
-    pub upper_generics: WhereClause,
     pub signature: Signature,
     pub flags: FuncFlags,
     pub visibility: FuncVisibility,
@@ -20,11 +20,11 @@ pub struct Func {
     pub loc: Loc,
 }
 
-derive_relocated!(struct Func { generics owner upper_generics signature });
+derive_relocated!(struct Func { generics owner signature });
 
 impl Func {
     pub fn is_generic(&self) -> bool {
-        !self.generics.is_empty() || !self.upper_generics.is_empty()
+        !self.generics.is_empty()
     }
 }
 

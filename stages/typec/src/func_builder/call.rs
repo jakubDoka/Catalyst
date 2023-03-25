@@ -51,22 +51,18 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     ) -> ExprRes<'arena> {
         let Func {
             signature,
-            upper_generics,
+            outer_param_count,
+            generics,
             owner,
             loc,
             ..
         } = self.ext.types[func];
-        let param_specs = self
-            .ext
-            .types
-            .pack_func_param_specs(func)
-            .collect::<BumpVec<_>>();
-        let generic_start = upper_generics.len();
+        let param_specs = generics.root_predicates(self.ext.types).to_bumpvec();
 
         let mut param_slots = bumpvec![None; param_specs.len()];
         param_slots
             .iter_mut()
-            .skip(generic_start)
+            .skip(outer_param_count as usize)
             .zip(params.iter().flat_map(|params| params.iter()))
             .for_each(|(param_slot, &param)| *param_slot = self.parser().ty(param));
 
@@ -109,16 +105,19 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         let func_ent @ SpecFunc {
             generics,
             signature,
+            parent,
             ..
         } = self.ext.types[func];
 
-        let param_specs = self
-            .ext
-            .types
-            .pack_spec_func_param_specs(func_ent)
-            .collect::<BumpVec<_>>();
+        let param_specs = self.ext.types[generics.predicates].to_bumpvec();
+
         let mut param_slots = bumpvec![None; param_specs.len()];
-        let generic_start = param_slots.len() - generics.len();
+        let self_param = 1;
+        let generic_start = self.ext.types[parent]
+            .generics
+            .root_predicates(self.ext.types)
+            .len()
+            + self_param;
         param_slots
             .iter_mut()
             .skip(generic_start)
@@ -154,7 +153,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     #[allow(clippy::too_many_arguments)]
     fn call_internals(
         &mut self,
-        generics: &[FragSlice<Spec>],
+        generics: &[WherePredicate],
         param_slots: &mut [Option<Ty>],
         mut caller: Option<Result<Ty, TirNode<'arena>>>,
         owner: Option<Ty>,
@@ -229,7 +228,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         for (&param, &specs) in params.iter().zip(generics) {
             self.ext.creator().implements_sum(
                 param,
-                specs,
+                specs.bounds,
                 generics,
                 params,
                 &mut Some(&mut missing_keys),

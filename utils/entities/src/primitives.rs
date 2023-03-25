@@ -3,10 +3,10 @@ use std::{
     hash::Hash,
     marker::PhantomData,
     mem::{discriminant, transmute},
-    ops::Range,
+    ops::{Index, Range},
 };
 
-use crate::{frag_map::addr::NonMaxU32, FragAddr, FragSliceAddr};
+use crate::{frag_map::addr::NonMaxU32, BumpVec, FragAddr, FragSliceAddr, ToBumpVec};
 use rkyv::{Archive, Deserialize, Serialize};
 
 macro_rules! gen_derives {
@@ -87,7 +87,7 @@ impl<T: ?Sized> PartialEq for ArchivedFragRef<T> {
 
 impl<T: ?Sized> Eq for ArchivedFragRef<T> {}
 
-impl<T: ?Sized> FragRef<T> {
+impl<T> FragRef<T> {
     pub const fn new(addr: FragAddr) -> Self {
         Self(addr, PhantomData)
     }
@@ -127,7 +127,7 @@ impl<T: ?Sized> PartialEq for ArchivedFragSlice<T> {
 
 impl<T: ?Sized> Eq for ArchivedFragSlice<T> {}
 
-impl<T: ?Sized> FragSlice<T> {
+impl<T> FragSlice<T> {
     pub const fn new(addr: FragSliceAddr) -> Self {
         Self(addr, PhantomData)
     }
@@ -154,6 +154,13 @@ impl<T: ?Sized> FragSlice<T> {
 
     pub fn empty() -> Self {
         Self(FragSliceAddr::default(), PhantomData)
+    }
+
+    pub fn to_bumpvec(self, ctx: &impl Index<Self, Output = [T]>) -> BumpVec<T>
+    where
+        T: Clone,
+    {
+        ctx[self].to_bumpvec()
     }
 
     /// Returns inner adress.

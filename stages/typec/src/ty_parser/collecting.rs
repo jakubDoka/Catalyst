@@ -49,17 +49,18 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         _: &[TopLevelAttrAst],
     ) -> Option<()> {
         let frame = self.ctx.start_frame();
-
         let mut spec_set = SpecSet::default();
+        let mut params = TyParamIter::default();
 
-        let generics_len = self.ctx.insert_generics(generics, 0);
-        self.generics(generics, &mut spec_set, 0);
+        self.ctx.insert_generics(generics, params);
+        self.generics(generics, &mut spec_set, &mut params);
 
         let (parsed_ty, parsed_spec) = match target {
             ImplTargetAst::Direct(ty) => (self.ty(ty)?, None),
             ImplTargetAst::Spec(spec, .., ty) => (self.ty(ty)?, Some(self.spec(spec)?)),
         };
 
+        let spec_set_frame = spec_set.start_frame();
         self.ext
             .types
             .register_ty_generics(parsed_ty, &mut spec_set);
@@ -72,7 +73,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         self.ctx.push_self(parsed_ty, target.span());
 
         let scope_data = ScopeData {
-            offset: generics_len,
+            params,
             owner: Some(parsed_ty),
             not_in_scope: parsed_spec.is_some(),
             upper_vis: vis.map(|vis| vis.vis),
@@ -93,11 +94,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             })
             .unwrap_or_default();
 
-        let parsed_generics = self.take_generics(0, generics_len, &mut spec_set);
-
-        for &(method, ..) in explicit_methods.iter() {
-            self.ext.types[method].upper_generics = parsed_generics;
-        }
+        let parsed_generics = self.take_generics(spec_set_frame, &mut spec_set);
 
         let impl_id = parsed_spec
             .map(|spec| {
@@ -135,10 +132,10 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
 
         // check for collisions in implementations,
         // we just check if spec is already implemented
-        if let Some(Some((already, ..))) = self
-            .ext
-            .creator()
-            .find_implementation(ty, spec, generics, &mut None)
+        if let Some(Some((already, ..))) =
+            self.ext
+                .creator()
+                .find_implementation(ty, spec, generics.predicates, &mut None)
         {
             CollidingImpl {
                 colliding: self.meta.loc(span),
@@ -291,13 +288,14 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         attributes: &[TopLevelAttrAst],
         spec_set: &mut SpecSet,
         ScopeData {
-            offset,
+            params,
             not_in_scope,
             owner,
             upper_vis,
         }: ScopeData,
     ) -> Option<FragRef<Func>> {
-        let (signature, generics) = self.collect_signature(sig, spec_set, offset)?;
+        let outer_param_count = params.progress() as u16;
+        let (signature, generics) = self.collect_signature(sig, spec_set, params)?;
 
         let entry = attributes
             .iter()
@@ -355,8 +353,8 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
 
         let func = Func {
             generics,
+            outer_param_count,
             owner,
-            upper_generics: default(), // filled later
             signature,
             flags: (FuncFlags::ENTRY & entry.is_some())
                 | (FuncFlags::NO_MOVES & no_moves.is_some()),
@@ -381,11 +379,11 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             ..
         }: FuncSigAst,
         spec_set: &mut SpecSet,
-        offset: usize,
+        params: TyParamIter,
     ) -> Option<(Signature, WhereClause)> {
         let frame = self.ctx.start_frame();
 
-        let generics_len = self.ctx.insert_generics(generics, offset);
+        self.ctx.insert_generics(generics, params);
         let args = args
             .iter()
             .flat_map(|i| i.iter())
@@ -395,6 +393,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             .map(|(.., ret)| self.ty(ret))
             .unwrap_or(Some(Ty::UNIT))?;
 
+        let spec_set_frame = spec_set.start_frame();
         for ty in args.iter().copied().chain(iter::once(ret)) {
             self.ext.types.register_ty_generics(ty, spec_set)
         }
@@ -404,40 +403,29 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             args: self.ext.types.cache.args.extend(args),
             ret,
         };
-        self.generics(generics, spec_set, offset);
+        self.generics(generics, spec_set, params);
 
         self.ctx.end_frame(frame);
 
-        let generics = self.take_generics(offset, generics_len, spec_set);
+        let generics = self.take_generics(spec_set_frame, spec_set);
         Some((signature, generics))
     }
 
     pub(super) fn take_generics(
         &mut self,
-        offset: usize,
-        len: usize,
+        frame: SpecSetFrame,
         spec_set: &mut SpecSet,
     ) -> WhereClause {
-        let mut collected_generics = spec_set.iter();
-        let prev_len = collected_generics
-            .by_ref()
-            .take(offset)
-            .flat_map(|(.., it)| it)
-            .count();
-        let mut generics = bumpvec![cap len];
-        let mut prev = offset;
-        for (index, it) in collected_generics {
-            for _ in prev..index as usize {
-                generics.push(default());
-            }
-            prev = index as usize + 1;
-            generics.push(self.ext.creator().spec_sum(it));
-        }
-        for _ in prev..len + offset {
-            generics.push(default());
-        }
-        spec_set.truncate(prev_len);
-        self.ext.types.cache.params.extend(generics)
+        let params = spec_set
+            .iter()
+            .map(|group| WherePredicate {
+                ty: Some(TyParam::new(group.index, group.asoc_ty).into()),
+                bounds: self.ext.creator().spec_sum(group.specs()),
+            })
+            .collect::<BumpVec<_>>();
+        spec_set.end_frame(frame);
+        let len = params.iter().take_while(|p| p.ty.is_none()).count();
+        WhereClause::new(params, len, self.ext.types).expect("todo: make error message about this")
     }
 
     pub(super) fn collect_struct(
@@ -683,7 +671,7 @@ ctl_errors! {
 
 #[derive(Default, Clone, Copy)]
 struct ScopeData {
-    offset: usize,
+    params: TyParamIter,
     owner: Option<Ty>,
     not_in_scope: bool,
     upper_vis: Option<Vis>,

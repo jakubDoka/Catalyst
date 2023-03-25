@@ -14,7 +14,7 @@ use types::*;
 use crate::builder::{escapes::EscapeCtx, moves::MoveCtx};
 
 pub(crate) struct FuncBorrowcCtx<'m, 'i> {
-    pub(crate) generics: &'i [FragSlice<Spec>],
+    pub(crate) generics: &'i [WherePredicate],
     pub(crate) ret: VRef<ValueMir>,
     pub(crate) unit: VRef<ValueMir>,
     pub(crate) terminal: VRef<ValueMir>,
@@ -25,7 +25,7 @@ pub(crate) struct FuncBorrowcCtx<'m, 'i> {
 impl<'m, 'i> FuncBorrowcCtx<'m, 'i> {
     pub(crate) fn new(
         ret: Ty,
-        generics: &'i [FragSlice<Spec>],
+        generics: &'i [WherePredicate],
         module_ref: FragRef<ModuleMir>,
         module: &'m mut ModuleMir,
         reused: &mut BorrowcCtx,
