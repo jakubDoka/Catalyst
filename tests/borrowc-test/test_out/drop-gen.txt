@@ -1,5 +1,5 @@
 info: borrowc repr of functions:
-fn [: ] drop(paramTyParam { index: TyParamIdx(0), is_asoc: false, asoc_index: 0, asoc_thread: 0 }) -> () { (var3: paramTyParam { index: TyParamIdx(0), is_asoc: false, asoc_index: 0, asoc_thread: 0 }) ret var0
+fn [: ] drop(param0:0) -> () { (var3: param0:0) ret var0
     block0 {
         drop var3
         return var1

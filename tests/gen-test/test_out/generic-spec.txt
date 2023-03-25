@@ -1,7 +1,7 @@
 info: generated ir:
 native-x86_64-unknown-linux-gnu1\main[] function u0:0() -> i64 uext fast {
     sig0 = (i64 uext) -> i64 uext fast
-    fn0 = colocated u0:42 sig0
+    fn0 = colocated u0:41 sig0
 
 block0:
     v0 = iconst.i64 0
@@ -10,7 +10,7 @@ block0:
 }
 native-x86_64-unknown-linux-gnu1\take[uint,uint] function u0:0(i64 uext) -> i64 uext fast {
     sig0 = (i64 uext) -> i64 uext fast
-    fn0 = colocated u0:43 sig0
+    fn0 = colocated u0:42 sig0
 
 block0(v0: i64):
     v1 = call fn0(v0)
