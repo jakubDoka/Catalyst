@@ -41,7 +41,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         let Ty::Base(BaseTy::Struct(struct_ty)) = ty else {
             UnexpectedType {
                 expected: "struct",
-                found: self.ext.creator().display(ty),
+                found: self.ext.creator().display_to_string(ty),
                 loc: self.meta.loc(ctor.span()),
             }.add(self.ext.workspace)?;
         };
@@ -178,7 +178,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                         }
                         .add(self.ext.workspace);
                     }
-                    let ty = self.ext.creator().pointer_to(mutability, node.ty);
+                    let ty = self.ext.creator().pointer(mutability, node.ty);
                     *node = TirNode::new(
                         Ty::Pointer(ty),
                         TirKind::Ref(self.arena.alloc(*node)),
@@ -268,7 +268,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         let expr = self.unit_expr(expr, Inference::None)?;
         let Ty::Pointer(ptr) = expr.ty else {
             NonPointerDereference {
-                ty: self.ext.creator().display(expr.ty),
+                ty: self.ext.creator().display_to_string(expr.ty),
                 loc: self.meta.loc(expr.span),
             }.add(self.ext.workspace)?;
         };
@@ -294,10 +294,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     ) -> ExprRes<'arena> {
         let expr = self.unit_expr(expr, Inference::None)?;
         let mutability = self.parser().mutability(mutability)?;
-        let ptr = self
-            .ext
-            .creator()
-            .pointer_to(mutability.as_param(), expr.ty);
+        let ptr = self.ext.creator().pointer(mutability.as_param(), expr.ty);
 
         if mutability == Mutability::Mutable && expr.flags.contains(TirFlags::IMMUTABLE) {
             NotMutable {

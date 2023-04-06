@@ -1,58 +1,23 @@
 use core::fmt;
 
 use crate::*;
-use rkyv::{Archive, Deserialize, Serialize};
-use storage::*;
 
 use super::spec::TyParamIdx;
 
-#[derive(
-    Clone, Serialize, Deserialize, Archive, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug,
-)]
-#[archive_attr(derive(PartialEq, Eq, Hash))]
-pub struct Pointer {
-    index: u32,
-    thread: u8,
-    pub mutability: TyParamIdx,
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct Pointer<'a> {
+    pub mutability: Mutability,
     pub depth: u8,
+    pub ty: &'a Ty<'a>,
 }
 
-impl Pointer {
-    pub fn new(ty: FragRef<Ty>, mutability: TyParamIdx, depth: u8) -> Self {
-        let FragAddr { index, thread, .. } = ty.addr();
-        Self {
-            index,
-            thread,
-            mutability,
-            depth,
-        }
-    }
-
-    pub fn ty(self) -> FragRef<Ty> {
-        FragRef::new(FragAddr::new(self.index, self.thread))
-    }
-
+impl<'a> Pointer<'a> {
     pub fn compatible(self, other: Self) -> bool {
-        self.index == other.index
-            && self.thread == other.thread
-            && self.mutability.compatible(other.mutability)
+        self.mutability.compatible(other.mutability) && Ty::compatible(*self.ty, *other.ty)
     }
 }
 
-impl Relocated for Pointer {
-    fn mark(&self, marker: &mut FragRelocMarker) {
-        marker.mark(self.ty());
-    }
-
-    fn remap(&mut self, ctx: &FragMarks) -> Option<()> {
-        let FragSliceAddr { index, thread, .. } = ctx.project(self.ty().as_slice())?.addr();
-        self.index = index;
-        self.thread = thread;
-        Some(())
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum Mutability {
     Mutable,
     Immutable,
@@ -60,7 +25,13 @@ pub enum Mutability {
 }
 
 impl Mutability {
-    pub fn as_ty(self) -> Ty {
+    pub fn compatible(self, other: Self) -> bool {
+        self == other || other == Mutability::Immutable
+    }
+}
+
+impl Mutability {
+    pub fn as_ty(self) -> Ty<'static> {
         match self {
             Mutability::Mutable => TyParamIdx::MUTABLE,
             Mutability::Immutable => TyParamIdx::IMMUTABLE,

@@ -6,19 +6,19 @@ use storage::*;
 pub type SpecSetParamRepr = TyParamIdx;
 
 #[derive(Default)]
-pub struct SpecSet {
-    storage: Vec<SpecSetItem>,
-    temp: Vec<SpecSetItem>,
+pub struct SpecSet<'a> {
+    storage: Vec<SpecSetItem<'a>>,
+    temp: Vec<SpecSetItem<'a>>,
     mapping: Map<SpecSetParamRepr, SpecSetParamRepr>,
 }
 
-impl SpecSet {
+impl<'a> SpecSet<'a> {
     pub fn extend(
         &mut self,
         dest: SpecSetParamRepr,
-        source: SpecSetParamRepr,
+        source: Option<SpecSetParamRepr>,
         asoc_ty: OptFragRef<AsocTy>,
-        specs: impl IntoIterator<Item = Spec>,
+        specs: impl IntoIterator<Item = Spec<'a>>,
     ) {
         specs
             .into_iter()
@@ -28,7 +28,7 @@ impl SpecSet {
                 spec,
             })
             .collect_into(&mut self.storage);
-        self.mapping.insert(source, dest);
+        self.mapping.insert(source.unwrap_or(dest), dest);
     }
 
     pub fn project(&mut self, foreign_param: SpecSetParamRepr) -> Option<SpecSetParamRepr> {
@@ -95,7 +95,7 @@ impl SpecSetFrame {
 pub struct SpecSetGroup<'a> {
     pub index: SpecSetParamRepr,
     pub asoc_ty: OptFragRef<AsocTy>,
-    bounds: &'a [SpecSetItem],
+    bounds: &'a [SpecSetItem<'a>],
 }
 
 impl<'a> SpecSetGroup<'a> {
@@ -105,13 +105,13 @@ impl<'a> SpecSetGroup<'a> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct SpecSetItem {
+pub struct SpecSetItem<'a> {
     pub index: SpecSetParamRepr,
     pub asoc_ty: OptFragRef<AsocTy>,
-    pub spec: Spec,
+    pub spec: Spec<'a>,
 }
 
-impl SpecSetItem {
+impl SpecSetItem<'_> {
     fn common_group(&self, other: &Self) -> bool {
         self.index == other.index && self.asoc_ty == other.asoc_ty
     }

@@ -14,6 +14,9 @@ members = [
     "subcommands/*",
     "scripts/*",
 ]
+exclude = [
+    "prototypes/*",
+]
 
 [profile.release]
 opt-level = 3

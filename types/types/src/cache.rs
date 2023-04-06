@@ -1,12 +1,12 @@
+use std::ops::Deref;
 use std::sync::Arc;
 use std::{
     default::default,
     iter,
     ops::{Index, IndexMut},
 };
-use std::{mem, ops::Deref};
 
-use crate::ty::spec_set::SpecSetParamRepr;
+use crate::ty::compact::CompactTy;
 use crate::*;
 
 use diags::{SourceLoc, Workspace};
@@ -15,14 +15,7 @@ use resources::{Resources, Source};
 use rkyv::{Archive, Deserialize, Serialize};
 use storage::*;
 
-pub type TypecLookup = CMap<Ident, ComputedTypecItem>;
-pub type ImplLookup = CMap<(FragRef<SpecBase>, Ty), ImplList>;
-pub type Implemented = CMap<ImplKey, (FragRef<Impl>, FragSlice<Ty>)>;
-pub type Macros = CMap<Ty, MacroImpl>;
-pub type MayNeedDrop = CMap<Ty, bool>;
-
 #[derive(Clone, Archive, Serialize, Deserialize, Default)]
-
 pub struct ImplList {
     #[with(SmallVecArchiver)]
     pub inner: SmallVec<[FragRef<Impl>; 4]>,
@@ -32,14 +25,17 @@ derive_relocated!(struct ImplList { inner });
 
 #[derive(Default, Serialize, Deserialize, Archive)]
 pub struct Mapping {
-    pub lookup: TypecLookup,
-    pub impl_lookup: ImplLookup,
-    pub implemented: Implemented,
-    pub macros: Macros,
-    pub may_need_drop: MayNeedDrop,
+    pub specs: CMap<Ident, FragRef<SpecInstance>>,
+    pub spec_sums: CMap<Ident, FragSlice<CompactSpec>>,
+    pub pointers: CMap<Ident, FragRef<CompactTy>>,
+    pub instances: CMap<Ident, FragRef<Instance>>,
+    pub arrays: CMap<Ident, FragRef<Array>>,
+    pub impl_lookup: CMap<ImplKey, ImplList>,
+    pub macros: CMap<CompactTy, MacroImpl>,
+    pub may_need_drop: CMap<CompactTy, bool>,
 }
 
-derive_relocated!(struct Mapping { lookup impl_lookup implemented macros may_need_drop });
+derive_relocated!(struct Mapping { specs pointers instances arrays impl_lookup macros may_need_drop });
 
 #[derive(Serialize, Deserialize, Archive)]
 pub struct TypecBase {
@@ -64,6 +60,7 @@ impl TypecBase {
             cache,
             mapping: self.mapping.clone(),
             module_items: default(),
+            generic_names: default(),
         })
     }
 
@@ -85,6 +82,7 @@ pub struct Types {
     pub mapping: Arc<Mapping>,
     pub cache: TypeCache,
     pub module_items: ShadowMap<Source, ModuleItems>,
+    pub generic_names: Vec<Ident>,
 }
 
 impl Deref for Types {
@@ -276,11 +274,10 @@ gen_cache! {
     consts: Const,
     predicates: WherePredicate,
     [sync]
-    pointers: Pointer,
-    spec_sums: Spec,
+    spec_sums: CompactSpec,
     spec_instances: SpecInstance,
     instances: Instance,
-    args: Ty,
+    args: CompactTy,
     arrays: crate::Array,
 }
 
@@ -297,80 +294,6 @@ impl Types {
         self.cache.commit_unique(&mut base.cache);
     }
 
-    pub fn register_ty_generics(&self, ty: Ty, spec_set: &mut SpecSet) {
-        self.register_ty_generics_low(ty, None, default(), spec_set);
-    }
-
-    pub fn register_ty_generics_low(
-        &self,
-        ty: Ty,
-        source: Option<SpecSetParamRepr>,
-        generic: FragSlice<Spec>,
-        spec_set: &mut SpecSet,
-    ) {
-        match ty {
-            Ty::Param(param) => spec_set.extend(
-                param.index,
-                source.expect("every param should have source"),
-                param.asoc(),
-                self[generic].iter().copied(),
-            ),
-            Ty::Instance(i) => {
-                let Instance { base, args } = self[i];
-                let generics = base.generics(self);
-                self.add_param_bounds(generics, args, spec_set)
-            }
-            Ty::Pointer(p, ..) => {
-                // TODO: handle mutability
-                self.register_ty_generics_low(self[p.ty()], None, generic, spec_set)
-            }
-            Ty::Array(a) => self.register_ty_generics_low(self[a].item, None, generic, spec_set),
-            Ty::Base(..) | Ty::Builtin(..) => (),
-        }
-    }
-
-    pub fn register_spec_generics(&self, spec: Spec, spec_set: &mut SpecSet) {
-        match spec {
-            Spec::Instance(i) => {
-                let SpecInstance { base, args } = self[i];
-                let params = self[base].generics;
-                self.add_param_bounds(params, args, spec_set)
-            }
-            Spec::Base(..) => (),
-        }
-    }
-
-    pub fn add_param_bounds(
-        &self,
-        generics: WhereClause,
-        args: FragSlice<Ty>,
-        spec_set: &mut SpecSet,
-    ) {
-        let mut counter = TyParamIter::default();
-        let param_predicates = generics.root_predicates(self).iter().zip(&mut counter);
-        for ((pred, i), &arg) in param_predicates.zip(self[args].iter()) {
-            self.register_ty_generics_low(arg, Some(i), pred.bounds, spec_set);
-        }
-
-        let other_predicates = generics.other_predicates(self).zip(&mut counter);
-        for ((ty, bounds), i) in other_predicates {
-            let Ty::Param(param) = ty else {
-                todo!("handle non-param ty in predicate");
-            };
-
-            let projeted_index = spec_set
-                .project(param.index)
-                .expect("predicates should be sorted");
-
-            spec_set.extend(
-                projeted_index,
-                i,
-                param.asoc(),
-                self[bounds].iter().copied(),
-            );
-        }
-    }
-
     pub fn enum_flag_ty(&self, en: FragRef<Enum>) -> Builtin {
         match self[en].variants.len() {
             256.. => Builtin::U16,
@@ -378,124 +301,12 @@ impl Types {
             _ => Builtin::Unit,
         }
     }
-
-    pub fn contains_params(&self, ty: Ty) -> bool {
-        !matches!(self.contains_params_low(ty), ParamPresence::Absent)
-    }
-
-    pub fn contains_params_low(&self, ty: Ty) -> ParamPresence {
-        use ParamPresence::*;
-        match ty {
-            Ty::Instance(instance) => self[self[instance].args]
-                .iter()
-                .map(|&ty| self.contains_params_low(ty))
-                .fold(Absent, ParamPresence::combine),
-            Ty::Pointer(pointer) => self
-                .contains_params_low(self[pointer.ty()])
-                .combine(pointer.mutability.to_mutability().into())
-                .put_behind_pointer(),
-            Ty::Array(array) => self.contains_params_low(self[array].item),
-            Ty::Param(..) => Present,
-            Ty::Base(..) | Ty::Builtin(..) => Absent,
-        }
-    }
-
-    pub fn dereference(&self, ty: Ty) -> Ty {
-        match ty {
-            Ty::Pointer(ptr, ..) => self[ptr.ty()],
-            _ => ty,
-        }
-    }
-
-    pub fn compatible_spec(
-        &self,
-        params: &mut [Option<Ty>],
-        reference: Spec,
-        template: Spec,
-    ) -> Result<(), SpecCmpError> {
-        match (reference, template) {
-            _ if reference == template => Ok(()),
-            (Spec::Instance(reference), Spec::Instance(template)) => {
-                let reference = self[reference];
-                let template = self[template];
-
-                if reference.base != template.base {
-                    return Err(SpecCmpError::Specs(
-                        Spec::Base(reference.base),
-                        Spec::Base(template.base),
-                    ));
-                }
-
-                self[reference.args]
-                    .iter()
-                    .zip(&self[template.args])
-                    .fold(Ok(()), |acc, (&reference, &template)| {
-                        acc.and(self.compatible(params, reference, template))
-                    })
-                    .map_err(|(a, b)| SpecCmpError::Args(a, b))
-            }
-            _ => Err(SpecCmpError::Specs(reference, template)),
-        }
-    }
-
-    pub fn infer_ty_params(&self, param_count: usize, reference: Ty, template: Ty) -> BumpVec<Ty> {
-        let mut params = bumpvec![None; param_count];
-        let res = self.compatible(&mut params, reference, template);
-        assert!(res.is_ok());
-        assert!(params.iter().all(|p| p.is_some()));
-        const _: () = assert!(mem::size_of::<Option<Ty>>() == mem::size_of::<Ty>());
-        unsafe { mem::transmute(params) }
-    }
-
-    pub fn compatible(
-        &self,
-        params: &mut [Option<Ty>],
-        reference: Ty,
-        template: Ty,
-    ) -> Result<(), (Ty, Ty)> {
-        let mut stack = bumpvec![(reference, template)];
-
-        let check = |a, b| Ty::compatible(a, b).then_some(()).ok_or((a, b));
-
-        while let Some((reference, template)) = stack.pop() {
-            if reference == template && !self.contains_params(template) {
-                continue;
-            }
-
-            match (reference, template) {
-                (Ty::Pointer(reference_p), Ty::Pointer(template_p)) => {
-                    match (reference_p.mutability.to_mutability(), template_p.mutability.to_mutability()) {
-                        (val, Mutability::Param(i)) => params[i.get()] = Some(val.as_ty()),
-                        _ if reference_p.mutability.compatible(template_p.mutability) => (),
-                        _ => return Err((reference, template)),
-                    }
-                    stack.push((self[reference_p.ty()], self[template_p.ty()]));
-                }
-                (Ty::Instance(reference), Ty::Instance(template)) => {
-                    check(self[reference].base.as_ty(), self[template].base.as_ty())?;
-                    stack.extend(
-                        self[self[reference].args]
-                            .iter()
-                            .copied()
-                            .zip(self[self[template].args].iter().copied()),
-                    );
-                }
-                (_, Ty::Param(param)) if let Some(inferred) = params[param.index.get()] => {
-                    check(reference, inferred)?;
-                }
-                (_, Ty::Param(param)) => params[param.index.get()] = Some(reference),
-                _ => return Err((reference, template)),
-            }
-        }
-
-        Ok(())
-    }
 }
 
 #[derive(Debug)]
-pub enum SpecCmpError {
-    Specs(Spec, Spec),
-    Args(Ty, Ty),
+pub enum SpecCmpError<'a> {
+    Specs(Spec<'a>, Spec<'a>),
+    Args(Ty<'a>, Ty<'a>),
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize, Archive)]
@@ -631,7 +442,7 @@ pub fn lookup_water_drop<T>(drops: &[(&str, FragRef<T>)], name: &str) -> Option<
 pub struct MacroImpl {
     pub name: Ident,
     pub r#impl: OptFragRef<Impl>,
-    pub params: FragSlice<Ty>,
+    pub params: FragSlice<CompactTy>,
 }
 
 derive_relocated! {

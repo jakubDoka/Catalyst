@@ -141,7 +141,10 @@ impl Interner {
         self.intern_with(|s, t| write!(t, "{}\\{}", scope, name.get(s)))
     }
 
-    pub fn intern_with<T>(&mut self, mut builder: impl FnMut(&Self, &mut String) -> T) -> Ident {
+    pub fn intern_with<T>(
+        &mut self,
+        mut builder: impl FnMut(&mut Self, &mut String) -> T,
+    ) -> Ident {
         let mut temp = std::mem::take(&mut self.temp);
         builder(self, &mut temp);
         let res = self.intern(&temp);

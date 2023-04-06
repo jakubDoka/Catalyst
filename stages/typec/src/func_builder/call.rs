@@ -169,7 +169,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             _ = self
                 .ext
                 .types
-                .compatible(param_slots, inference, signature.ret);
+                .compatible(param_slots, inference, dbg!(signature.ret));
         }
 
         if let Some(ref mut caller) = caller {
@@ -241,8 +241,8 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                 .map(|ImplKey { ty, spec }| {
                     format!(
                         "{}: {}",
-                        self.ext.creator().display(ty),
-                        self.ext.creator().display(spec)
+                        self.ext.creator().display_to_string(ty),
+                        self.ext.creator().display_to_string(spec)
                     )
                 })
                 .intersperse_with(|| "\n".into())

@@ -3,32 +3,79 @@ use core::slice;
 use std::{
     alloc::Layout,
     cell::UnsafeCell,
-    mem::{self, MaybeUninit},
-    ops::Deref,
+    mem::{self, ManuallyDrop, MaybeUninit},
     ptr::{copy_nonoverlapping, NonNull},
 };
 
-/// Arena is safe wrapper around `Allocator` that allows to allocate values that dont need
-/// dropping.
-#[derive(Default)]
-#[repr(transparent)]
-pub struct Arena {
-    allocator: UnsafeCell<Allocator>,
+use super::AllocatorFrame;
+
+#[macro_export]
+macro_rules! proxy_arena {
+    (let $arena:ident = $proxy:expr) => {
+        let mut scope = $proxy.scope();
+        let $arena = scope.proxy();
+    };
 }
 
-unsafe impl Send for Arena {}
+pub struct ProxyArena<'scope> {
+    inner: ManuallyDrop<Arena<'scope>>,
+}
 
-impl Arena {
+impl<'scope> ProxyArena<'scope> {
+    /// Allocate value in arena. Value must not need dropping which will be asserted at compile
+    /// time.
+    #[inline]
+    pub fn alloc<T>(&self, value: T) -> &'scope T {
+        unsafe { mem::transmute(self.inner.alloc(value)) }
+    }
+
+    /// Analogous to `alloc` but for slices.
+    #[inline]
+    pub fn alloc_slice<T>(&self, value: &[T]) -> &'scope [T] {
+        unsafe { mem::transmute(self.inner.alloc_slice(value)) }
+    }
+
+    /// Analogous to `alloc_slice` but for iterators.
+    pub fn alloc_iter<T, I>(&self, iter: I) -> &'scope [T]
+    where
+        I: IntoIterator<Item = T>,
+        I::IntoIter: ExactSizeIterator,
+    {
+        unsafe { mem::transmute(self.inner.alloc_iter(iter)) }
+    }
+
+    /// More low level function that allocates sequence of arbitrary bytes compatible with passed
+    /// layout.
+    #[allow(clippy::mut_from_ref)]
+    pub fn alloc_byte_layout(&self, layout: Layout) -> &'scope mut [u8] {
+        unsafe { mem::transmute(self.inner.alloc_byte_layout(layout)) }
+    }
+
+    pub fn scope(&mut self) -> Arena {
+        unsafe { self.inner.snapshot() }
+    }
+}
+
+/// Arena is safe wrapper around `Allocator` that allows to allocate values that dont need
+/// dropping.
+pub struct Arena<'scope> {
+    allocator: UnsafeCell<&'scope mut Allocator>,
+    frame: AllocatorFrame,
+}
+
+unsafe impl Send for Arena<'_> {}
+
+impl<'scope> Arena<'scope> {
     /// Create new arena with given allocator.
-    pub fn new(allocator: Allocator) -> Self {
+    pub fn new(allocator: &'scope mut Allocator) -> Self {
         Self {
+            frame: AllocatorFrame::new(allocator),
             allocator: allocator.into(),
         }
     }
 
-    // THE FUNCTION IS NOT SOUND, USE WITH CAUTION
-    fn allocator(&self) -> &mut Allocator {
-        unsafe { &mut *self.allocator.get() }
+    unsafe fn allocator(&self) -> &mut Allocator {
+        &mut *self.allocator.get()
     }
 
     /// Allocate value in arena. Value must not need dropping which will be asserted at compile
@@ -43,7 +90,7 @@ impl Arena {
             return unsafe { &mut *NonNull::dangling().as_ptr() };
         };
 
-        let ptr = self.allocator().alloc(layout, false);
+        let ptr = unsafe { self.allocator() }.alloc(layout, false);
         unsafe {
             (ptr.as_ptr() as *mut T).write(value);
             &*(ptr.as_ptr() as *const T)
@@ -62,7 +109,7 @@ impl Arena {
             return &[];
         };
 
-        let ptr = self.allocator().alloc(layout, false);
+        let ptr = unsafe { self.allocator() }.alloc(layout, false);
         unsafe {
             copy_nonoverlapping(value.as_ptr(), ptr.as_ptr() as *mut _, value.len());
             slice::from_raw_parts(ptr.as_ptr() as *const _, value.len())
@@ -81,7 +128,7 @@ impl Arena {
         let len = iter.len();
         let layout = Layout::array::<T>(len).expect("layout of resulting allocation is invalid");
 
-        let ptr = self.allocator().alloc(layout, false);
+        let ptr = unsafe { self.allocator() }.alloc(layout, false);
         // SAFETY: layout should represent valid slice
         let slice = unsafe { slice::from_raw_parts_mut(ptr.as_ptr() as *mut MaybeUninit<T>, len) };
 
@@ -97,43 +144,33 @@ impl Arena {
     /// layout.
     #[allow(clippy::mut_from_ref)]
     pub fn alloc_byte_layout(&self, layout: Layout) -> &mut [u8] {
-        let mut ptr = self.allocator().alloc(layout, false);
+        let mut ptr = unsafe { self.allocator() }.alloc(layout, false);
         unsafe { ptr.as_mut() }
     }
 
-    /// Clear arena, since all allocated values dont need dropping, we can just reset allocator.
-    /// This function is safe since it requires mutable arena whitch implies all allocations are
-    /// dropped.
+    /// Creates proxy arena that can allocate for its lifetime.
+    pub fn proxy(&mut self) -> ProxyArena {
+        ProxyArena {
+            inner: ManuallyDrop::new(unsafe { self.snapshot() }),
+        }
+    }
+
+    unsafe fn snapshot(&mut self) -> Arena {
+        Arena {
+            frame: AllocatorFrame::new(self.allocator.get_mut()),
+            allocator: (*self.allocator.get_mut()).into(),
+        }
+    }
+
+    /// Clears arena and returns all allocated memory to allocator.
     pub fn clear(&mut self) {
-        unsafe {
-            self.allocator.get_mut().clear();
-        }
+        unsafe { self.frame.revert(self.allocator.get_mut()) };
     }
+}
 
-    /// Get allocator from arena.
-    pub fn into_allocator(mut self) -> Allocator {
+impl<'scope> Drop for Arena<'scope> {
+    fn drop(&mut self) {
         self.clear();
-        self.allocator.into_inner()
-    }
-
-    /// Get frame from arena. This creates checkpoint that can be used to rollback arena to state
-    /// before frame was created. Rollback is performed implicitly when frame is dropped.
-    pub fn frame(&mut self) -> ArenaFrame {
-        ArenaFrame {
-            allocator: self.allocator.get_mut().frame(),
-        }
-    }
-}
-
-pub struct ArenaFrame<'a> {
-    allocator: AllocatorFrame<'a>,
-}
-
-impl<'a> Deref for ArenaFrame<'a> {
-    type Target = Arena;
-
-    fn deref(&self) -> &Self::Target {
-        unsafe { mem::transmute(&*self.allocator) }
     }
 }
 
@@ -144,12 +181,14 @@ mod test {
     #[test]
     #[cfg_attr(miri, ignore)]
     fn test_safety() {
-        let arena = Arena::default();
+        let mut allocator = Allocator::default();
+        let mut arena = Arena::new(&mut allocator);
+        let mut arena = arena.proxy();
 
         let a = arena.alloc(1);
         let b = arena.alloc(a as &i32);
 
-        let other_arena = Arena::default();
+        let other_arena = arena.scope();
 
         let c = other_arena.alloc(b as &&i32);
 
@@ -159,7 +198,8 @@ mod test {
     #[test]
     #[cfg_attr(miri, ignore)]
     fn test_expand() {
-        let arena = Arena::default();
+        let mut allocator = Allocator::default();
+        let arena = Arena::new(&mut allocator);
 
         for i in 0usize..1024 + 1 {
             arena.alloc(i);
@@ -169,13 +209,15 @@ mod test {
     #[test]
     #[cfg_attr(miri, ignore)]
     fn clear() {
-        let mut arena = Arena::default();
+        let mut allocator = Allocator::default();
+        let mut arena = Arena::new(&mut allocator);
 
+        let proxy = arena.proxy();
         for i in 0usize..1024 + 1 {
-            arena.alloc(i);
+            proxy.alloc(i);
         }
 
-        arena.clear();
+        drop(proxy);
 
         for i in 0usize..1024 + 1 {
             arena.alloc(i);

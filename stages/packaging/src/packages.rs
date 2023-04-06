@@ -18,15 +18,10 @@ pub struct ResourceLoaderCtx {
     modules: Map<PathBuf, DummyModule>,
     package_frontier: Vec<(PathBuf, Option<SourceLoc>, bool)>,
     module_frontier: Vec<(PathBuf, VRef<Package>, VRef<Source>, Span)>,
-    ast_arena: Option<Arena>,
     dep_root: PathBuf,
 }
 
 impl ResourceLoaderCtx {
-    fn get_ast_data(&mut self) -> Arena {
-        self.ast_arena.take().unwrap_or_default()
-    }
-
     fn clear(&mut self, resources: &mut Resources, db: &mut dyn ResourceDb) {
         self.sources.clear();
         resources
@@ -41,9 +36,6 @@ impl ResourceLoaderCtx {
         self.modules.clear();
         self.package_frontier.clear();
         self.module_frontier.clear();
-        if let Some(ref mut ast_data) = self.ast_arena {
-            ast_data.clear();
-        }
         self.sources.insert(
             Resources::BUILTIN_SOURCE_PATH.into(),
             Resources::BUILTIN_SOURCE,
@@ -82,13 +74,14 @@ impl<'ctx> PackageLoader<'ctx> {
         &mut self,
         root_path: &Path,
         ctx: &mut ResourceLoaderCtx,
+        arena: &mut ProxyArena,
     ) -> Option<Vec<VRef<Source>>> {
         ctx.clear(self.resources, self.db);
         self.resources.clear();
 
         ctx.dep_root = self.resolve_dep_root_path(root_path)?;
         let root_path = self.resolve_source_path(root_path, None, "package")?;
-        let root_package = self.load_packages(root_path, ctx)?;
+        let root_package = self.load_packages(root_path, ctx, arena)?;
 
         let mut buffer = bumpvec![cap self.resources.packages.len()];
         self.package_graph.clear();
@@ -115,7 +108,7 @@ impl<'ctx> PackageLoader<'ctx> {
             .ok();
         buffer.clear();
 
-        let root_module = self.load_modules(root_package, ctx)?;
+        let root_module = self.load_modules(root_package, ctx, arena)?;
 
         self.package_graph.clear();
         for module in self.resources.modules.values() {
@@ -177,6 +170,7 @@ impl<'ctx> PackageLoader<'ctx> {
         &mut self,
         package: VRef<Package>,
         ctx: &mut ResourceLoaderCtx,
+        arena: &mut ProxyArena,
     ) -> Option<[VRef<Module>; 2]> {
         ctx.modules
             .entry(Resources::BUILTIN_SOURCE_PATH.into())
@@ -196,11 +190,9 @@ impl<'ctx> PackageLoader<'ctx> {
         ctx.module_frontier
             .push((root_module.clone(), package, source, root_module_span));
 
-        let mut ast_data = ctx.get_ast_data();
         while let Some((path, package, source, span)) = ctx.module_frontier.pop() {
-            self.load_module(path, package, source, span, &mut ast_data, ctx);
+            self.load_module(path, package, source, span, arena, ctx);
         }
-        ctx.ast_arena = Some(ast_data);
 
         for module in ctx.modules.values_mut() {
             let final_module = Module {
@@ -248,7 +240,7 @@ impl<'ctx> PackageLoader<'ctx> {
         package: VRef<Package>,
         origin: VRef<Source>,
         span: Span,
-        ast_data: &mut Arena,
+        arena: &mut ProxyArena,
         ctx: &mut ResourceLoaderCtx,
     ) -> Option<()> {
         let source = self.load_source(
@@ -261,13 +253,13 @@ impl<'ctx> PackageLoader<'ctx> {
 
         let content = &self.resources.sources[source].content;
         let mut parser_ctx = ParserCtx::<NoTokenMeta>::new(content);
-        ast_data.clear();
 
+        proxy_arena!(let arena = arena);
         let (imports, ..) = Parser::new(
             self.interner,
             self.workspace,
             &mut parser_ctx,
-            ast_data,
+            &arena,
             source,
             content,
         )
@@ -398,13 +390,12 @@ impl<'ctx> PackageLoader<'ctx> {
         &mut self,
         root_path: PathBuf,
         ctx: &mut ResourceLoaderCtx,
+        arena: &mut ProxyArena,
     ) -> Option<VRef<Package>> {
         ctx.package_frontier.push((root_path.clone(), None, false));
-        let mut ast_data = ctx.get_ast_data();
         while let Some((path, loc, is_external)) = ctx.package_frontier.pop() {
-            self.load_package(path, loc, &mut ast_data, is_external, ctx);
+            self.load_package(path, loc, arena, is_external, ctx);
         }
-        ctx.ast_arena = Some(ast_data);
 
         for package in ctx.packages.values_mut() {
             let final_package = Package {
@@ -455,7 +446,7 @@ impl<'ctx> PackageLoader<'ctx> {
         &mut self,
         path: PathBuf,
         loc: Option<SourceLoc>,
-        ast_data: &mut Arena,
+        arena: &mut ProxyArena,
         is_external: bool,
         ctx: &mut ResourceLoaderCtx,
     ) -> Option<()> {
@@ -471,13 +462,13 @@ impl<'ctx> PackageLoader<'ctx> {
 
         let source = &self.resources.sources[source_id];
         let mut parser_ctx = ParserCtx::new(&source.content);
-        ast_data.clear();
 
+        proxy_arena!(let arena = arena);
         let manifest = Parser::new(
             self.interner,
             self.workspace,
             &mut parser_ctx,
-            ast_data,
+            &arena,
             source_id,
             &source.content,
         )

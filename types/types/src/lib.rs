@@ -70,9 +70,8 @@ mod ty;
 pub use {
     cache::{
         lookup_water_drop, sorted_water_drops, ConstFolder, ConstFolderContext, FolderValue,
-        GuaranteedLoc, ImplList, ImplLookup, Implemented, Loc, MacroImpl, Macros, Mapping,
-        MayNeedDrop, ModuleItems, ParamPresence, SpecCmpError, TypeCache, TypecBase,
-        TypecCacheBase, TypecCtxSlice, TypecLookup, Types,
+        GuaranteedLoc, ImplList, Loc, MacroImpl, Mapping, ModuleItems, ParamPresence, SpecCmpError,
+        TypeCache, TypecBase, TypecCacheBase, TypecCtxSlice, Types,
     },
     func::{Func, FuncFlags, FuncSlices, FuncVisibility, Funcs, Signature},
     graphs::ProjectedCycleDetector,
@@ -87,13 +86,17 @@ pub use {
         VarHeaderTir,
     },
     ty::{
-        data::{Array, ArraySize, Const, Enum, Field, FieldFlags, Instance, Struct, Variant},
+        compact::{CompactBaseTy, CompactSpec, CompactTy, ExpandedSpec, ExpandedTy},
+        data::{
+            Array, ArraySize, Const, DropSpec, Enum, Field, FieldFlags, Instance, Struct, Variant,
+        },
         pointer::{Mutability, Pointer},
         spec::{
-            AsocTy, Impl, ImplKey, SpecBase, SpecFunc, SpecInstance, TyParam, TyParamIdx,
-            TyParamIter, TypeParameterError, WhereClause, WherePredicate,
+            AsocTy, ExpWhereClause, ExpWherePredicate, Impl, ImplKey, SpecBase, SpecFunc,
+            SpecInstance, TyParam, TyParamIdx, TyParamIter, TypeParameterError, WhereClause,
+            WherePredicate,
         },
         spec_set::{SpecSet, SpecSetFrame, SpecSetGroup},
-        BaseTy, Builtin, ComputedTypecItem, Humid, NonBaseTy, ParamRepr, Spec, Ty, TyFlags,
+        BaseTy, Builtin, ExpArray, ExpInstance, Humid, NonBaseTy, ParamRepr, Spec, Ty, TyFlags,
     },
 };

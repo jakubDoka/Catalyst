@@ -172,9 +172,9 @@ impl<'arena, 'ctx> TypecExternalCtx<'arena, 'ctx> {
                     .map(|(ty, bounds)| {
                         format!(
                             "{}: {}",
-                            self.creator().display(ty),
+                            self.creator().display_to_string(ty),
                             bounds
-                                .map(|b| self.creator().display(b))
+                                .map(|b| self.creator().display_to_string(b))
                                 .intersperse_with(|| " + ".into())
                                 .collect::<String>(),
                         )
@@ -211,6 +211,7 @@ impl<'arena, 'ctx> TypecExternalCtx<'arena, 'ctx> {
         TypeCreator {
             types: self.types,
             interner: self.interner,
+            arena: self.arena,
         }
     }
 
@@ -436,12 +437,13 @@ impl TypecCtx {
                 .iter()
                 .map(|field| field.ty)
                 .chain(variants.iter().map(|variant| variant.ty))
-                .filter_map(|ty| BaseTy::from_ty(ty, types));
+                .filter_map(|ty| BaseTy::from_ty(ty));
 
             self.ty_graph.new_node(ty).add_edges(iter);
         }
 
-        if let Err(cycle) = self.ty_graph.ordering(nodes, &mut bumpvec![]) {
+        let mut ordering = bumpvec![];
+        if let Err(cycle) = self.ty_graph.ordering(nodes, &mut ordering) {
             let cycle_chart = cycle
                 .iter()
                 .map(|&ty| type_creator::display(types, interner, ty.as_ty()))
@@ -463,6 +465,19 @@ impl TypecCtx {
 
             workspace.push(snippet);
         };
+
+        for ty in ordering.into_iter().rev() {
+            match ty {
+                BaseTy::Enum(e) => {
+                    let spec = types[e].update_drop_spec(types);
+                    types[e].drop_spec = spec;
+                }
+                BaseTy::Struct(s) => {
+                    let spec = types[s].update_drop_spec(types);
+                    types[s].drop_spec = spec;
+                }
+            }
+        }
     }
 
     pub(crate) fn first_unlabeled_loop(&self) -> Option<VRef<LoopHeaderTir>> {
@@ -526,7 +541,7 @@ impl TypecCtx {
         types: &Types,
         interner: &mut Interner,
     ) {
-        let spec_base = generic.base(types);
+        let spec_base = generic.base();
         let functions = types[spec_base].methods;
 
         for (key, &func) in functions.keys().zip(&types[functions]) {

@@ -8,29 +8,29 @@ use rkyv::{Archive, Deserialize, Serialize};
 
 pub type TypecOutput<A, T> = Vec<(A, FragRef<T>)>;
 
-pub struct LoopHeaderTir {
-    pub return_type: Ty,
-    pub inference: Inference,
+pub struct LoopHeaderTir<'a> {
+    pub return_type: Ty<'a>,
+    pub inference: Inference<'a>,
     pub label: Option<Ident>,
 }
 
 #[derive(Clone, Copy)]
 pub struct MacroCompileRequest {
     pub name: Ident,
-    pub ty: Ty,
+    pub ty: CompactTy,
     pub r#impl: FragRef<Impl>,
-    pub params: FragSlice<Ty>,
+    pub params: FragSlice<CompactTy>,
 }
 
 pub struct CastCheck {
     pub loc: Span,
-    pub from: Ty,
-    pub to: Ty,
+    pub from: CompactTy,
+    pub to: CompactTy,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct VarHeaderTir {
-    pub ty: Ty,
+pub struct VarHeaderTir<'a> {
+    pub ty: Ty<'a>,
     pub span: Span,
     pub mutable: bool,
 }
@@ -38,7 +38,7 @@ pub struct VarHeaderTir {
 #[derive(Clone, Copy, Debug)]
 pub struct CallTir<'a> {
     pub func: CallableTir<'a>,
-    pub params: &'a [Ty],
+    pub params: &'a [Ty<'a>],
     pub args: &'a [TirNode<'a>],
 }
 
@@ -67,7 +67,7 @@ pub struct PatTir<'a> {
     pub has_binding: bool,
     pub is_refutable: bool,
     pub span: Span,
-    pub ty: Ty,
+    pub ty: Ty<'a>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -86,7 +86,7 @@ pub enum UnitPatKindTir<'a> {
     Struct {
         fields: &'a [PatTir<'a>],
     },
-    Binding(bool, VRef<VarHeaderTir>),
+    Binding(bool, VRef<VarHeaderTir<'a>>),
     Int(Result<Span, i64>),
     Wildcard,
 }
@@ -125,14 +125,14 @@ pub struct AssignTir<'a> {
 #[derive(Clone, Copy, Debug)]
 pub struct TirNode<'a> {
     pub kind: TirKind<'a>,
-    pub ty: Ty,
+    pub ty: Ty<'a>,
     pub flags: TirFlags,
     pub span: Span,
 }
 
 impl<'a> TirNode<'a> {
     #[inline]
-    pub fn new(ty: Ty, kind: TirKind<'a>, span: Span) -> Self {
+    pub fn new(ty: Ty<'a>, kind: TirKind<'a>, span: Span) -> Self {
         Self {
             kind,
             ty,
@@ -142,7 +142,7 @@ impl<'a> TirNode<'a> {
     }
 
     #[inline]
-    pub fn with_flags(ty: Ty, kind: TirKind<'a>, flags: TirFlags, span: Span) -> Self {
+    pub fn with_flags(ty: Ty<'a>, kind: TirKind<'a>, flags: TirFlags, span: Span) -> Self {
         Self {
             kind,
             ty,
@@ -166,13 +166,13 @@ bitflags! {
 
 #[derive(Clone, Copy, Debug)]
 pub struct LoopTir<'a> {
-    pub id: VRef<LoopHeaderTir>,
+    pub id: VRef<LoopHeaderTir<'a>>,
     pub body: TirNode<'a>,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct BreakTir<'a> {
-    pub loop_id: VRef<LoopHeaderTir>,
+    pub loop_id: VRef<LoopHeaderTir<'a>>,
     pub value: Option<TirNode<'a>>,
 }
 
@@ -186,7 +186,7 @@ pub enum TirKind<'a> {
     Return(Option<&'a TirNode<'a>>),
     Call(&'a CallTir<'a>),
     ConstAccess(FragRef<Const>),
-    Access(VRef<VarHeaderTir>),
+    Access(VRef<VarHeaderTir<'a>>),
     Ctor(&'a [TirNode<'a>]),
     Deref(&'a TirNode<'a>),
     Ref(&'a TirNode<'a>),
@@ -196,46 +196,46 @@ pub enum TirKind<'a> {
     Let(&'a LetTir<'a>),
     Assign(&'a AssignTir<'a>),
     Loop(&'a LoopTir<'a>),
-    Continue(VRef<LoopHeaderTir>),
+    Continue(VRef<LoopHeaderTir<'a>>),
     Break(&'a BreakTir<'a>),
 }
 
 #[derive(Clone, Copy)]
-pub enum Inference {
-    Strong(Ty),
-    Weak(Ty),
+pub enum Inference<'a> {
+    Strong(Ty<'a>),
+    Weak(Ty<'a>),
     None,
 }
 
-impl Inference {
-    pub fn ty(self) -> Option<Ty> {
+impl<'a> Inference<'a> {
+    pub fn ty(self) -> Option<Ty<'a>> {
         match self {
-            Inference::Strong(ty) | Inference::Weak(ty) => Some(ty),
-            Inference::None => None,
+            Self::Strong(ty) | Self::Weak(ty) => Some(ty),
+            Self::None => None,
         }
     }
 
-    pub fn weaken(self) -> Inference {
+    pub fn weaken(self) -> Self {
         match self {
-            Inference::Strong(ty) => Inference::Weak(ty),
+            Self::Strong(ty) => Self::Weak(ty),
             other => other,
         }
     }
 
-    pub fn map(self, f: impl FnOnce(Ty) -> Option<Ty>) -> Inference {
+    pub fn map(self, f: impl FnOnce(Ty) -> Option<Ty>) -> Self {
         match self {
-            Inference::Strong(ty) => f(ty).map(Inference::Strong).unwrap_or(Inference::None),
-            Inference::Weak(ty) => f(ty).map(Inference::Weak).unwrap_or(Inference::None),
-            Inference::None => Inference::None,
+            Self::Strong(ty) => f(ty).map(Self::Strong).unwrap_or(Self::None),
+            Self::Weak(ty) => f(ty).map(Self::Weak).unwrap_or(Self::None),
+            Self::None => Self::None,
         }
     }
 }
 
-impl From<Option<Ty>> for Inference {
-    fn from(ty: Option<Ty>) -> Self {
+impl<'a> From<Option<Ty<'a>>> for Inference<'a> {
+    fn from(ty: Option<Ty<'a>>) -> Self {
         match ty {
-            Some(ty) => Inference::Strong(ty),
-            None => Inference::None,
+            Some(ty) => Self::Strong(ty),
+            None => Self::None,
         }
     }
 }

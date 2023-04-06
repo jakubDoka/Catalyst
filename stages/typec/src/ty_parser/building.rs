@@ -86,14 +86,14 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
                         .find_implementation(ty, inherit, generics.predicates, &mut None)
                         .is_none()
                         .then(|| self.ext.creator().instantiate_spec(inherit, params))
-                        .map(|instance| self.ext.creator().display(instance))
+                        .map(|instance| self.ext.creator().display_to_string(instance))
                 })
                 .intersperse_with(|| " + ".into())
                 .collect::<String>();
 
             if !missing_impls.is_empty() {
                 MissingSpecInherits {
-                    ty: self.ext.creator().display(ty),
+                    ty: self.ext.creator().display_to_string(ty),
                     missing: missing_impls,
                     loc: loc.source_loc(self.ext.types),
                 }

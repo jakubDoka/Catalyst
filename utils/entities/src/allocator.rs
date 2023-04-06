@@ -1,7 +1,7 @@
 use std::{
     alloc::Layout,
     default::default,
-    ops::{Deref, Range},
+    ops::Range,
     ptr::{self, NonNull},
 };
 
@@ -126,52 +126,36 @@ impl Allocator {
         self.current = NonNull::dangling().as_ptr();
         self.start = NonNull::dangling().as_ptr();
     }
-
-    /// Creates allocator frame, frame takes snapshot of the allocator and frees subsequent
-    /// allocations on drop.
-    pub fn frame(&mut self) -> AllocatorFrame {
-        AllocatorFrame::new(self)
-    }
 }
 
-pub struct AllocatorFrame<'a> {
-    allocator: &'a mut Allocator,
+struct AllocatorFrame {
     previous_start: *mut u8,
     previous_current: *mut u8,
     previous_chunk_size: usize,
 }
 
-impl<'a> AllocatorFrame<'a> {
-    pub fn new(allocator: &'a mut Allocator) -> Self {
+impl AllocatorFrame {
+    fn new(allocator: &Allocator) -> Self {
         let previous_start = allocator.start;
         let previous_current = allocator.current;
         let previous_chunk_size = allocator.chunks.len();
 
         Self {
-            allocator,
             previous_start,
             previous_current,
             previous_chunk_size,
         }
     }
-}
 
-impl<'a> Deref for AllocatorFrame<'a> {
-    type Target = Allocator;
-
-    fn deref(&self) -> &Self::Target {
-        self.allocator
-    }
-}
-
-impl<'a> Drop for AllocatorFrame<'a> {
-    fn drop(&mut self) {
-        self.allocator
+    /// Safety: This cannot be called after earlier created frames called this on the allocator.
+    /// Allocator also must be the same whith which the frame was created.
+    unsafe fn revert(&self, allocator: &mut Allocator) {
+        allocator
             .chunks
             .drain(self.previous_chunk_size..)
-            .collect_into(&mut self.allocator.free);
-        self.allocator.current = self.previous_current;
-        self.allocator.start = self.previous_start;
+            .collect_into(&mut allocator.free);
+        allocator.current = self.previous_current;
+        allocator.start = self.previous_start;
     }
 }
 

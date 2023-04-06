@@ -18,28 +18,26 @@
 macro_rules! wrapper_enum {
     (
         $(#[$meta:meta])*
-        enum $name:ident: $($relocated:ident)? {
+        enum $name:ident $($lt:lifetime)? : $($relocated:ident)? {
             $(
                 $variant:ident: $ty:ty $(=> $readable_name:literal)?,
             )*
         }
     ) => {
+        $crate::wrapper_enum!(($) $name $name $($lt)?);
+
         $(#[$meta])*
-        pub enum $name {
+        pub enum $name $(<$lt>)? {
             $(
                 $variant($ty),
             )*
         }
 
         $(
-            impl From<$ty> for $name {
-                fn from(value: $ty) -> Self {
-                    Self::$variant(value)
-                }
-            }
+            $name!($ty, $variant);
         )*
 
-        impl $name {
+        impl $(<$lt>)? $name $(<$lt>)? {
             pub const fn name(&self) -> &'static str {
                 match *self {
                     $(
@@ -50,6 +48,18 @@ macro_rules! wrapper_enum {
         }
 
         wrapper_enum!(@relocated $($relocated)? enum $name { $($variant(a) => a,)* });
+    };
+
+    (($d:tt) $macro_name:ident $name:ident $($lt:lifetime)?) => {
+        macro_rules! $macro_name {
+            ($d ty:ty, $d variant:ident) => {
+                impl$(<$lt>)? From<$d ty> for $name$(<$lt>)? {
+                    fn from(value: $d ty) -> Self {
+                        Self::$d variant(value)
+                    }
+                }
+            };
+        }
     };
 
     ($variant:ident) => {

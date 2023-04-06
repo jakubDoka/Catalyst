@@ -12,7 +12,7 @@ pub type FuncSlices = FragMap<FragRef<Func>>;
 pub struct Func {
     pub generics: WhereClause,
     pub outer_param_count: u16,
-    pub owner: Option<Ty>,
+    pub owner: Option<CompactTy>,
     pub signature: Signature,
     pub flags: FuncFlags,
     pub visibility: FuncVisibility,
@@ -63,8 +63,8 @@ pub enum FuncVisibility {
 
 pub struct Signature {
     pub cc: Option<Ident>,
-    pub args: FragSlice<Ty>,
-    pub ret: Ty,
+    pub args: FragSlice<CompactTy>,
+    pub ret: CompactTy,
 }
 
 derive_relocated!(struct Signature { args ret });

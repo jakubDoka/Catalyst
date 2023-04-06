@@ -123,8 +123,8 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         generics: WhereClause,
         explicit_methods: BumpVec<(FragRef<Func>, Span)>,
     ) -> OptFragRef<Impl> {
-        let spec_base = spec.base(self.ext.types);
-        let ty_base = ty.base(self.ext.types);
+        let spec_base = spec.base();
+        let ty_base = ty.base();
 
         if SpecBase::DROP == spec_base {
             self.ext.types.may_need_drop.insert(ty_base, true);
@@ -140,17 +140,14 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             CollidingImpl {
                 colliding: self.meta.loc(span),
                 existing: self.ext.types[already].loc.source_loc(self.ext.types),
-                ty: self.ext.creator().display(ty),
-                spec: self.ext.creator().display(spec),
+                ty: self.ext.creator().display_to_string(ty),
+                spec: self.ext.creator().display_to_string(spec),
             }
             .add(self.ext.workspace);
         }
 
         if spec_base == SpecBase::DROP {
-            self.ext
-                .types
-                .may_need_drop
-                .insert(ty.base(self.ext.types), true);
+            self.ext.types.may_need_drop.insert(ty.base(), true);
         }
 
         let methods =
@@ -334,9 +331,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         } else {
             let meta = self.next_humid_item_id::<Func>(name, attributes);
             let local_id = owner.map_or(name.ident, |owner| {
-                self.ext
-                    .interner
-                    .intern_scoped(owner.caller(self.ext.types), name.ident)
+                self.ext.interner.intern_scoped(owner.caller(), name.ident)
             });
             let item = ModuleItem::new(
                 local_id,
@@ -419,7 +414,10 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         let params = spec_set
             .iter()
             .map(|group| WherePredicate {
-                ty: Some(TyParam::new(group.index, group.asoc_ty).into()),
+                ty: group
+                    .asoc_ty
+                    .is_some()
+                    .then_some(TyParam::new(group.index, group.asoc_ty).into()),
                 bounds: self.ext.creator().spec_sum(group.specs()),
             })
             .collect::<BumpVec<_>>();

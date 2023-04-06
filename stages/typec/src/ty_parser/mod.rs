@@ -67,7 +67,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             let Some(ParamSpecsAst { first, rest, .. }) = specs else {continue};
             set.extend(
                 i,
-                i,
+                None,
                 default(),
                 rest.iter()
                     .map(|(.., s)| s)
@@ -158,7 +158,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
     fn pointer(&mut self, TyPointerAst { mutability, ty, .. }: TyPointerAst) -> Option<Pointer> {
         let base = self.ty(ty)?;
         let mutability = self.mutability(mutability)?;
-        Some(self.ext.creator().pointer_to(mutability.as_param(), base))
+        Some(self.ext.creator().pointer(mutability.as_param(), base))
     }
 
     pub(crate) fn mutability(

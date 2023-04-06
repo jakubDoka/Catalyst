@@ -1,18 +1,17 @@
-use std::{
-    default::default,
-    fmt::{Display, Formatter},
-};
+use std::default::default;
 
 use crate::*;
 use rkyv::{Archive, Deserialize, Serialize};
 use span::*;
 use storage::*;
 
-derive_relocated!(struct Impl { generics key methods });
+derive_relocated!(struct Impl { generics ty spec asocs methods });
 #[derive(Clone, Copy, Serialize, Deserialize, Archive)]
 pub struct Impl {
+    pub ty: CompactTy,
+    pub spec: CompactSpec,
     pub generics: WhereClause,
-    pub key: ImplKey,
+    pub asocs: FragSlice<CompactTy>,
     pub methods: FragRefSlice<Func>,
     pub loc: GuaranteedLoc,
 }
@@ -23,8 +22,8 @@ derive_relocated!(struct ImplKey { ty spec });
 )]
 #[archive_attr(derive(PartialEq, Eq, Hash))]
 pub struct ImplKey {
-    pub ty: Ty,
-    pub spec: Spec,
+    pub spec: FragRef<SpecBase>,
+    pub ty: Option<CompactBaseTy>,
 }
 
 derive_relocated!(struct SpecBase { generics inherits methods });
@@ -32,7 +31,7 @@ derive_relocated!(struct SpecBase { generics inherits methods });
 pub struct SpecBase {
     pub name: Ident,
     pub generics: WhereClause,
-    pub inherits: FragSlice<Spec>,
+    pub inherits: FragSlice<CompactSpec>,
     pub methods: FragSlice<SpecFunc>,
     pub asoc_tys: FragSlice<AsocTy>,
     pub loc: Loc,
@@ -55,7 +54,7 @@ derive_relocated!(struct SpecInstance { base args });
 #[derive(Clone, Copy, Deserialize, Archive, Serialize)]
 pub struct SpecInstance {
     pub base: FragRef<SpecBase>,
-    pub args: FragSlice<Ty>,
+    pub args: FragSlice<CompactTy>,
 }
 
 derive_relocated!(struct SpecFunc { generics signature parent });
@@ -74,9 +73,7 @@ impl SpecFunc {
     }
 }
 
-derive_relocated!(
-    struct AsocTy {}
-);
+derive_relocated!(struct AsocTy { generics parent });
 #[derive(Clone, Copy, Serialize, Deserialize, Archive)]
 pub struct AsocTy {
     pub generics: WhereClause,
@@ -86,6 +83,7 @@ pub struct AsocTy {
 }
 
 type ParameterCountRepr = u16;
+
 #[derive(
     Clone,
     Copy,
@@ -111,7 +109,7 @@ impl ParameterCount {
     }
 
     pub fn get(self) -> usize {
-        self.0 as usize
+        self.0 as usize + 1
     }
 }
 
@@ -189,8 +187,11 @@ impl TyParamIdx {
         }
     }
 
-    pub fn to_ty(self) -> Ty {
-        Ty::Param(ty::spec::TyParam::new(self, None))
+    pub fn to_ty(self) -> Ty<'static> {
+        Ty::Param(ty::spec::TyParam {
+            index: self,
+            asoc: None,
+        })
     }
 
     pub fn to_mutability(self) -> Mutability {
@@ -214,6 +215,13 @@ impl TyParamIdx {
             Self::IMMUTABLE => Self::IMMUTABLE,
             Self::MUTABLE => Self::MUTABLE,
             _ => Self::from_ty(params[self.get()]?),
+        })
+    }
+
+    pub fn to_compact_ty(self) -> CompactTy {
+        CompactTy::new(ExpandedTy::Param {
+            param: self,
+            asoc: None,
         })
     }
 }
@@ -286,54 +294,7 @@ impl std::fmt::Display for TypeParameterError {
 #[archive_attr(derive(PartialEq, Eq, Hash))]
 pub struct TyParam {
     pub index: TyParamIdx,
-    is_asoc: bool,
-    asoc_index: u32,
-    asoc_thread: u8,
-}
-
-impl TyParam {
-    pub fn new(index: TyParamIdx, asoc: OptFragRef<AsocTy>) -> Self {
-        Self {
-            index,
-            is_asoc: asoc.is_some(),
-            asoc_index: asoc.map_or(0, |asoc| asoc.addr().index),
-            asoc_thread: asoc.map_or(0, |asoc| asoc.addr().thread),
-        }
-    }
-
-    pub fn asoc(&self) -> OptFragRef<AsocTy> {
-        self.is_asoc.then_some(FragRef::new(FragAddr::new(
-            self.asoc_index,
-            self.asoc_thread,
-        )))
-    }
-}
-
-impl Relocated for TyParam {
-    fn mark(&self, marker: &mut FragRelocMarker) {
-        if let Some(asoc) = self.asoc() {
-            marker.mark(asoc);
-        }
-    }
-
-    fn remap(&mut self, ctx: &FragMarks) -> Option<()> {
-        if let Some(asoc) = self.asoc() {
-            let addr = ctx.project(asoc.as_slice())?.addr();
-            self.asoc_index = addr.index;
-            self.asoc_thread = addr.thread;
-        }
-        Some(())
-    }
-}
-
-impl Display for TyParam {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.index)?;
-        if let Some(asoc) = self.asoc() {
-            write!(f, ":{:x}", asoc.bits())?;
-        }
-        Ok(())
-    }
+    pub asoc: OptFragRef<AsocTy>,
 }
 
 derive_relocated!(struct WhereClause { predicates });
@@ -381,29 +342,15 @@ impl WhereClause {
         self.predicates.is_empty()
     }
 
-    pub fn root_predicates<'a>(&self, types: &'a Types) -> &'a [WherePredicate] {
-        &types[self.predicates][..self.parameter_count.get()]
-    }
-
-    pub fn other_predicates<'a>(
-        &self,
-        types: &'a Types,
-    ) -> impl Iterator<Item = (Ty, FragSlice<Spec>)> + 'a {
-        types[self.predicates]
-            .iter()
-            .skip(self.parameter_count.get())
-            .map(|pred| {
-                (
-                    pred.ty
-                        .expect("all predicated after parameters has to have a type"),
-                    pred.bounds,
-                )
-            })
-    }
-
     pub fn len(&self) -> usize {
         self.predicates.len()
     }
+}
+
+#[derive(Clone, Copy)]
+pub struct ExpWhereClause<'a> {
+    pub parameter_count: usize,
+    pub predicates: &'a [ExpWherePredicate<'a>],
 }
 
 derive_relocated!(struct WherePredicate { ty bounds });
@@ -422,6 +369,12 @@ derive_relocated!(struct WherePredicate { ty bounds });
     Archive,
 )]
 pub struct WherePredicate {
-    pub ty: Option<Ty>,
-    pub bounds: FragSlice<Spec>,
+    pub ty: CompactTy,
+    pub bounds: FragSlice<CompactSpec>,
+}
+
+#[derive(Clone, Copy)]
+pub struct ExpWherePredicate<'a> {
+    pub ty: Ty<'a>,
+    pub bounds: &'a [Spec<'a>],
 }

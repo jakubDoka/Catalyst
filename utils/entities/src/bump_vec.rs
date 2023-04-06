@@ -1,5 +1,5 @@
 use std::{
-    alloc::AllocError,
+    alloc::{AllocError, Layout},
     cell::{Cell, UnsafeCell},
     fmt::Debug,
     ops::{Deref, DerefMut},
@@ -115,6 +115,20 @@ impl<T> BumpVec<T> {
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             inner: Vec::with_capacity_in(capacity, BUMP_ALLOC.with(|b| b.create_ref())),
+        }
+    }
+}
+
+impl<T> BumpVec<Option<T>> {
+    pub fn transpose_options(self) -> Option<BumpVec<T>> {
+        if Layout::new::<T>() == Layout::new::<Option<T>>() {
+            if self.iter().any(|item| item.is_none()) {
+                return None;
+            }
+
+            return unsafe { std::mem::transmute(self) };
+        } else {
+            self.into_iter().collect()
         }
     }
 }

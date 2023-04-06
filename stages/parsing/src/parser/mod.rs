@@ -24,7 +24,7 @@ pub struct Parser<'ctx, 'arena, M = NoTokenMeta> {
     interner: &'ctx mut Interner,
     workspace: &'ctx mut Workspace,
     state: &'ctx mut ParserCtx<M>,
-    arena: &'arena Arena,
+    arena: &'ctx ProxyArena<'arena>,
     source: VRef<Source>,
     lexer: Lexer<'ctx>,
 }
@@ -40,7 +40,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
         interner: &'ctx mut Interner,
         workspace: &'ctx mut Workspace,
         state: &'ctx mut ParserCtx<M>,
-        arena: &'arena Arena,
+        arena: &'ctx ProxyArena<'arena>,
         source: VRef<Source>,
         content: &'ctx str,
     ) -> Self {

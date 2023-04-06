@@ -123,9 +123,9 @@ mod primitives;
 pub use {
     crate::bump_vec::{BumpAlloc, BumpAllocRef, BumpVec, ToBumpVec, BUMP_ALLOC},
     allocator::{
-        arena::Arena,
+        arena::{Arena, ProxyArena},
         code::{Align, Code, CodeAllocator, CodeGuard, CodeRelocator},
-        Allocator, AllocatorFrame,
+        Allocator,
     },
     arc_swap, dashmap,
     frag_map::{

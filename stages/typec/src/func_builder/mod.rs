@@ -244,7 +244,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                 let (Ty::Base(BaseTy::Struct(struct_ty)), params) = ty.caller_with_params(self.ext.types) else {
                     UnexpectedPatternType {
                         loc: self.meta.loc(fields.span()),
-                        ty: self.ext.creator().display(ty),
+                        ty: self.ext.creator().display_to_string(ty),
                         ty_loc: None, //TODO: make a types getter for loc on type
                         something: "struct",
                     }.add(self.ext.workspace)?;
@@ -330,7 +330,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                 let Ty::Base(BaseTy::Enum(enum_ty)) = ty_base.base(self.ext.types) else {
                     UnexpectedPatternType {
                         loc: self.meta.loc(ctor.span()),
-                        ty: self.ext.creator().display(ty),
+                        ty: self.ext.creator().display_to_string(ty),
                         ty_loc: None, //TODO: make a types getter for loc on type
                         something: "enum",
                     }.add(self.ext.workspace)?;
@@ -343,7 +343,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                     .or_else(|| {
                         ComponentNotFound {
                             loc: self.meta.loc(ctor.span()),
-                            ty: self.ext.creator().display(BaseTy::Enum(enum_ty)),
+                            ty: self.ext.creator().display_to_string(BaseTy::Enum(enum_ty)),
                             suggestions: self.ext.types[self.ext.types[enum_ty].variants]
                                 .iter()
                                 .map(|v| v.name.get(self.ext.interner))
@@ -393,8 +393,8 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             .compatible(params, reference, template)
             .map_err(|_| {
                 GenericTypeMismatch {
-                    expected: self.ext.creator().display(reference),
-                    got: self.ext.creator().display(template),
+                    expected: self.ext.creator().display_to_string(reference),
+                    got: self.ext.creator().display_to_string(template),
                     loc: self.meta.loc(span),
                 }
                 .add(self.ext.workspace)
@@ -460,8 +460,8 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     fn type_check(&mut self, expected: Ty, got: Ty, span: Span) -> Option<()> {
         self.type_check_detailed(expected, got, |s| {
             GenericTypeMismatch {
-                expected: s.ext.creator().display(expected),
-                got: s.ext.creator().display(got),
+                expected: s.ext.creator().display_to_string(expected),
+                got: s.ext.creator().display_to_string(got),
                 loc: s.meta.loc(span),
             }
             .add(s.ext.workspace)
