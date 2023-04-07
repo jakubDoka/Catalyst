@@ -23,6 +23,10 @@ impl WorkerConnections {
     }
 }
 
+static_pool! {
+    pub(super) WORKED_POOL: Worker;
+}
+
 #[derive(Default)]
 pub(super) struct Worker {
     pub(super) typec_ctx: TypecCtx,
@@ -124,14 +128,14 @@ impl Worker {
     }
 
     pub(super) fn run<'a: 'scope, 'scope, S: AstHandler>(
-        mut self,
+        mut self: Pooled<Self>,
         thread_scope: &'a thread::Scope<'scope, '_>,
         shared: Shared<'scope>,
         connections: WorkerConnections,
         ast_handler: &'scope mut S,
-    ) -> ScopedJoinHandle<'scope, Worker> {
+    ) {
         thread_scope.spawn(move || {
-            let mut arena = Arena::default();
+            proxy_arena!(let arena);
             let mut jit_ctx = JitContext::new(iter::empty());
 
             self.jit_layouts.clear(shared.jit_isa);
@@ -159,9 +163,7 @@ impl Worker {
                     break; // in case of ast walker this is desired behavior
                 }
             }
-
-            self
-        })
+        });
     }
 
     // fn compile_module(
@@ -223,7 +225,7 @@ impl Worker {
     fn compile_module<S: AstHandler>(
         &mut self,
         module: VRef<Module>,
-        arena: &mut Arena,
+        arena: &mut ProxyArena,
         task: &mut Task,
         jit_ctx: &mut JitContext,
         shared: &Shared,
@@ -231,11 +233,11 @@ impl Worker {
     ) {
         let mir_module = task.mir.next_module();
 
-        macro ctx() {
+        macro ctx($arena:expr) {
             BaseSourceCtx {
                 worker: self,
                 module,
-                arena,
+                arena: $arena,
                 task,
                 shared,
                 mir_module,
@@ -243,7 +245,7 @@ impl Worker {
             }
         }
 
-        if handler.should_skip_module(ctx!()) {
+        if handler.should_skip_module(ctx!(arena)) {
             return;
         }
 
@@ -253,19 +255,19 @@ impl Worker {
 
         let mut parser_ctx = ParserCtx::new(content);
 
-        macro parser() {
+        macro parser($arena:expr) {
             Parser::new(
                 &mut task.interner,
                 &mut task.resources.workspace,
                 &mut parser_ctx,
-                arena,
+                $arena,
                 source,
                 content,
             )
         }
 
-        let Some(result) = handler.parse_imports(parser!()) else {return};
-        handler.imports(result, ctx!());
+        let Some(result) = handler.parse_imports(parser!(arena)) else {return};
+        handler.imports(result, ctx!(arena));
 
         self.typec_ctx.build_scope(
             module,
@@ -276,6 +278,7 @@ impl Worker {
         );
 
         loop {
+            proxy_arena!(let arena = arena);
             // self.load_macros(
             //     &mut macro_ctx,
             //     macros.iter().copied(),
@@ -283,12 +286,10 @@ impl Worker {
             //     jit_ctx,
             //     shared.jit_isa,
             // );
-            let Some(chunk) = handler.parse_chunk(parser!()) else {
+            let Some(chunk) = handler.parse_chunk(parser!(&arena)) else {
                 continue;
             };
-            let last = handler.chunk(chunk, ctx!(), MacroSourceCtx);
-
-            arena.clear();
+            let last = handler.chunk(chunk, ctx!(&arena), MacroSourceCtx);
 
             // self.compile_macros(&local_macros, task, jit_ctx, shared);
             // macros.extend(local_macros.drain(..));
@@ -509,7 +510,7 @@ impl Worker {
         module: VRef<Module>,
         module_ref: FragRef<ModuleMir>,
         grouped_items: GroupedItemsAst<'a>,
-        arena: &'a Arena,
+        arena: &ProxyArena<'a>,
         task: &mut Task,
         shared: &Shared,
         jit_ctx: &mut JitContext,
@@ -547,12 +548,12 @@ impl Worker {
         active
     }
 
-    fn verify_chunk(
+    fn verify_chunk<'a>(
         &mut self,
         module: VRef<Module>,
         module_ref: FragRef<ModuleMir>,
-        grouped_items: GroupedItemsAst,
-        arena: &Arena,
+        grouped_items: GroupedItemsAst<'a>,
+        arena: &ProxyArena<'a>,
         task: &mut Task,
         shared: &Shared,
         jit_ctx: &mut JitContext,
@@ -668,10 +669,10 @@ impl Worker {
     }
 }
 
-struct ConstFolderImpl<'arena, 'ctx> {
+struct ConstFolderImpl<'ctx, 'arena> {
     module: VRef<Module>,
     module_ref: FragRef<ModuleMir>,
-    arena: &'arena Arena,
+    arena: &'ctx ProxyArena<'arena>,
     reused: &'ctx mut BorrowcCtx,
     module_ent: &'ctx mut ModuleMir,
     interpreter: &'ctx mut InterpreterCtx,
@@ -682,7 +683,7 @@ struct ConstFolderImpl<'arena, 'ctx> {
     jit: &'ctx mut JitContext,
 }
 
-impl<'arena, 'ctx> ConstFolderImpl<'arena, 'ctx> {
+impl<'ctx, 'arena> ConstFolderImpl<'ctx, 'arena> {
     fn fold(&mut self, ret: Ty, tir_body: TirNode, ctx: ConstFolderContext) -> Option<IValue> {
         let ext = ExternalMirCtx {
             types: ctx.types,
@@ -833,8 +834,12 @@ pub trait AstHandler: Sync + Send {
     type Chunk<'a>;
 
     fn parse_chunk<'a>(&mut self, parser: Parser<'_, 'a, Self::Meta>) -> Option<Self::Chunk<'a>>;
-    fn chunk(&mut self, items: Self::Chunk<'_>, ctx: BaseSourceCtx, macros: MacroSourceCtx)
-        -> bool;
+    fn chunk<'a>(
+        &mut self,
+        items: Self::Chunk<'a>,
+        ctx: BaseSourceCtx<'_, 'a>,
+        macros: MacroSourceCtx,
+    ) -> bool;
 
     fn parse_manifest<'a>(
         &mut self,
@@ -871,14 +876,14 @@ pub trait AstHandler: Sync + Send {
     }
 }
 
-pub struct BaseSourceCtx<'a> {
-    worker: &'a mut Worker,
+pub struct BaseSourceCtx<'ctx, 'arena> {
+    worker: &'ctx mut Worker,
     pub module: VRef<Module>,
     pub mir_module: FragRef<ModuleMir>,
-    pub arena: &'a Arena,
-    pub task: &'a mut Task,
-    pub shared: &'a Shared<'a>,
-    pub jit: &'a mut JitContext,
+    pub arena: &'ctx ProxyArena<'arena>,
+    pub task: &'ctx mut Task,
+    pub shared: &'ctx Shared<'ctx>,
+    pub jit: &'ctx mut JitContext,
 }
 
 pub struct MacroSourceCtx;
@@ -906,10 +911,10 @@ impl AstHandler for DefaultSourceAstHandler {
 
     fn imports(&mut self, _header: Self::Imports<'_>, _ctx: BaseSourceCtx) {}
 
-    fn chunk(
+    fn chunk<'a>(
         &mut self,
-        items: Self::Chunk<'_>,
-        ctx: BaseSourceCtx,
+        items: Self::Chunk<'a>,
+        ctx: BaseSourceCtx<'_, 'a>,
         _macros: MacroSourceCtx,
     ) -> bool {
         ctx.worker.verify_chunk(

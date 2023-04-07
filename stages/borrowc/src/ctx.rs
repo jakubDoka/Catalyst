@@ -13,21 +13,21 @@ use types::*;
 
 use crate::builder::{escapes::EscapeCtx, moves::MoveCtx};
 
-pub(crate) struct FuncBorrowcCtx<'m, 'i> {
-    pub(crate) generics: &'i [FragSlice<Spec>],
+pub(crate) struct FuncBorrowcCtx<'ctx> {
+    pub(crate) generics: &'ctx [FragSlice<Spec>],
     pub(crate) ret: VRef<ValueMir>,
     pub(crate) unit: VRef<ValueMir>,
     pub(crate) terminal: VRef<ValueMir>,
-    pub(crate) module: ModuleMirCheck<'m>,
+    pub(crate) module: ModuleMirCheck<'ctx>,
     pub(crate) module_ref: FragRef<ModuleMir>,
 }
 
-impl<'m, 'i> FuncBorrowcCtx<'m, 'i> {
+impl<'ctx> FuncBorrowcCtx<'ctx> {
     pub(crate) fn new(
         ret: Ty,
-        generics: &'i [FragSlice<Spec>],
+        generics: &'ctx [FragSlice<Spec>],
         module_ref: FragRef<ModuleMir>,
-        module: &'m mut ModuleMir,
+        module: &'ctx mut ModuleMir,
         reused: &mut BorrowcCtx,
         types: &Types,
     ) -> Self {
@@ -191,13 +191,12 @@ impl<'m, 'i> FuncBorrowcCtx<'m, 'i> {
     }
 }
 
-pub struct ExternalMirCtx<'m, 'i> {
-    pub types: &'m mut Types,
-    pub interner: &'m mut Interner,
-    pub workspace: &'m mut Workspace,
-
-    pub arena: &'i Arena,
-    pub resources: &'i Resources,
+pub struct ExternalMirCtx<'ctx, 'arena> {
+    pub types: &'ctx mut Types,
+    pub interner: &'ctx mut Interner,
+    pub workspace: &'ctx mut Workspace,
+    pub arena: &'ctx ProxyArena<'arena>,
+    pub resources: &'ctx Resources,
 }
 
 impl<'i, 'm> ExternalMirCtx<'m, 'i> {

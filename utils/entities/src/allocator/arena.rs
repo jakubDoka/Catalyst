@@ -13,7 +13,15 @@ use super::AllocatorFrame;
 macro_rules! proxy_arena {
     (let $arena:ident = $proxy:expr) => {
         let mut scope = $proxy.scope();
-        let $arena = scope.proxy();
+        #[allow(unused_mut)]
+        let mut $arena = scope.proxy();
+    };
+
+    (let $arena:ident) => {
+        let mut allocator = $crate::ALLOCATOR_POOL.get_or_default();
+        let mut arena = Arena::new(&mut allocator);
+        #[allow(unused_mut)]
+        let mut $arena = arena.proxy();
     };
 }
 

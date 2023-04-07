@@ -8,6 +8,10 @@ use std::{
 pub mod arena;
 pub mod code;
 
+crate::static_pool! {
+    pub ALLOCATOR_POOL: Allocator;
+}
+
 /// A simple bump allocator that allocates memory into fixed size chunks.
 pub struct Allocator {
     free: Vec<Chunk>,
@@ -16,6 +20,9 @@ pub struct Allocator {
     start: *mut u8,
     chunk_size: usize,
 }
+
+unsafe impl Send for Allocator {}
+unsafe impl Sync for Allocator {}
 
 impl Default for Allocator {
     fn default() -> Self {

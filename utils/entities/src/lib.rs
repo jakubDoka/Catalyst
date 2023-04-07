@@ -41,7 +41,8 @@
     const_option,
     const_slice_index,
     specialization,
-    slice_iter_mut_as_mut_slice
+    slice_iter_mut_as_mut_slice,
+    once_cell
 )]
 
 /// Whevever `ArckiveWith` needs to be implemented on for example fieldless enum,
@@ -118,6 +119,7 @@ mod allocator;
 mod bump_vec;
 mod frag_map;
 mod map;
+mod pool;
 mod primitives;
 
 pub use {
@@ -125,7 +127,7 @@ pub use {
     allocator::{
         arena::{Arena, ProxyArena},
         code::{Align, Code, CodeAllocator, CodeGuard, CodeRelocator},
-        Allocator,
+        Allocator, ALLOCATOR_POOL,
     },
     arc_swap, dashmap,
     frag_map::{
@@ -140,6 +142,7 @@ pub use {
         NoInteriorMutability, SmallVecArchiver,
     },
     map::{CMap, CSet, FvnBuildHasher, Map, Set},
+    pool::{Pool, Pooled},
     primitives::{
         CtlOption, FragRef, FragRefSlice, FragSlice, NoShortCircuitCollect, OptFragRef, OptVRef,
         TransposeOption, VRef, VRefSlice, VSlice,

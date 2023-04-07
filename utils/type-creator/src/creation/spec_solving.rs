@@ -108,7 +108,7 @@ impl<'ctx, 'arena, 'outher_arena> SpecSolver<'ctx, 'arena, 'outher_arena> {
     ) {
         for pred in &self.types[generics.predicates] {
             let ty = self.load_ty(pred.ty);
-            let ty = self.instantiate(ty, params);
+            let ty = self.instantiate(ty, params, generics);
             for &spec in &self.types[pred.bounds] {
                 let spec = self.load_spec(spec);
                 let spec = self.instantiate_spec(spec, params);
@@ -116,11 +116,18 @@ impl<'ctx, 'arena, 'outher_arena> SpecSolver<'ctx, 'arena, 'outher_arena> {
         }
     }
 
-    fn instantiate(&self, ty: Ty<'arena>, params: &[Ty<'arena>]) -> Ty<'arena> {
+    fn instantiate(
+        &self,
+        ty: Ty<'arena>,
+        params: &[Ty<'arena>],
+        where_clause: WhereClause,
+    ) -> Ty<'arena> {
         match ty {
             Ty::Base(b) => Ty::Base(b),
             Ty::Instance(ExpInstance { base, args }) => {
-                let args = args.iter().map(|&arg| self.instantiate(arg, params));
+                let args = args
+                    .iter()
+                    .map(|&arg| self.instantiate(arg, params, where_clause));
                 let args = self.arena.alloc_iter(args);
                 Ty::Instance(ExpInstance { base, args })
             }
@@ -129,7 +136,7 @@ impl<'ctx, 'arena, 'outher_arena> SpecSolver<'ctx, 'arena, 'outher_arena> {
                 depth,
                 ty,
             }) => {
-                let ty = self.instantiate(*ty, params);
+                let ty = self.instantiate(*ty, params, where_clause);
                 let ty = self.arena.alloc(ty);
                 Ty::Pointer(Pointer {
                     mutability,
@@ -138,13 +145,33 @@ impl<'ctx, 'arena, 'outher_arena> SpecSolver<'ctx, 'arena, 'outher_arena> {
                 })
             }
             Ty::Array(ExpArray { item, len }) => {
-                let item = self.instantiate(*item, params);
+                let item = self.instantiate(*item, params, where_clause);
                 let item = self.arena.alloc(item);
                 Ty::Array(ExpArray { item, len })
             }
-            Ty::Param(_) => todo!(),
-            Ty::Builtin(_) => todo!(),
+            Ty::Param(param) => self.instantiate_param(param, params, where_clause),
+            Ty::Builtin(b) => Ty::Builtin(b),
         }
+    }
+
+    fn instantiate_param(
+        &self,
+        param: TyParam,
+        params: &[Ty<'arena>],
+        where_clause: WhereClause,
+    ) -> Ty<'arena> {
+        let Some(mut asoc) = param.asoc else {
+            return params[param.index.get()];
+        };
+
+        let mut asoc_seq = bumpvec![asoc];
+        let mut next = param.index;
+        let predicates = &self.types[where_clause.predicates];
+        while let Some(pred) = predicates[next.get()] {
+            let ty = self.load_ty(pred.ty);
+            let spec = 
+            
+        } 
     }
 
     fn load_ty(&self, ty: CompactTy) -> Ty<'arena> {

@@ -8,7 +8,9 @@
     trivial_bounds,
     closure_lifetime_binder,
     array_zip,
-    is_some_and
+    is_some_and,
+    once_cell,
+    arbitrary_self_types
 )]
 
 mod logic;

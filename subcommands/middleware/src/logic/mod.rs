@@ -1,3 +1,5 @@
+use std::ops::DerefMut;
+
 use rkyv::{
     de::deserializers::SharedDeserializeMapError,
     ser::serializers::{AllocScratchError, CompositeSerializerError, SharedSerializeMapError},
@@ -5,7 +7,7 @@ use rkyv::{
 
 use self::{
     task::{CompileRequestCollector, CompileRequestCollectorCtx, TaskGraph},
-    worker::{GeneratorThread, Worker, WorkerConnections},
+    worker::{GeneratorThread, WorkerConnections, WORKED_POOL},
 };
 
 pub mod task;
@@ -27,7 +29,7 @@ use {
             serializers::{AllocScratch, CompositeSerializer, SharedSerializeMap, WriteSerializer},
             ScratchSpace, Serializer, SharedSerializeRegistry,
         },
-        with::{AsStringError, Skip, UnixTimestampError},
+        with::{AsStringError, UnixTimestampError},
         Archive, Deserialize, Fallible, Serialize,
     },
     snippet_display::annotate_snippets::display_list::FormatOptions,
@@ -48,15 +50,13 @@ use {
             atomic::AtomicBool,
             mpsc::{self, Receiver, Sender, SyncSender},
         },
-        thread::{self, ScopedJoinHandle},
+        thread,
         time::Instant,
     },
     target_lexicon::Triple,
     task::TaskBase,
     worker::DefaultSourceAstHandler,
 };
-
-type WorkerLaunchResult<'scope> = (Vec<PackageTask>, Vec<ScopedJoinHandle<'scope, Worker>>);
 
 compose_error!(MiddlewareLoadError {
     #["check sequence is corrupted"]
@@ -205,6 +205,8 @@ impl Middleware {
             .next()
             .expect("we already clamped threads between 1 and 255");
 
+        proxy_arena!(let arena);
+
         PackageLoader {
             resources,
             workspace: &mut self.workspace,
@@ -212,7 +214,7 @@ impl Middleware {
             package_graph: &mut self.package_graph,
             db,
         }
-        .reload(path, &mut self.resource_loading_ctx)
+        .reload(path, &mut self.resource_loading_ctx, &mut arena)
     }
 
     pub fn traverse_source_ast<S: AstHandler>(
@@ -227,7 +229,6 @@ impl Middleware {
         let Some(Incremental {
             resources,
             mut task_base,
-            mut worker_pool,
             module_items,
             builtin_functions,
         }) = self.incremental.take() else {
@@ -249,7 +250,7 @@ impl Middleware {
             builtin_functions: &builtin_functions,
         };
 
-        let mut arena = Arena::default();
+        proxy_arena!(let arena);
         for ((key, package), i) in resources.packages.iter().zip((0..handlers.len()).cycle()) {
             let task = &mut tasks[i];
             let handler = &mut handlers[i];
@@ -258,7 +259,8 @@ impl Middleware {
             }
             let source = &resources.sources[package.source].content;
             let mut parser_ctx = ParserCtx::new(source);
-            arena.clear();
+
+            proxy_arena!(let arena = arena);
             let Some(manifest) = handler.parse_manifest(Parser::new(
                 &mut task.interner,
                 &mut self.workspace,
@@ -269,6 +271,7 @@ impl Middleware {
             )) else {
                 continue;
             };
+
             handler.manifest(manifest, package.source, &resources);
         }
 
@@ -276,7 +279,6 @@ impl Middleware {
             self.incremental = Some(Incremental {
                 resources,
                 task_base,
-                worker_pool,
                 module_items,
                 builtin_functions,
             });
@@ -286,27 +288,17 @@ impl Middleware {
         Self::distribute_modules(&mut tasks, &resources);
 
         thread::scope(|scope| {
-            let (package_tasks, threads) = Self::launch_workers(
-                scope,
-                package_sender,
-                tasks,
-                handlers,
-                &mut worker_pool,
-                shared,
-            );
+            let package_tasks = self.launch_workers(scope, package_sender, tasks, handlers, shared);
 
             for task in package_tasks.into_iter() {
                 task.send(dummy_package)
                     .expect("channel should not be dead right now");
             }
-
-            Self::join_workers(threads, &mut worker_pool);
         });
 
         let incr = self.incremental.insert(Incremental {
             resources,
             task_base,
-            worker_pool,
             module_items,
             builtin_functions,
         });
@@ -361,7 +353,6 @@ impl Middleware {
         let Incremental {
             mut resources,
             mut task_base,
-            mut worker_pool,
             mut module_items,
             mut builtin_functions,
         } = self
@@ -401,7 +392,6 @@ impl Middleware {
             let incr = self.incremental.insert(Incremental {
                 resources,
                 task_base,
-                worker_pool,
                 module_items,
                 builtin_functions,
             });
@@ -434,14 +424,8 @@ impl Middleware {
         let mut handlers = vec![DefaultSourceAstHandler; thread_count as usize];
 
         let mut tasks = thread::scope(|scope| {
-            let (package_tasks, threads) = Self::launch_workers(
-                scope,
-                package_sender,
-                tasks,
-                &mut handlers,
-                &mut worker_pool,
-                shared,
-            );
+            let package_tasks =
+                self.launch_workers(scope, package_sender, tasks, &mut handlers, shared);
 
             let mut tasks = self.expand(
                 &mut task_base,
@@ -456,7 +440,6 @@ impl Middleware {
                 self.workspace.transfer(&mut task.workspace);
             }
 
-            Self::join_workers(threads, &mut worker_pool);
             tasks
         });
 
@@ -465,7 +448,6 @@ impl Middleware {
             let incr = self.incremental.insert(Incremental {
                 resources,
                 task_base,
-                worker_pool,
                 module_items,
                 builtin_functions,
             });
@@ -485,13 +467,7 @@ impl Middleware {
             );
         }
 
-        let [entry_points, imported] = self.codegen(
-            &mut task_base,
-            args,
-            &mut tasks,
-            &mut worker_pool,
-            &resources,
-        );
+        let [entry_points, imported] = self.codegen(&mut task_base, args, &mut tasks, &resources);
 
         let ([ir, mir, tir], mut main_task) = self.tidy_tasks(&mut task_base, tasks);
         let shared = Shared {
@@ -501,10 +477,12 @@ impl Middleware {
             builtin_functions: &builtin_functions,
         };
 
-        let entry_point = worker_pool
-            .first_mut()
-            .expect("since there is nonzero cores, there has to be worker")
-            .generaite_entry_point(&mut main_task, &args.isa, &shared, &entry_points);
+        let entry_point = WORKED_POOL.get_or_default().generaite_entry_point(
+            &mut main_task,
+            &args.isa,
+            &shared,
+            &entry_points,
+        );
 
         let mut object = ObjectContext::new(&args.isa).unwrap();
         object
@@ -529,7 +507,6 @@ impl Middleware {
         let incr = self.incremental.insert(Incremental {
             resources,
             task_base,
-            worker_pool,
             module_items,
             builtin_functions,
         });
@@ -546,13 +523,6 @@ impl Middleware {
                 resources: &incr.resources,
             },
         )
-    }
-
-    fn join_workers(threads: Vec<ScopedJoinHandle<Worker>>, worker_pool: &mut Vec<Worker>) {
-        threads
-            .into_iter()
-            .map(|thread| thread.join().expect("worker panicked"))
-            .collect_into(worker_pool);
     }
 
     fn tidy_tasks(
@@ -587,13 +557,13 @@ impl Middleware {
     }
 
     fn launch_workers<'a: 'scope, 'scope, S: AstHandler>(
+        &mut self,
         scope: &'a thread::Scope<'scope, '_>,
         package_sender: Sender<(PackageTask, VRef<Package>)>,
         tasks: Vec<Task>,
         handlers: &'a mut [S],
-        worker_pool: &mut Vec<Worker>,
         shared: Shared<'scope>,
-    ) -> WorkerLaunchResult<'scope> {
+    ) -> Vec<PackageTask> {
         let worker_count = tasks.len();
         let (connections, input): (Vec<_>, Vec<_>) = (0..worker_count)
             .map(|_| WorkerConnections::new(package_sender.clone()))
@@ -604,15 +574,14 @@ impl Middleware {
             .zip(input)
             .map(|(task, self_sender)| PackageTask { task, self_sender })
             .collect();
-        let threads = worker_pool
-            .drain(..)
-            .chain(iter::repeat_with(Worker::default))
+        WORKED_POOL
+            .iter_or_default()
             .zip(connections)
             .zip(handlers)
             .map(|((worker, connection), handler)| worker.run(scope, shared, connection, handler))
-            .collect();
+            .for_each(drop);
 
-        (package_tasks, threads)
+        package_tasks
     }
 
     fn expand(
@@ -773,7 +742,6 @@ impl Middleware {
         task_base: &mut TaskBase,
         args: &MiddlewareArgs,
         tasks: &mut [Task],
-        worker_pool: &mut [Worker],
         resources: &Resources,
     ) -> [Vec<CompiledFuncRef>; 2] {
         let _t = QuickTimer::new("codegen");
@@ -792,13 +760,14 @@ impl Middleware {
         }
         .distribute_compile_requests(self.entry_points.drain(..));
 
-        thread::scope(|scope| {
-            for ((task, requests), worker) in tasks
+        thread::scope(move |scope| {
+            for ((task, requests), mut worker) in tasks
                 .iter_mut()
                 .zip(self.requests.split(thread_count))
-                .zip(worker_pool.iter_mut())
+                .zip(WORKED_POOL.iter_or_default())
             {
-                scope.spawn(|| {
+                scope.spawn(move || {
+                    let worker = worker.deref_mut();
                     GeneratorThread {
                         requests,
                         mir: &mut task.mir,
@@ -1186,8 +1155,6 @@ impl PackageTask {
 struct Incremental {
     resources: Resources,
     task_base: TaskBase,
-    #[with(Skip)]
-    worker_pool: Vec<Worker>,
     module_items: Map<VRef<Source>, ModuleItems>,
     builtin_functions: Vec<FragRef<Func>>,
 }
@@ -1204,7 +1171,6 @@ impl Incremental {
         Incremental {
             resources: default(),
             task_base: TaskBase::new(thread_count, &mut builtin_functions),
-            worker_pool: default(),
             module_items: default(),
             builtin_functions,
         }

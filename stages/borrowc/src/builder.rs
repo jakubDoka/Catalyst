@@ -43,22 +43,22 @@ impl Dest {
     }
 }
 
-pub struct MirCompilationCtx<'i, 'm> {
-    pub module_ent: &'m mut ModuleMir,
-    pub reused: &'m mut BorrowcCtx,
-    pub mir: &'m mut Mir,
-    pub types: &'m mut Types,
-    pub interner: &'m mut Interner,
-    pub workspace: &'m mut Workspace,
-    pub arena: &'i Arena,
-    pub resources: &'i Resources,
+pub struct MirCompilationCtx<'ctx, 'arena> {
+    pub module_ent: &'ctx mut ModuleMir,
+    pub reused: &'ctx mut BorrowcCtx,
+    pub mir: &'ctx mut Mir,
+    pub types: &'ctx mut Types,
+    pub interner: &'ctx mut Interner,
+    pub workspace: &'ctx mut Workspace,
+    pub arena: &'ctx ProxyArena<'arena>,
+    pub resources: &'ctx Resources,
 }
 
 pub fn compile_functions(
     module: VRef<Module>,
     module_ref: FragRef<ModuleMir>,
     funcs: &[(FragRef<Func>, TirFunc)],
-    ctx: &mut MirCompilationCtx<'_, '_>,
+    ctx: &mut MirCompilationCtx,
 ) {
     for &(func, tir) in funcs {
         let Func {
@@ -98,24 +98,24 @@ pub fn compile_functions(
     }
 }
 
-pub struct MirBuilder<'i, 'm> {
+pub struct MirBuilder<'ctx, 'arena> {
     block: OptVRef<BlockMir>,
     depth: u32,
-    ext: ExternalMirCtx<'m, 'i>,
+    ext: ExternalMirCtx<'ctx, 'arena>,
     meta: BorrowcMeta,
-    reused: &'m mut BorrowcCtx,
-    func: FuncBorrowcCtx<'m, 'i>,
+    reused: &'ctx mut BorrowcCtx,
+    func: FuncBorrowcCtx<'ctx>,
 }
 
-impl<'i, 'm> MirBuilder<'i, 'm> {
+impl<'ctx, 'arena> MirBuilder<'ctx, 'arena> {
     pub fn new(
         ret: Ty,
-        generics: &'i [FragSlice<Spec>],
-        ext: ExternalMirCtx<'m, 'i>,
+        generics: &'ctx [FragSlice<Spec>],
+        ext: ExternalMirCtx<'ctx, 'arena>,
         meta: BorrowcMeta,
-        module: &'m mut ModuleMir,
+        module: &'ctx mut ModuleMir,
         module_ref: FragRef<ModuleMir>,
-        reused: &'m mut BorrowcCtx,
+        reused: &'ctx mut BorrowcCtx,
     ) -> Self {
         Self {
             block: None,

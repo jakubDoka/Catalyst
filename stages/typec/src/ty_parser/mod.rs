@@ -8,7 +8,7 @@ mod building;
 mod collecting;
 
 pub struct TypecParser<'arena, 'ctx> {
-    arena: &'arena Arena,
+    arena: &'ctx ProxyArena<'arena>,
     ctx: &'ctx mut TypecCtx,
     ext: TypecExternalCtx<'arena, 'ctx>,
     meta: TypecMeta,
@@ -16,7 +16,7 @@ pub struct TypecParser<'arena, 'ctx> {
 
 impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
     pub fn new(
-        arena: &'arena Arena,
+        arena: &'ctx ProxyArena<'arena>,
         ctx: &'ctx mut TypecCtx,
         ext: TypecExternalCtx<'arena, 'ctx>,
         meta: TypecMeta,

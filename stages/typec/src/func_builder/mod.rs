@@ -24,7 +24,7 @@ pub type ExprRes<'arena> = Option<TirNode<'arena>>;
 
 pub struct TirBuilder<'arena, 'ctx> {
     ret: Option<Ty>,
-    arena: &'arena Arena,
+    arena: &'ctx ProxyArena<'arena>,
     ctx: &'ctx mut TypecCtx,
     ext: TypecExternalCtx<'arena, 'ctx>,
     meta: TypecMeta,
@@ -33,7 +33,7 @@ pub struct TirBuilder<'arena, 'ctx> {
 impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     pub fn new(
         ret: impl Into<Option<Ty>>,
-        arena: &'arena Arena,
+        arena: &'ctx ProxyArena<'arena>,
         ctx: &'ctx mut TypecCtx,
         ext: TypecExternalCtx<'arena, 'ctx>,
         meta: TypecMeta,

@@ -23,6 +23,7 @@ impl Testable for TestState {
         _middleware: &'a mut fmt::Middleware,
         db: &'a mut TestResources,
     ) -> (&'a mut Workspace, &'a Resources) {
+        proxy_arena!(let arena);
         let mut ctx = default();
         PackageLoader {
             resources: &mut self.resources,
@@ -31,7 +32,7 @@ impl Testable for TestState {
             package_graph: &mut self.package_graph,
             db,
         }
-        .reload(Path::new(name), &mut ctx);
+        .reload(Path::new(name), &mut ctx, &mut arena);
         (&mut self.workspace, &self.resources)
     }
 }

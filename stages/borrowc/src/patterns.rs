@@ -43,7 +43,7 @@ pub(crate) fn find_gaps(tree: PatTree) -> Vec<Vec<Range>> {
 }
 
 pub(crate) fn as_tree<'a>(
-    arena: &'a Arena,
+    arena: &ProxyArena<'a>,
     input: &[Branch<'a>],
     reachable: &mut [bool],
 ) -> PatTree<'a> {
@@ -391,10 +391,10 @@ mod test {
     use super::*;
 
     fn build_branches<'a>(
-        arena: &'a Arena,
+        arena: &ProxyArena<'a>,
         repr: &[&[&[impl Into<Range> + Copy]]],
     ) -> &'a [Branch<'a>] {
-        fn alloc_node<'a>(arena: &'a Arena, range: &[impl Into<Range> + Copy]) -> Node<'a> {
+        fn alloc_node<'a>(arena: &ProxyArena<'a>, range: &[impl Into<Range> + Copy]) -> Node<'a> {
             match range {
                 &[range] => Node::Scalar(range.into()),
                 _ => Node::Or(arena.alloc_iter(range.iter().map(|&r| r.into()))),
@@ -411,7 +411,7 @@ mod test {
     #[test]
     fn test_exhaustive() {
         use UpperBound::*;
-        let arena = Arena::default();
+        proxy_arena!(let arena);
         let branches = build_branches(
             &arena,
             &[
