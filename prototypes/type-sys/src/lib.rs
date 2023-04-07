@@ -210,33 +210,41 @@ impl Solver {
         implications: &Predicates,
         implied: &mut Capabilities,
         params: &[Ty],
-    ) {
+    ) -> Result<(), Vec<Question>> {
         for pred in &implications.preds {
-            let ty = self.instantiate_ty(&pred.ty, params, implied);
+            let ty = self.instantiate_ty(&pred.ty, params, implied)?;
             for spec in &pred.specs {
-                let spec = self.instantiate(spec, params, implied);
+                let spec = self.instantiate(spec, params, implied)?;
                 self.collect_spec_implications(&ty, &spec, implied);
             }
         }
+
+        Ok(())
     }
 
-    fn instantiate_ty(&self, ty: &Ty, params: &[Ty], capabilities: &Capabilities) -> Ty {
-        match ty {
-            Ty::Node(n) => Ty::Node(self.instantiate(n, params, capabilities)),
+    fn instantiate_ty(
+        &self,
+        ty: &Ty,
+        params: &[Ty],
+        capabilities: &Capabilities,
+    ) -> Result<Ty, Vec<Question>> {
+        Ok(match ty {
+            Ty::Node(n) => Ty::Node(self.instantiate(n, params, capabilities)?),
             Ty::Param(p) => {
                 let mut base = params[p.index].clone();
                 if p.asocs.is_empty() {
-                    return base;
+                    return Ok(base);
                 }
 
-                match &base {
+                match dbg!(&base) {
                     Ty::Node(_) => {
                         for a in p
                             .asocs
                             .iter()
                             .map(|a| self.instantiate(a, params, capabilities))
                         {
-                            let spec = self.specs[a.base().name].clone();
+                            let a = a?;
+                            let spec = self.specs[a.base().spec].clone();
                             let index = spec
                                 .base()
                                 .asocs
@@ -245,18 +253,18 @@ impl Solver {
                                 .unwrap();
                             let quest = Question {
                                 ty: base.clone(),
-                                implements: spec,
+                                implements: dbg!(spec),
                                 implications: default(),
                             };
-                            let implementation = self.answer(&quest, Ok(capabilities)).unwrap();
+                            let implementation = self.answer(&quest, Ok(capabilities))?;
                             base = self.instantiate_ty(
                                 &implementation.asocs[index],
                                 params,
                                 capabilities,
-                            );
+                            )?;
                         }
 
-                        todo!()
+                        return Ok(base);
                     }
                     Ty::Param(param) => Ty::Param(Param {
                         index: param.index,
@@ -264,28 +272,33 @@ impl Solver {
                             .asocs
                             .iter()
                             .map(|a| self.instantiate(a, params, capabilities))
-                            .collect(),
+                            .collect::<Result<_, _>>()?,
                     }),
                 }
             }
-        }
+        })
     }
 
-    fn instantiate<T>(&self, node: &Node<T>, params: &[Ty], capabilities: &Capabilities) -> Node<T>
+    fn instantiate<T>(
+        &self,
+        node: &Node<T>,
+        params: &[Ty],
+        capabilities: &Capabilities,
+    ) -> Result<Node<T>, Vec<Question>>
     where
         T: Clone,
     {
-        match node {
+        Ok(match node {
             Node::Instance(i) => Node::Instance(Instance {
                 base: i.base.clone(),
                 params: i
                     .params
                     .iter()
                     .map(|t| self.instantiate_ty(t, params, capabilities))
-                    .collect(),
+                    .collect::<Result<_, _>>()?,
             }),
             Node::Type(t) => Node::Type(t.clone()),
-        }
+        })
     }
 
     fn collect_spec_implications(&self, ty: &Ty, spec: &Node<Spec>, implied: &mut Capabilities) {
@@ -433,7 +446,13 @@ impl Solver {
         unimplemented: &mut Vec<Question>,
     ) {
         for pred in predicates.preds.iter() {
-            let ty = self.instantiate_ty(&pred.ty, &params, implied);
+            let ty = match self.instantiate_ty(&pred.ty, &params, implied) {
+                Ok(ty) => ty,
+                Err(vec) => {
+                    unimplemented.extend(vec);
+                    continue;
+                }
+            };
             for spec in pred.specs.iter() {
                 if let Ty::Param(ref param) = ty {
                     if !Self::param_implements(param, spec, implied) {
@@ -445,7 +464,13 @@ impl Solver {
                     }
                     continue;
                 }
-                let spec = self.instantiate(spec, &params, implied);
+                let spec = match self.instantiate(spec, &params, implied) {
+                    Ok(spec) => spec,
+                    Err(vec) => {
+                        unimplemented.extend(vec);
+                        continue;
+                    }
+                };
                 let question = Question {
                     ty: ty.clone(),
                     implements: spec,
@@ -484,17 +509,18 @@ macro_rules! ty {
     ({$param:ident $(::$spec:ident::$asoc:tt)*}) => {
         Ty::Param(Param {
             index: ty!(@asoc $param),
-            asocs: vec![],
+            asocs: vec![$(ty!(@asoc $spec::$asoc)),*],
         })
     };
 
     (@asoc Self) => {0};
     (@asoc $param:ident) => {$param.index};
     (@asoc $spec:ident::$name:ident) => {
-        Asoc {
+        Node::from(Asoc {
             spec: stringify!($spec),
             name: stringify!($name),
-        }
+            predicates: default(),
+        })
     };
     (@asoc $spec:ident::($name:ident $($param:tt)*)) => {
         Node::from(Instance {
@@ -709,13 +735,17 @@ fn test() {
             kix_any_fact [t] impl (kix t) for t,
             cup_fact impl cup for goo {foo = foo},
             cup_lep_fact impl cup for lep {foo = lep},
-            gup_any_fast [t] impl gup for t where (t: cup),
             unim_lep_fact impl unim for lep,
             store_for_pool [t f] impl (store t) for (pool f) where (f: (into t), t: to_string),
             model_for_my_model impl model for my_model {id = i32},
             repo_for_repo [f] impl (reportitory my_model) for (repo f) where (f: (store my_model)),
             into_bar_for_goo impl (into foo) for goo,
             to_string_for_bar impl to_string for foo,
+            asoc_expansion [t] impl gup for (wrap t) where ((wrap {Self::cup::foo}): unim),
+            cur_for_wrap [t] impl cup for (wrap t) {foo = i32},
+            unim_for_wrap [t] impl unim for (wrap t) where (t: unim),
+            unim_for_i32 impl unim for i32,
+            bar_for_i32 impl bar for i32,
         ]
     }
 
@@ -734,9 +764,9 @@ fn test() {
         "Failed asociate type" => {impl (kix foo) for foo},
         "Success asociate type" (cup_fact) => {impl cup for goo},
         "Failed asociate type 2" => {impl gup for goo},
-        "Success asociate type for unim" (gup_any_fast) => {impl gup for lep},
         "Something unique eh" (store_for_pool) => {impl (store foo) for (pool goo)},
         "Something unique failed" => {impl (store goo) for (pool goo)},
+        "Asoc Expansion" (asoc_expansion) => {impl gup for (wrap foo)},
     };
 
     let mut failed = false;
