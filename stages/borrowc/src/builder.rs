@@ -73,7 +73,10 @@ pub fn compile_functions(
             no_moves: flags.contains(FuncFlags::NO_MOVES),
         };
 
-        let generics = ctx.types[func].generics.predicates.to_bumpvec(ctx.types);
+        let generics = ctx
+            .types
+            .pack_func_param_specs(func)
+            .collect::<BumpVec<_>>();
         let Some(body) = MirBuilder::new(
             ret,
             &generics,
@@ -107,7 +110,7 @@ pub struct MirBuilder<'i, 'm> {
 impl<'i, 'm> MirBuilder<'i, 'm> {
     pub fn new(
         ret: Ty,
-        generics: &'i [WherePredicate],
+        generics: &'i [FragSlice<Spec>],
         ext: ExternalMirCtx<'m, 'i>,
         meta: BorrowcMeta,
         module: &'m mut ModuleMir,

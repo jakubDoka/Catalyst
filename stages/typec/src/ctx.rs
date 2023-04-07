@@ -41,14 +41,17 @@ impl<'arena, 'ctx> TypecExternalCtx<'arena, 'ctx> {
     ) -> Result<(), SignatureCheckError> {
         let func = self.types[func_id];
 
-        let spec_func_params = spec_func.generics.predicates.to_bumpvec(self.types);
+        let spec_func_params = self
+            .types
+            .pack_spec_func_param_specs(spec_func)
+            .collect::<BumpVec<_>>();
         let generic_start = spec_func_params.len() - spec_func.generics.len();
         let mut spec_func_slots = vec![None; spec_func_params.len()];
         spec_func_slots[generic_start - 1] = Some(implementor);
-        let func_params = self.types[func_id]
-            .generics
-            .predicates
-            .to_bumpvec(self.types);
+        let func_params = self
+            .types
+            .pack_func_param_specs(func_id)
+            .collect::<BumpVec<_>>();
 
         match (spec_func.signature.args.len(), func.signature.args.len()) {
             (a, b) if a == b => (),
@@ -102,10 +105,10 @@ impl<'arena, 'ctx> TypecExternalCtx<'arena, 'ctx> {
         };
 
         let mut missing_specs = collect.then(|| bumpvec![]);
-        for (pred, &ty) in spec_func_params.into_iter().zip(spec_func_slots.iter()) {
+        for (specs, &ty) in spec_func_params.into_iter().zip(spec_func_slots.iter()) {
             let implements = self.creator().implements_sum(
                 ty,
-                pred.bounds,
+                specs,
                 func_params.as_slice(),
                 &spec_func_slots,
                 &mut missing_specs.as_mut(),
@@ -172,9 +175,9 @@ impl<'arena, 'ctx> TypecExternalCtx<'arena, 'ctx> {
                     .map(|(ty, bounds)| {
                         format!(
                             "{}: {}",
-                            self.creator().display_to_string(ty),
+                            self.creator().display(ty),
                             bounds
-                                .map(|b| self.creator().display_to_string(b))
+                                .map(|b| self.creator().display(b))
                                 .intersperse_with(|| " + ".into())
                                 .collect::<String>(),
                         )
@@ -211,7 +214,6 @@ impl<'arena, 'ctx> TypecExternalCtx<'arena, 'ctx> {
         TypeCreator {
             types: self.types,
             interner: self.interner,
-            arena: self.arena,
         }
     }
 
@@ -312,7 +314,7 @@ pub struct TypecCtx {
     ty_graph: ProjectedCycleDetector<BaseTy>,
     scope: Scope,
     vars: Vec<VarHeaderTir>,
-    generics: Vec<WherePredicate>,
+    generics: Vec<FragSlice<Spec>>,
     cast_checks: Vec<CastCheck>,
     loops: PushMap<LoopHeaderTir>,
 }
@@ -330,16 +332,23 @@ impl TypecCtx {
     pub fn insert_generics(
         &mut self,
         generics_ast: Option<ListAst<ParamAst>>,
-        mut params: impl AsMut<TyParamIter>,
-    ) {
-        let Some(generics_ast) = generics_ast else {return};
+        offset: usize,
+    ) -> usize {
+        let Some(generics_ast) = generics_ast else {return 0};
 
-        for (&ParamAst { name, .. }, i) in generics_ast.iter().zip(params.as_mut()) {
-            self.scope.push(name.ident, i.to_ty(), name.span);
+        for (i, &ParamAst { name, .. }) in generics_ast.iter().enumerate() {
+            self.insert_param(offset + i, name)
         }
+
+        generics_ast.len()
     }
 
-    pub fn generics(&self) -> &[WherePredicate] {
+    fn insert_param(&mut self, index: usize, name: NameAst) {
+        self.scope
+            .push(name.ident, Ty::Param(index as ParamRepr), name.span);
+    }
+
+    pub fn generics(&self) -> &[FragSlice<Spec>] {
         &self.generics
     }
 
@@ -437,13 +446,12 @@ impl TypecCtx {
                 .iter()
                 .map(|field| field.ty)
                 .chain(variants.iter().map(|variant| variant.ty))
-                .filter_map(|ty| BaseTy::from_ty(ty));
+                .filter_map(|ty| BaseTy::from_ty(ty, types));
 
             self.ty_graph.new_node(ty).add_edges(iter);
         }
 
-        let mut ordering = bumpvec![];
-        if let Err(cycle) = self.ty_graph.ordering(nodes, &mut ordering) {
+        if let Err(cycle) = self.ty_graph.ordering(nodes, &mut bumpvec![]) {
             let cycle_chart = cycle
                 .iter()
                 .map(|&ty| type_creator::display(types, interner, ty.as_ty()))
@@ -465,19 +473,6 @@ impl TypecCtx {
 
             workspace.push(snippet);
         };
-
-        for ty in ordering.into_iter().rev() {
-            match ty {
-                BaseTy::Enum(e) => {
-                    let spec = types[e].update_drop_spec(types);
-                    types[e].drop_spec = spec;
-                }
-                BaseTy::Struct(s) => {
-                    let spec = types[s].update_drop_spec(types);
-                    types[s].drop_spec = spec;
-                }
-            }
-        }
     }
 
     pub(crate) fn first_unlabeled_loop(&self) -> Option<VRef<LoopHeaderTir>> {
@@ -513,22 +508,22 @@ impl TypecCtx {
         self.cast_checks.push(CastCheck { loc, from, to });
     }
 
-    pub(crate) fn load_generics(&mut self, func: impl Iterator<Item = WherePredicate>) {
+    pub(crate) fn load_generics(&mut self, func: impl Iterator<Item = FragSlice<Spec>>) {
         self.generics.clear();
         self.generics.extend(func);
     }
 
     pub fn insert_spec_functions(
         &mut self,
-        generics: WhereClause,
-        params: TyParamIter,
+        generics: Generics,
+        offset: usize,
         types: &Types,
         interner: &mut Interner,
     ) {
-        let specs = types[generics.predicates]
+        let specs = types[generics]
             .iter()
-            .zip(params)
-            .flat_map(|(&spec, i)| types[spec.bounds].iter().map(move |&spec| (i, spec)));
+            .enumerate()
+            .flat_map(|(i, &spec)| types[spec].iter().map(move |&spec| (offset + i, spec)));
         for (i, generic) in specs {
             self.insert_spec_functions_recur(i, generic, types, interner);
         }
@@ -536,16 +531,16 @@ impl TypecCtx {
 
     fn insert_spec_functions_recur(
         &mut self,
-        index: TyParamIdx,
+        index: usize,
         generic: Spec,
         types: &Types,
         interner: &mut Interner,
     ) {
-        let spec_base = generic.base();
+        let spec_base = generic.base(types);
         let functions = types[spec_base].methods;
 
         for (key, &func) in functions.keys().zip(&types[functions]) {
-            let id = interner.intern_scoped(index.to_ty(), func.name);
+            let id = interner.intern_scoped(Ty::Param(index as ParamRepr), func.name);
             self.scope.push(id, key, func.span);
         }
     }

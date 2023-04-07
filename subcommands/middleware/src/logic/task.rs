@@ -266,7 +266,10 @@ impl<'a> CompileRequestCollector<'a> {
                 continue;
             }
 
-            let generics = self.types[func].generics.predicates.to_bumpvec(self.types);
+            let generics = self
+                .types
+                .pack_func_param_specs(func)
+                .collect::<BumpVec<_>>();
 
             let body = self
                 .mir
@@ -326,7 +329,7 @@ impl<'a> CompileRequestCollector<'a> {
         imported
     }
 
-    fn instantiate_destructors(&mut self, root: VRef<TyMir>, generics: &[WherePredicate]) {
+    fn instantiate_destructors(&mut self, root: VRef<TyMir>, generics: &[FragSlice<Spec>]) {
         self.ctx.ty_frontier.push(self.ctx.temp_types[root].ty);
         while let Some(ty) = self.ctx.ty_frontier.pop() {
             if !type_creator!(self).may_need_drop(ty) {

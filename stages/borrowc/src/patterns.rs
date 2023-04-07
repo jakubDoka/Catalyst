@@ -317,12 +317,13 @@ fn display_pat_low(
             write!(res, "{}", ptr.mutability.to_mutability())?;
             display_pat_low(base, params, res, frontier, ext)?;
         }
-        Ty::Param(param) => {
-            let ty = params[param.index.get()];
+        Ty::Param(index) => {
+            let ty = params[index as usize];
             display_pat_low(ty, params, res, frontier, ext)?;
         }
         Ty::Builtin(b) => match b {
-            Unit | Terminal | Uint | U32 | U16 | U8 | Short | Cint | Long | LongLong => {
+            Unit | Terminal | Uint | U32 | Mutable | Immutable | U16 | U8 | Short | Cint | Long
+            | LongLong => {
                 let first = advance();
                 write!(res, "{first}")?;
             }

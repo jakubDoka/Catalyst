@@ -58,7 +58,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             let Ty::Base(BaseTy::Enum(enum_ty)) = expected.base(self.ext.types) else {
                 UnexpectedInferenceType {
                     expected: "enum",
-                    found: self.ext.creator().display_to_string(expected),
+                    found: self.ext.creator().display(expected),
                     loc: self.meta.loc(path.span()),
                 }.add(self.ext.workspace)?;
             };
@@ -118,7 +118,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     ) -> Option<DotPathResult> {
         let (Ty::Base(BaseTy::Struct(struct_ty)), params) = ty.base_with_params(self.ext.types) else {
             FieldAccessOnNonStruct {
-                found: self.ext.creator().display_to_string(ty),
+                found: self.ext.creator().display(ty),
                 loc: self.meta.loc(path.span()),
             }.add(self.ext.workspace)?;
         };
@@ -360,7 +360,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             .find_map(|(i, (key, func))| (method_ident.ident == func.name).then_some((i, key)))
             else {
                 ComponentNotFound {
-                    ty: self.ext.creator().display_to_string(spec),
+                    ty: self.ext.creator().display(spec),
                     loc: self.meta.loc(method_ident.span),
                     suggestions: self.ext.types[self.ext.types[spec_base].methods]
                         .iter()
@@ -387,8 +387,8 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             }
         } else {
             MissingImpl {
-                ty: self.ext.creator().display_to_string(ty),
-                spec: self.ext.creator().display_to_string(spec),
+                ty: self.ext.creator().display(ty),
+                spec: self.ext.creator().display(spec),
                 loc: self.meta.loc(path.span()),
             }
             .add(self.ext.workspace)?;
@@ -440,7 +440,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                 | Ty::Param(..)
                 | Ty::Builtin(..) => UnexpectedType {
                     expected: "enum",
-                    found: self.ext.creator().display_to_string(inferred),
+                    found: self.ext.creator().display(inferred),
                     loc: self.meta.loc(path.span()),
                 }
                 .add(self.ext.workspace)?,
@@ -483,7 +483,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                 | Ty::Array(..)
                 | Ty::Builtin(..) => UnexpectedInferenceType {
                     expected: "enum",
-                    found: self.ext.creator().display_to_string(ty),
+                    found: self.ext.creator().display(ty),
                     loc: self.meta.loc(path.span()),
                 }
                 .add(self.ext.workspace)?,
@@ -527,10 +527,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             .creator()
             .find_struct_field(struct_ty, params, name.ident)
             .or_else(|| {
-                let ty = self
-                    .ext
-                    .creator()
-                    .display_to_string(BaseTy::Struct(struct_ty));
+                let ty = self.ext.creator().display(BaseTy::Struct(struct_ty));
                 self.ext.workspace.push(ComponentNotFound {
                     loc: self.meta.loc(name.span),
                     ty,

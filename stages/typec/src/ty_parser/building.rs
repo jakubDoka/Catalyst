@@ -28,10 +28,9 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             let Func {
                 generics, owner, ..
             } = self.ext.types[first];
-            let mut params = TyParamIter::default();
-            self.ctx.insert_generics(impl_ast.generics, &mut params);
+            let offset = self.ctx.insert_generics(impl_ast.generics, 0);
             self.ctx
-                .insert_spec_functions(generics, params, self.ext.types, self.ext.interner);
+                .insert_spec_functions(generics, 0, self.ext.types, self.ext.interner);
 
             if let Some(impl_ref) = impl_ref {
                 self.build_spec_impl(impl_ref);
@@ -39,7 +38,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             if let Some(owner) = owner {
                 self.ctx.push_self(owner, impl_ast.target.span());
             }
-            self.build_funcs(funcs, params);
+            self.build_funcs(funcs, offset);
 
             self.ctx.end_frame(frame);
         }
@@ -83,17 +82,17 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
                 .filter_map(|inherit| {
                     self.ext
                         .creator()
-                        .find_implementation(ty, inherit, generics.predicates, &mut None)
+                        .find_implementation(ty, inherit, generics, &mut None)
                         .is_none()
                         .then(|| self.ext.creator().instantiate_spec(inherit, params))
-                        .map(|instance| self.ext.creator().display_to_string(instance))
+                        .map(|instance| self.ext.creator().display(instance))
                 })
                 .intersperse_with(|| " + ".into())
                 .collect::<String>();
 
             if !missing_impls.is_empty() {
                 MissingSpecInherits {
-                    ty: self.ext.creator().display_to_string(ty),
+                    ty: self.ext.creator().display(ty),
                     missing: missing_impls,
                     loc: loc.source_loc(self.ext.types),
                 }
@@ -113,14 +112,10 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         self
     }
 
-    pub(super) fn build_funcs(
-        &mut self,
-        funcs: &[(FuncDefAst, FragRef<Func>)],
-        params: TyParamIter,
-    ) {
+    pub(super) fn build_funcs(&mut self, funcs: &[(FuncDefAst, FragRef<Func>)], offset: usize) {
         for &(ast, func) in funcs.iter() {
             let Func { signature, .. } = self.ext.types[func];
-            match self.builder(signature.ret).build_func(ast, func, params) {
+            match self.builder(signature.ret).build_func(ast, func, offset) {
                 Some(Some(body)) => {
                     self.ext.transfer.checked_funcs.push((func, body));
                 }
@@ -145,15 +140,14 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
     ) {
         let frame = self.ctx.start_frame();
 
-        let mut params = TyParamIter::default();
-        self.ctx.insert_generics(generics, &mut params);
+        let generics_len = self.ctx.insert_generics(generics, 0);
         self.ctx
-            .push_self(params.next().unwrap().to_ty(), name.span);
+            .push_self(Ty::Param(generics_len as ParamRepr), name.span);
         let mut spec_set = SpecSet::default();
-        self.generics(generics, &mut spec_set, TyParamIter::default());
+        self.generics(generics, &mut spec_set, 0);
         let inherits = self.build_inherits(inherits, &mut spec_set);
-        let methods = self.build_spec_methods(spec, body, &mut spec_set, params);
-        let generics = self.take_generics(SpecSetFrame::base(), &mut spec_set);
+        let methods = self.build_spec_methods(spec, body, &mut spec_set, generics_len + 1);
+        let generics = self.take_generics(0, generics_len, &mut spec_set);
         self.ext.types[spec] = SpecBase {
             generics,
             methods,
@@ -181,7 +175,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         parent: FragRef<SpecBase>,
         body: Option<ListAst<FuncSigAst>>,
         spec_set: &mut SpecSet,
-        params: TyParamIter,
+        offset: usize,
     ) -> FragSlice<SpecFunc> {
         let Some(body) = body else {
             return default();
@@ -189,7 +183,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
 
         let mut methods = bumpvec![cap body.len()];
         for &func in body.iter() {
-            let Some((signature, generics)) = self.collect_signature(func, spec_set, params) else {
+            let Some((signature, generics)) = self.collect_signature(func, spec_set, offset) else {
                 continue;
             };
 
@@ -213,11 +207,11 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
     ) {
         let frame = self.ctx.start_frame();
 
-        self.ctx.insert_generics(generics, TyParamIter::default());
+        let generics_len = self.ctx.insert_generics(generics, 0);
         let mut spec_set = SpecSet::default();
-        self.generics(generics, &mut spec_set, TyParamIter::default());
+        self.generics(generics, &mut spec_set, 0);
         let variants = self.enum_variants(body, &mut spec_set);
-        let generics = self.take_generics(SpecSetFrame::base(), &mut spec_set);
+        let generics = self.take_generics(0, generics_len, &mut spec_set);
         self.ext.types[r#enum] = Enum {
             generics,
             variants,
@@ -255,12 +249,11 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
     ) {
         let frame = self.ctx.start_frame();
 
-        let params = TyParamIter::default();
-        self.ctx.insert_generics(generics, params);
+        let generics_len = self.ctx.insert_generics(generics, 0);
         let mut spec_set = SpecSet::default();
-        self.generics(generics, &mut spec_set, params);
+        self.generics(generics, &mut spec_set, 0);
         let fields = self.struct_fields(body, &mut spec_set);
-        let generics = self.take_generics(SpecSetFrame::base(), &mut spec_set);
+        let generics = self.take_generics(0, generics_len, &mut spec_set);
         self.ext.types[ty] = Struct {
             generics,
             fields,

@@ -42,15 +42,15 @@ fn classify_arg_low(
         Ty::Builtin(bt) => match bt {
             Bool | Char | U8 | U16 | U32 | Uint | Short | Long | LongLong | Cint => Class::Int,
             F32 | F64 => Class::Sse,
-            Unit | Terminal => return Ok(()),
+            Unit | Terminal | Mutable | Immutable => return Ok(()),
         },
         Ty::Base(b) => return classify_base_ty_arg(generator, b, params, layout, classes, offset),
         Ty::Instance(i) => {
             return classify_instance_arg(generator, i, params, layout, classes, offset)
         }
         Ty::Pointer(..) => Class::Int,
-        Ty::Param(param) => {
-            return classify_arg_low(generator, params[param.index.get()], &[], classes, offset);
+        Ty::Param(index) => {
+            return classify_arg_low(generator, params[index as usize], &[], classes, offset);
         }
         Ty::Array(_) => todo!(),
     };

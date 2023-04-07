@@ -632,8 +632,8 @@ impl Worker {
             match from_param_presence.combine(to_param_presence) {
                 ParamPresence::Present => {
                     CastBetweenGenericTypes {
-                        from: type_creator!(task).display_to_string(from),
-                        to: type_creator!(task).display_to_string(to),
+                        from: type_creator!(task).display(from),
+                        to: type_creator!(task).display(to),
                         loc,
                     }
                     .add(&mut task.workspace);
@@ -647,18 +647,18 @@ impl Worker {
             let to_layout = layouts.ty_layout(to, &[], type_creator!(task));
             if from_layout.size != to_layout.size {
                 CastSizeMismatch {
-                    from: type_creator!(task).display_to_string(from),
+                    from: type_creator!(task).display(from),
                     from_size: from_layout.size,
-                    to: type_creator!(task).display_to_string(to),
+                    to: type_creator!(task).display(to),
                     to_size: to_layout.size,
                     loc,
                 }
                 .add(&mut task.workspace);
             } else if from_layout.align < to_layout.align {
                 CastAlignMismatch {
-                    from: type_creator!(task).display_to_string(from),
+                    from: type_creator!(task).display(from),
                     from_align: from_layout.align,
-                    to: type_creator!(task).display_to_string(to),
+                    to: type_creator!(task).display(to),
                     to_align: to_layout.align,
                     loc,
                 }

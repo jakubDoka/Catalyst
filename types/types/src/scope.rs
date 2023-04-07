@@ -9,17 +9,17 @@ use storage::*;
 use crate::*;
 
 #[derive(Default)]
-pub struct Scope<'a> {
-    data: Map<Ident, ScopeRecord<'a>>,
-    pushed: Vec<(Ident, Option<ScopeRecord<'a>>)>,
+pub struct Scope {
+    data: Map<Ident, ScopeRecord>,
+    pushed: Vec<(Ident, Option<ScopeRecord>)>,
 }
 
-impl<'a> Scope<'a> {
+impl Scope {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn get(&self, ident: Ident) -> Result<ScopeItem<'a>, ScopeError> {
+    pub fn get(&self, ident: Ident) -> Result<ScopeItem, ScopeError> {
         self.data
             .get(&ident)
             .ok_or(ScopeError::NotFound)
@@ -27,7 +27,7 @@ impl<'a> Scope<'a> {
             .and_then(|option| option.scope_item().ok_or(ScopeError::Collision))
     }
 
-    pub fn push(&mut self, id: Ident, item: impl Into<ScopeItem<'a>>, span: Span) {
+    pub fn push(&mut self, id: Ident, item: impl Into<ScopeItem>, span: Span) {
         let record = ScopeRecord::Pushed {
             kind: item.into(),
             span,
@@ -49,7 +49,7 @@ impl<'a> Scope<'a> {
         }
     }
 
-    pub fn insert_builtin(&mut self, id: Ident, item: impl Into<ScopeItem<'a>>) {
+    pub fn insert_builtin(&mut self, id: Ident, item: impl Into<ScopeItem>) {
         self.data
             .insert(id, ScopeRecord::Builtin { kind: item.into() });
     }
@@ -141,7 +141,7 @@ pub enum ScopePosition {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum ScopeRecord<'a> {
+pub enum ScopeRecord {
     Imported {
         source: VRef<Source>,
         item: ModuleItem,
@@ -152,17 +152,17 @@ pub enum ScopeRecord<'a> {
         item: ModuleItem,
     },
     Builtin {
-        kind: ScopeItem<'a>,
+        kind: ScopeItem,
     },
     Pushed {
-        kind: ScopeItem<'a>,
+        kind: ScopeItem,
         span: Span,
     },
     Collision,
 }
 
-impl<'a> ScopeRecord<'a> {
-    pub fn scope_item(&self) -> Option<ScopeItem<'a>> {
+impl ScopeRecord {
+    pub fn scope_item(&self) -> Option<ScopeItem> {
         match *self {
             Self::Imported { item, .. } | Self::Current { item } => item.ptr.into(),
             Self::Builtin { kind } | Self::Pushed { kind, .. } => Some(kind),
@@ -232,7 +232,7 @@ wrapper_enum! {
     #[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize, Serialize, Archive)]
     enum ModuleItemPtr: relocated {
         Func: FragRef<Func>,
-        Ty: CompactTy,
+        Ty: Ty,
         SpecBase: FragRef<SpecBase>,
         Impl: FragRef<Impl>,
         Const: FragRef<Const>,
@@ -241,19 +241,19 @@ wrapper_enum! {
 
 wrapper_enum! {
     #[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize, Serialize, Archive)]
-    enum ScopeItem 'a: {
+    enum ScopeItem: {
         Func: FragRef<Func> => "function",
-        Ty: CompactTy => "type",
+        Ty: Ty => "type",
         SpecFunc: FragRef<SpecFunc> => "spec function",
         SpecBase: FragRef<SpecBase> => "spec",
-        VarHeaderTir: VRef<VarHeaderTir<'a>> => "variable",
+        VarHeaderTir: VRef<VarHeaderTir> => "variable",
         Module: VRef<Source> => "module",
-        LoopHeaderTir: VRef<LoopHeaderTir<'a>> => "loop label",
+        LoopHeaderTir: VRef<LoopHeaderTir> => "loop label",
         Const: FragRef<Const> => "constant",
     }
 }
 
-impl From<ModuleItemPtr> for Option<ScopeItem<'_>> {
+impl From<ModuleItemPtr> for Option<ScopeItem> {
     fn from(item: ModuleItemPtr) -> Self {
         Some(match item {
             ModuleItemPtr::Func(func) => func.into(),

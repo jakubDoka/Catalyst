@@ -1,4 +1,4 @@
-use std::{default::default, mem};
+use std::mem;
 
 use crate::{ctx::*, TirBuilder};
 
@@ -45,7 +45,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         self.ctx.detect_infinite_types(&mut self.ext, &self.meta);
 
         let funcs = mem::take(&mut self.ext.transfer.funcs);
-        self.build_funcs(&funcs, TyParamIter::default());
+        self.build_funcs(&funcs, 0);
         self.ext.transfer.funcs = funcs;
 
         self.build_impl_funcs();
@@ -59,16 +59,14 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         &mut self,
         generic_ast: Option<ListAst<ParamAst>>,
         set: &mut SpecSet,
-        mut params: impl AsMut<TyParamIter>,
+        offset: usize,
     ) {
         let Some(generic_ast) = generic_ast else {return};
 
-        for (&ParamAst { specs, .. }, i) in generic_ast.iter().zip(params.as_mut()) {
+        for (i, &ParamAst { specs, .. }) in generic_ast.iter().enumerate() {
             let Some(ParamSpecsAst { first, rest, .. }) = specs else {continue};
             set.extend(
-                i,
-                None,
-                default(),
+                (i + offset) as u32,
                 rest.iter()
                     .map(|(.., s)| s)
                     .chain(iter::once(&first))
@@ -158,7 +156,11 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
     fn pointer(&mut self, TyPointerAst { mutability, ty, .. }: TyPointerAst) -> Option<Pointer> {
         let base = self.ty(ty)?;
         let mutability = self.mutability(mutability)?;
-        Some(self.ext.creator().pointer(mutability.as_param(), base))
+        Some(
+            self.ext
+                .creator()
+                .pointer_to(RawMutability::new(mutability).expect("todo"), base),
+        )
     }
 
     pub(crate) fn mutability(
@@ -176,7 +178,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
                     segments: &[],
                 },
             )) => match lookup!(Ty self, start.ident, start.span) {
-                Ty::Param(param) => Mutability::Param(param.index),
+                Ty::Param(i) => Mutability::Param(i),
                 _ => todo!(),
             },
             Some(MutabilityAst::Generic(..)) => todo!(),

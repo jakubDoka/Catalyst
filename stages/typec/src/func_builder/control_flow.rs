@@ -189,7 +189,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                 (variant.name == variant_name.ident).then_some((i, variant.ty))
             })
             .or_else(|| {
-                let ty = self.ext.creator().display_to_string(BaseTy::Enum(enum_ty));
+                let ty = self.ext.creator().display(BaseTy::Enum(enum_ty));
                 self.ext.workspace.push(ComponentNotFound {
                     ty,
                     loc: self.meta.loc(variant_name.span),
@@ -233,7 +233,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             Some(res)
         } else if variant_ty != Ty::UNIT {
             MissingEnumCtorValue {
-                ty: self.ext.creator().display_to_string(variant_ty),
+                ty: self.ext.creator().display(variant_ty),
                 loc: self.meta.loc(variant_name.span),
             }
             .add(self.ext.workspace)?;

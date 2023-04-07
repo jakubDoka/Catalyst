@@ -55,7 +55,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             ..
         }: FuncDefAst,
         func: FragRef<Func>,
-        params: TyParamIter,
+        offset: usize,
     ) -> Option<Option<TirFunc<'arena>>> {
         let Func {
             signature,
@@ -69,17 +69,14 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             FuncBodyAst::Extern(..) => return Some(None),
         };
 
-        self.ctx.load_generics(
-            self.ext.types[self.ext.types[func].generics.predicates]
-                .iter()
-                .copied(),
-        );
+        self.ctx
+            .load_generics(self.ext.types.pack_func_param_specs(func));
 
         let frame = self.ctx.start_frame();
 
-        self.ctx.insert_generics(generics, params);
+        self.ctx.insert_generics(generics, offset);
         self.ctx
-            .insert_spec_functions(self_generics, params, self.ext.types, self.ext.interner);
+            .insert_spec_functions(self_generics, offset, self.ext.types, self.ext.interner);
         let args = self.args(signature.args, args);
 
         let tir_body = match body {
@@ -244,7 +241,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                 let (Ty::Base(BaseTy::Struct(struct_ty)), params) = ty.caller_with_params(self.ext.types) else {
                     UnexpectedPatternType {
                         loc: self.meta.loc(fields.span()),
-                        ty: self.ext.creator().display_to_string(ty),
+                        ty: self.ext.creator().display(ty),
                         ty_loc: None, //TODO: make a types getter for loc on type
                         something: "struct",
                     }.add(self.ext.workspace)?;
@@ -330,7 +327,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                 let Ty::Base(BaseTy::Enum(enum_ty)) = ty_base.base(self.ext.types) else {
                     UnexpectedPatternType {
                         loc: self.meta.loc(ctor.span()),
-                        ty: self.ext.creator().display_to_string(ty),
+                        ty: self.ext.creator().display(ty),
                         ty_loc: None, //TODO: make a types getter for loc on type
                         something: "enum",
                     }.add(self.ext.workspace)?;
@@ -343,7 +340,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                     .or_else(|| {
                         ComponentNotFound {
                             loc: self.meta.loc(ctor.span()),
-                            ty: self.ext.creator().display_to_string(BaseTy::Enum(enum_ty)),
+                            ty: self.ext.creator().display(BaseTy::Enum(enum_ty)),
                             suggestions: self.ext.types[self.ext.types[enum_ty].variants]
                                 .iter()
                                 .map(|v| v.name.get(self.ext.interner))
@@ -393,8 +390,8 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             .compatible(params, reference, template)
             .map_err(|_| {
                 GenericTypeMismatch {
-                    expected: self.ext.creator().display_to_string(reference),
-                    got: self.ext.creator().display_to_string(template),
+                    expected: self.ext.creator().display(reference),
+                    got: self.ext.creator().display(template),
                     loc: self.meta.loc(span),
                 }
                 .add(self.ext.workspace)
@@ -460,8 +457,8 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     fn type_check(&mut self, expected: Ty, got: Ty, span: Span) -> Option<()> {
         self.type_check_detailed(expected, got, |s| {
             GenericTypeMismatch {
-                expected: s.ext.creator().display_to_string(expected),
-                got: s.ext.creator().display_to_string(got),
+                expected: s.ext.creator().display(expected),
+                got: s.ext.creator().display(got),
                 loc: s.meta.loc(span),
             }
             .add(s.ext.workspace)

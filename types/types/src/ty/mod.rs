@@ -1,4 +1,7 @@
-use std::{default::default, fmt, mem};
+use std::{
+    default::default,
+    fmt::{self, Display},
+};
 
 use crate::*;
 use span::*;
@@ -6,86 +9,31 @@ use span::*;
 use rkyv::{Archive, Deserialize, Serialize};
 use storage::*;
 
-use self::{
-    compact::{CompactTy, ExpandedTy},
-    spec::TyParam,
-};
-
-pub mod compact;
 pub mod data;
 pub mod pointer;
 pub mod spec;
-pub mod spec_set;
+
+pub type Generics = FragSlice<FragSlice<Spec>>;
 
 wrapper_enum! {
     #[derive(
-        Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord
+        Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord, Deserialize, Archive, Serialize,
     )]
-    enum Spec 'a: {
+    #[archive_attr(derive(PartialEq, Eq, Hash))]
+    enum Spec: relocated {
         Base: FragRef<SpecBase>,
-        Instance: ExpInstance<'a, FragRef<SpecBase>>,
+        Instance: FragRef<SpecInstance>,
     }
 }
 
-impl<'a> Spec<'a> {
-    pub fn load(compact: CompactSpec, types: &Types, arena: &ProxyArena<'a>) -> Self {
-        match compact.expanded() {
-            ExpandedSpec::Base(b) => Self::Base(b),
-            ExpandedSpec::Instance(i) => {
-                let SpecInstance { base, args } = types[i];
-                let args = Ty::load_slice(&types[args], types, arena);
-                Self::Instance(ExpInstance { base, args })
-            }
-        }
-    }
-
-    pub fn load_slice(slice: &[CompactSpec], types: &Types, arena: &ProxyArena<'a>) -> &'a [Self] {
-        arena.alloc_iter(slice.iter().map(|&s| Self::load(s, types, arena)))
-    }
-
-    pub fn base(self) -> FragRef<SpecBase> {
+impl Spec {
+    pub fn base(self, types: &Types) -> FragRef<SpecBase> {
         match self {
             Spec::Base(base) => base,
-            Spec::Instance(instance) => instance.base,
-        }
-    }
-
-    pub fn params(self) -> &'a [Ty<'a>] {
-        match self {
-            Spec::Base(..) => &[],
-            Spec::Instance(instance) => instance.args,
-        }
-    }
-
-    pub fn infer(
-        self,
-        template: Self,
-        params: &mut [Option<Ty<'a>>],
-    ) -> Result<(), SpecCmpError<'a>> {
-        match (self, template) {
-            (Spec::Instance(reference), Spec::Instance(template)) => {
-                if reference.base != template.base {
-                    return Err(SpecCmpError::Specs(
-                        Spec::Base(reference.base),
-                        Spec::Base(template.base),
-                    ));
-                }
-
-                reference
-                    .args
-                    .iter()
-                    .zip(template.args)
-                    .fold(Ok(()), |acc, (&reference, &template)| {
-                        acc.and(reference.infer(template, params))
-                    })
-                    .map_err(|(a, b)| SpecCmpError::Args(a, b))
-            }
-            _ if self == template => Ok(()),
-            _ => Err(SpecCmpError::Specs(self, template)),
+            Spec::Instance(instance) => types[instance].base,
         }
     }
 }
-
 wrapper_enum! {
     #[derive(
         Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Archive,
@@ -107,19 +55,15 @@ impl fmt::Display for BaseTy {
 }
 
 impl BaseTy {
-    pub fn as_ty(self) -> Ty<'static> {
-        Ty::Base(self)
-    }
-
-    pub fn generics(self, types: &Types) -> WhereClause {
-        match self {
-            BaseTy::Struct(s) => types[s].generics,
-            BaseTy::Enum(e) => types[e].generics,
-        }
+    pub fn as_ty(self) -> Ty {
+        self.into()
     }
 
     pub fn is_generic(self, types: &Types) -> bool {
-        !self.generics(types).is_empty()
+        !match self {
+            BaseTy::Struct(s) => types[s].generics.is_empty(),
+            BaseTy::Enum(e) => types[e].generics.is_empty(),
+        }
     }
 
     pub fn span(self, types: &Types) -> Option<Span> {
@@ -129,128 +73,89 @@ impl BaseTy {
         }
     }
 
-    pub fn from_ty(ty: Ty) -> Option<Self> {
+    pub fn from_ty(ty: Ty, types: &Types) -> Option<Self> {
         match ty {
             Ty::Base(b) => Some(b),
-            Ty::Instance(i) => Some(i.base),
+            Ty::Instance(i) => Some(types[i].base),
             Ty::Pointer(..) | Ty::Array(..) | Ty::Param(..) | Ty::Builtin(..) => None,
         }
     }
+}
 
-    pub fn drop_spec(self, types: &Types) -> DropSpec {
-        match self {
-            Self::Struct(s) => types[s].drop_spec,
-            Self::Enum(e) => types[e].drop_spec,
-        }
+wrapper_enum! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Archive)]
+    enum ComputedTypecItem: relocated {
+        Pointer: FragRef<Ty>,
+        Instance: FragRef<Instance>,
+        SpecInstance: FragRef<SpecInstance>,
+        SpecSum: FragSlice<Spec>,
+        Array: FragRef<Array>,
     }
 }
 
 pub type ParamRepr = u16;
 
-pub enum NonBaseTy<'a> {
-    Pointer(Pointer<'a>),
-    Array(ExpArray<'a>),
-    Param(TyParam),
+pub enum NonBaseTy {
+    Pointer(Pointer),
+    Array(FragRef<Array>),
+    Param(ParamRepr),
     Builtin(Builtin),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ExpInstance<'a, T = BaseTy> {
-    pub base: T,
-    pub args: &'a [Ty<'a>],
+wrapper_enum! {
+    #[derive(
+        Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Archive,
+    )]
+    #[archive_attr(derive(PartialEq, Eq, Hash))]
+    enum Ty: {
+        Base: BaseTy,
+        Instance: FragRef<Instance>,
+        Pointer: Pointer,
+        Array: FragRef<Array>,
+        Param: ParamRepr,
+        Builtin: Builtin,
+    }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ExpArray<'a> {
-    pub item: &'a Ty<'a>,
-    pub len: u32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Ty<'a> {
-    Base(BaseTy),
-    Instance(ExpInstance<'a>),
-    Pointer(Pointer<'a>),
-    Array(ExpArray<'a>),
-    Param(TyParam),
-    Builtin(Builtin),
-}
-
-impl From<FragRef<Struct>> for Ty<'_> {
+impl From<FragRef<Struct>> for Ty {
     fn from(ty: FragRef<Struct>) -> Self {
         Self::Base(ty.into())
     }
 }
 
-impl From<FragRef<Enum>> for Ty<'_> {
+impl From<FragRef<Enum>> for Ty {
     fn from(ty: FragRef<Enum>) -> Self {
         Self::Base(ty.into())
     }
 }
 
-impl<'a> Ty<'a> {
-    pub fn significant_type(self) -> Option<BaseTy> {
+derive_relocated! {
+    enum Ty {
+        Base(b) => b,
+        Instance(i) => i,
+        Pointer(p) => p,
+        Array(a) => a,
+        Param(..) =>,
+        Builtin(..) =>,
+    }
+}
+
+impl Display for Ty {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Ty::Base(b) => Some(b),
-            Ty::Instance(i) => Some(i.base),
-            Ty::Pointer(p) => p.ty.significant_type(),
-            Ty::Array(arr) => arr.item.significant_type(),
-            Ty::Param(..) | Ty::Builtin(..) => None,
+            Ty::Base(b) => write!(f, "{b}"),
+            Ty::Instance(i) => write!(f, "inst{:x}", i.bits()),
+            Ty::Pointer(p) => {
+                write!(f, "{} ptr{:x}", p.mutability.to_mutability(), p.ty().bits())
+            }
+            Ty::Param(i) => write!(f, "param{i}"),
+            Ty::Builtin(b) => write!(f, "{}", b.name()),
+            Ty::Array(a) => write!(f, "array{:x}", a.bits()),
         }
     }
+}
 
-    pub fn drop_spec(&self, types: &Types) -> DropSpec {
-        match self {
-            Ty::Base(b) => b.drop_spec(types),
-            Ty::Instance(i) => i.base.drop_spec(types),
-            Ty::Pointer(..) => DropSpec::Copy,
-            Ty::Array(arr) if arr.len == 0 => DropSpec::Copy,
-            Ty::Array(arr) => arr.item.drop_spec(types),
-            Ty::Param(..) => DropSpec::Hibrid,
-            Ty::Builtin(..) => DropSpec::Copy,
-        }
-    }
-
-    pub fn load(compact: CompactTy, types: &Types, arena: &ProxyArena<'a>) -> Self {
-        match compact.expanded() {
-            ExpandedTy::Builtin(b) => Self::Builtin(b),
-            ExpandedTy::Array(array) => {
-                let Array { len, item } = types[array];
-                Self::Array(ExpArray {
-                    item: arena.alloc(Self::load(item, types, arena)),
-                    len,
-                })
-            }
-            ExpandedTy::Pointer {
-                depth,
-                mutability,
-                ty,
-            } => {
-                let ty = Self::load(types[ty], types, arena);
-                Self::Pointer(Pointer {
-                    depth,
-                    mutability: mutability.to_mutability(),
-                    ty: arena.alloc(ty),
-                })
-            }
-            ExpandedTy::Base(s) => Self::Base(s),
-            ExpandedTy::Instance(instance) => {
-                let Instance { base, args } = types[instance];
-                let args =
-                    arena.alloc_iter(types[args].iter().map(|&arg| Self::load(arg, types, arena)));
-                Self::Instance(ExpInstance {
-                    base: base.expanded(),
-                    args,
-                })
-            }
-            ExpandedTy::Param { param, asoc } => Self::Param(TyParam { index: param, asoc }),
-        }
-    }
-
-    pub fn load_slice(slice: &[CompactTy], types: &Types, arena: &ProxyArena<'a>) -> &'a [Ty<'a>] {
-        arena.alloc_iter(slice.iter().map(|&ty| Self::load(ty, types, arena)))
-    }
-
+impl Ty {
     pub fn is_aggregate(self) -> bool {
         matches!(self, Self::Base(..) | Self::Instance(..))
     }
@@ -269,10 +174,10 @@ impl<'a> Ty<'a> {
         })
     }
 
-    pub fn to_base_and_params(self) -> Result<(BaseTy, &'a [Self]), NonBaseTy<'a>> {
+    pub fn to_base_and_params(self, types: &Types) -> Result<(BaseTy, FragSlice<Ty>), NonBaseTy> {
         Err(match self {
-            Ty::Base(b) => return Ok((b, &[])),
-            Ty::Instance(i) => return Ok((i.base, i.args)),
+            Ty::Base(b) => return Ok((b, FragSlice::empty())),
+            Ty::Instance(i) => return Ok((types[i].base, types[i].args)),
             Ty::Pointer(p) => NonBaseTy::Pointer(p),
             Ty::Array(a) => NonBaseTy::Array(a),
             Ty::Param(p) => NonBaseTy::Param(p),
@@ -280,16 +185,16 @@ impl<'a> Ty<'a> {
         })
     }
 
-    pub fn array_base(self) -> Option<Self> {
+    pub fn array_base(self, types: &Types) -> Option<Ty> {
         match self {
-            Ty::Array(a) => Some(*a.item),
+            Ty::Array(a) => Some(types[a].item),
             _ => None,
         }
     }
 
     pub fn compatible(a: Self, b: Self) -> bool {
-        b == Ty::TERMINAL
-            || a == Ty::TERMINAL
+        b == Self::TERMINAL
+            || a == Self::TERMINAL
             || a == b
             || matches!(
                 (a, b),
@@ -305,40 +210,36 @@ impl<'a> Ty<'a> {
         }
     }
 
-    pub fn base_with_params(self) -> (Self, &'a [Self]) {
+    pub fn base_with_params(self, types: &Types) -> (Self, FragSlice<Ty>) {
         match self {
-            Self::Instance(i) => (i.base.as_ty(), i.args),
+            Self::Instance(i) => (types[i].base.as_ty(), types[i].args),
             _ => (self, default()),
         }
     }
 
-    pub fn base(self) -> Option<BaseTy> {
-        Some(match self {
-            Self::Base(b) => b,
-            Self::Instance(i) => i.base,
-            _ => return None,
-        })
+    pub fn base(self, types: &Types) -> Self {
+        self.base_with_params(types).0
     }
 
-    pub fn caller_with_params(self) -> (Self, &'a [Self]) {
-        self.ptr_base().base_with_params()
+    pub fn caller_with_params(self, types: &Types) -> (Self, FragSlice<Ty>) {
+        self.ptr_base(types).base_with_params(types)
     }
 
-    pub fn caller(self) -> Self {
-        self.caller_with_params().0
+    pub fn caller(self, types: &Types) -> Self {
+        self.caller_with_params(types).0
     }
 
-    pub fn ptr_base(self) -> Self {
+    pub fn ptr_base(self, types: &Types) -> Self {
         match self {
-            Self::Pointer(p) => p.ty.ptr_base(),
+            Self::Pointer(p) => types[p.ty()].ptr_base(types),
             _ => self,
         }
     }
 
-    pub fn mutability(self) -> Mutability {
+    pub fn mutability(self) -> RawMutability {
         match self {
             Self::Pointer(p) => p.mutability,
-            _ => Mutability::Mutable,
+            _ => RawMutability::IMMUTABLE,
         }
     }
 
@@ -349,93 +250,15 @@ impl<'a> Ty<'a> {
         }
     }
 
-    pub fn ptr(self) -> (Self, u8, Mutability) {
+    pub fn ptr(self, types: &Types) -> (Self, u8, Mutability) {
         match self {
-            Self::Pointer(p) => (*p.ty, p.depth, p.mutability),
+            Self::Pointer(p) => (types[p.ty()], p.depth, p.mutability.to_mutability()),
             _ => (self, 0, Mutability::Immutable),
         }
     }
 
     pub fn is_signed(self) -> bool {
         Ty::SIGNED_INTEGERS.contains(&self)
-    }
-
-    pub fn contains_params(self) -> bool {
-        !matches!(self.contains_params_low(), ParamPresence::Absent)
-    }
-
-    pub fn contains_params_low(self) -> ParamPresence {
-        use ParamPresence::*;
-        match self {
-            Ty::Instance(instance) => instance
-                .args
-                .iter()
-                .map(|&ty| ty.contains_params_low())
-                .fold(Absent, ParamPresence::combine),
-            Ty::Pointer(pointer) => pointer
-                .ty
-                .contains_params_low()
-                .combine(pointer.mutability.into())
-                .put_behind_pointer(),
-            Ty::Array(array) => array.item.contains_params_low(),
-            Ty::Param(..) => Present,
-            Ty::Base(..) | Ty::Builtin(..) => Absent,
-        }
-    }
-
-    pub fn dereference(self) -> Self {
-        match self {
-            Ty::Pointer(ptr, ..) => *ptr.ty,
-            _ => self,
-        }
-    }
-
-    pub fn infer_ty_params(self, param_count: usize, template: Ty) -> BumpVec<Ty> {
-        let mut params = bumpvec![None; param_count];
-        let res = self.infer(template, &mut params);
-        assert!(res.is_ok());
-        assert!(params.iter().all(|p| p.is_some()));
-        const _: () = assert!(mem::size_of::<Option<Ty>>() == mem::size_of::<Ty>());
-        unsafe { mem::transmute(params) }
-    }
-
-    pub fn infer(self, template: Self, params: &mut [Option<Self>]) -> Result<(), (Self, Self)> {
-        let mut stack = bumpvec![(self, template)];
-
-        let check = |a, b| Ty::compatible(a, b).then_some(()).ok_or((a, b));
-
-        while let Some((reference, template)) = stack.pop() {
-            if reference == template && !self.contains_params() {
-                continue;
-            }
-
-            match (reference, template) {
-                (Ty::Pointer(reference_p), Ty::Pointer(template_p)) => {
-                    match (reference_p.mutability, template_p.mutability) {
-                        (val, Mutability::Param(i)) => params[i.get()] = Some(val.as_ty()),
-                        _ if reference_p.mutability.compatible(template_p.mutability) => (),
-                        _ => return Err((reference, template)),
-                    }
-                    stack.push((*reference_p.ty, *template_p.ty));
-                }
-                (Ty::Instance(reference), Ty::Instance(template)) => {
-                    check(reference.base.as_ty(), template.base.as_ty())?;
-                    stack.extend(
-                        reference.args
-                            .iter()
-                            .copied()
-                            .zip(template.args.iter().copied()),
-                    );
-                }
-                (_, Ty::Param(param)) if let Some(inferred) = params[param.index.get()] => {
-                    check(reference, inferred)?;
-                }
-                (_, Ty::Param(param)) => params[param.index.get()] = Some(reference),
-                _ => return Err((reference, template)),
-            }
-        }
-
-        Ok(())
     }
 
     pub fn is_unsigned(self) -> bool {
@@ -464,7 +287,7 @@ macro_rules! gen_builtin {
             )*
         }
     ) => {
-        impl Ty<'static> {
+        impl Ty {
             $(
                 pub const $name: Self = Self::Builtin(Builtin::$builtin);
             )*
@@ -497,18 +320,6 @@ macro_rules! gen_builtin {
                 )*
             ];
 
-            $(
-                pub const $name: Self = Builtin::$builtin;
-            )*
-
-            $(
-                pub const $group_name: [Self; [$(Self::$group_elem),*].len()] = [
-                    $(
-                        Self::$group_elem,
-                    )*
-                ];
-            )*
-
             pub fn name(self) -> &'static str {
                 match self {
                     $(Builtin::$builtin => $repr),*
@@ -522,6 +333,8 @@ gen_builtin!(
     atoms {
         UNIT => Unit => "()",
         TERMINAL => Terminal => "!",
+        MUTABLE => Mutable => "mutable",
+        IMMUTABLE => Immutable => "immutable",
         UINT => Uint => "uint",
         U32 => U32 => "u32",
         U16 => U16 => "u16",
@@ -553,7 +366,7 @@ impl Builtin {
     }
 }
 
-impl Default for Ty<'_> {
+impl Default for Ty {
     fn default() -> Self {
         Ty::UNIT
     }
@@ -571,4 +384,42 @@ pub trait Humid: Sized + Clone + NoInteriorMutability {
     fn lookup_water_drop(key: &str) -> Option<FragRef<Self>>;
     fn name(&self) -> Ident;
     fn storage(types: &mut Types) -> &mut FragMap<Self>;
+}
+
+#[derive(Default)]
+pub struct SpecSet {
+    storage: Vec<(u32, Spec)>,
+}
+
+impl SpecSet {
+    pub fn extend(&mut self, index: u32, specs: impl IntoIterator<Item = Spec>) {
+        for spec in specs {
+            if let Err(i) = self.storage.binary_search(&(index, spec)) {
+                self.storage.insert(i, (index, spec));
+            }
+        }
+    }
+
+    pub fn truncate(&mut self, length: usize) {
+        self.storage.truncate(length);
+    }
+
+    pub fn iter(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            u32,
+            impl Iterator<Item = Spec> + '_ + Clone + ExactSizeIterator,
+        ),
+    >
+           + '_
+           + DoubleEndedIterator {
+        self.storage
+            .group_by(|(a, ..), (b, ..)| a == b)
+            .map(|group| (group[0].0, group.iter().map(|&(.., s)| s)))
+    }
+
+    pub fn clear(&mut self) {
+        self.storage.clear();
+    }
 }

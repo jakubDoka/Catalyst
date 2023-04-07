@@ -108,7 +108,7 @@ impl<'ctx> TirDisplay<'ctx> {
                         write!(
                             buffer,
                             "{}\\{}",
-                            self.creator().display_to_string(Spec::Base(parent)),
+                            self.creator().display(Spec::Base(parent)),
                             name.get(self.interner),
                         )?
                     }
@@ -119,9 +119,9 @@ impl<'ctx> TirDisplay<'ctx> {
 
                 if let Some((&first, others)) = params.split_first() {
                     write!(buffer, "[")?;
-                    write!(buffer, "{}", self.creator().display_to_string(first))?;
+                    write!(buffer, "{}", self.creator().display(first))?;
                     for &other in others {
-                        write!(buffer, ", {}", self.creator().display_to_string(other))?;
+                        write!(buffer, ", {}", self.creator().display(other))?;
                     }
                     write!(buffer, "]")?;
                 }
@@ -140,7 +140,7 @@ impl<'ctx> TirDisplay<'ctx> {
                 write!(buffer, "var{}", var.index())?;
             }
             TirKind::Ctor(fields) => {
-                write!(buffer, "{}\\{{", self.creator().display_to_string(ty))?;
+                write!(buffer, "{}\\{{", self.creator().display(ty))?;
                 if let Some((&first, others)) = fields.split_first() {
                     self.display_tir(first, buffer, indent, var_count, source)?;
                     for &val in others.iter() {
