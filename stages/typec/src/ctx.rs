@@ -459,30 +459,67 @@ impl TypecCtx {
                 .intersperse(" -> ".into())
                 .collect::<String>();
 
-            let snippet = CtlSnippet {
-                title: ctl_error_annotation!(err => "infinitely sized type detected between defined types"),
-                footer: vec![ctl_error_annotation!(info => ("cycle: {}", cycle_chart))],
-                source_annotations: cycle
+            workspace.push(InfinitlySizedType {
+                cycle: cycle_chart,
+                cycle_locs: cycle
                     .iter()
-                    .skip(1) // the first and last elements are the same
-                    .filter_map(|&ty| {
-                        let span = ty.as_ty().span(types).expect("builtin types should not have cycles");
-                        ctl_error_source_annotation!(info meta.loc(span), "this type is part of the cycle")
-                    })
+                    .skip(1)
+                    .filter_map(|&ty| ty.as_ty().span(types))
+                    .map(|span| meta.loc(span))
                     .collect(),
-            };
-
-            workspace.push(snippet);
+            });
         };
 
-        self.compute_drop_specs(&order, types);
+        self.compute_drop_specs(&order, types, workspace, meta);
     }
 
-    fn compute_drop_specs(&mut self, order: &[BaseTy], types: &mut Types) {
+    fn compute_drop_specs(
+        &mut self,
+        order: &[BaseTy],
+        types: &mut Types,
+        workspace: &mut Workspace,
+        meta: &TypecMeta,
+    ) {
         for &ty in order.iter().rev() {
-            match ty {
-                BaseTy::Struct(s) => types[s].drop_spec = types[s].compute_drop_spec(types),
-                BaseTy::Enum(e) => types[e].drop_spec = types[e].compute_drop_spec(types),
+            let computed = match ty {
+                BaseTy::Struct(s) => types[s].compute_drop_spec(types),
+                BaseTy::Enum(e) => types[e].compute_drop_spec(types),
+            };
+
+            let current = match ty {
+                BaseTy::Struct(s) => &mut types[s].drop_spec,
+                BaseTy::Enum(e) => &mut types[e].drop_spec,
+            };
+
+            let prev = *current;
+            *current = computed;
+
+            if computed != prev && prev == DropSpec::ImplementsCopy {
+                let span = ty
+                    .span(types)
+                    .expect("builtin types should not have cycles");
+                let (datatype, item) = match ty {
+                    BaseTy::Struct(..) => ("struct", "field"),
+                    BaseTy::Enum(..) => ("enum", "variant"),
+                };
+                let items = match ty {
+                    BaseTy::Struct(s) => types[types[s].fields]
+                        .iter()
+                        .filter(|f| !f.ty.is_copy(types))
+                        .map(|f| meta.loc(f.span))
+                        .collect(),
+                    BaseTy::Enum(e) => types[types[e].variants]
+                        .iter()
+                        .filter(|v| !v.ty.is_copy(types))
+                        .map(|v| meta.loc(v.span))
+                        .collect(),
+                };
+                workspace.push(CopyImplViolation {
+                    datatype,
+                    item,
+                    loc: meta.loc(span),
+                    items,
+                });
             }
         }
     }
@@ -728,6 +765,24 @@ ctl_errors! {
         pos: ScopePosition,
         item_def: SourceLoc,
         loc: SourceLoc,
+    }
+
+    #[err => "{datatype} is marked as copy but its fields are not recursively copy"]
+    error CopyImplViolation: fatal {
+        #[err ..items, "this {item} is not copy"]
+        #[info loc, "in this {datatype}"]
+        datatype: &'static str,
+        item: &'static str,
+        items ref: Vec<SourceLoc>,
+        loc: SourceLoc,
+    }
+
+    #[err => "infinitly sized type detected"]
+    #[info => "the cycle: {cycle}"]
+    error InfinitlySizedType: fatal {
+        #[err ..cycle_locs, "this type is part of the cycle"]
+        cycle_locs ref: Vec<SourceLoc>,
+        cycle ref: String,
     }
 }
 

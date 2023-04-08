@@ -848,41 +848,17 @@ ctl_errors! {
         owner: IndirectOwner,
         loc: SourceLoc,
     }
+
+    #[err => "{something} partially moved value"]
+    #[note => NO_MOVE_NOTE]
+    error MoveOfPartiallyMoved: fatal {
+        #[err loc]
+        #[info ..moves.iter().map(|m| SourceLoc { span: m.span, ..loc }), "move occurs earlier here"]
+        something: &'static str,
+        moves ref: Vec<Move>,
+        loc: SourceLoc,
+    }
 }
 
 const NO_MOVE_NOTE: &str = "you can disable move semantics with '#[no_moves]' function attribute";
 const COPY_NOTE: &str = "value does not implement 'Copy' spec";
-
-struct MoveOfPartiallyMoved {
-    something: &'static str,
-    moves: Vec<Move>,
-    loc: SourceLoc,
-}
-
-impl CtlError for MoveOfPartiallyMoved {
-    fn is_fatal(&self) -> bool {
-        true
-    }
-
-    fn fill_snippet(&self, snippet: &mut CtlSnippet) {
-        let &MoveOfPartiallyMoved {
-            something,
-            ref moves,
-            loc,
-        } = self;
-        snippet.title = ctl_error_annotation!(err => "{something} partially moved value");
-        snippet
-            .footer
-            .extend([ctl_error_annotation!(note => NO_MOVE_NOTE)]);
-        moves
-            .iter()
-            .filter_map(|r#move| {
-                ctl_error_source_annotation!(
-             info loc.origin, r#move.span, "move occurs earlier here")
-            })
-            .collect_into(&mut snippet.source_annotations);
-        snippet
-            .source_annotations
-            .extend(ctl_error_source_annotation!(err loc));
-    }
-}

@@ -59,20 +59,26 @@ macro_rules! ctl_error_annotation {
 #[macro_export]
 macro_rules! ctl_error_source_annotation {
     ($annotation_type:ident $source:expr, $span:expr, $($label:tt)+) => {
-        $crate::CtlSourceAnnotation::new(
+        [$crate::CtlSourceAnnotation::new(
             $span,
             $source,
             $crate::ctl_error_message!($($label)+),
             $crate::ctl_error_type!($annotation_type),
-        )
+        )]
     };
 
+    ($annotation_type:ident ..$locs:expr, $($label:tt)+) => {{
+        let ty = $crate::ctl_error_type!($annotation_type);
+        let message = $crate::ctl_error_message!($($label)+);
+        $locs.into_iter().map(move |loc| $crate::CtlSourceAnnotation::from_source_loc(loc.clone(), message.clone(), ty))
+    }};
+
     ($annotation_type:ident $loc:expr, $($label:tt)+) => {
-        $crate::CtlSourceAnnotation::from_source_loc(
+        [$crate::CtlSourceAnnotation::from_source_loc(
             $loc,
             $crate::ctl_error_message!($($label)+),
             $crate::ctl_error_type!($annotation_type),
-        )
+        )]
     };
 
     ($annotation_type:ident $loc:expr) => {
@@ -117,11 +123,13 @@ macro_rules! ctl_errors {
 
                     snippet.title = $crate::ctl_error_annotation!($($title)*);
                     snippet.footer.extend([$($crate::ctl_error_annotation!($($footer)*)),*]);
-                    snippet.source_annotations.extend(
-                        [$($crate::ctl_error_source_annotation!($($source)*)),*]
-                            .into_iter()
-                            .filter_map(|x| x)
-                    );
+                    $(
+                        snippet.source_annotations.extend(
+                            $crate::ctl_error_source_annotation!($($source)*)
+                                .into_iter()
+                                .flatten()
+                        );
+                    )*
                 }
             }
         )*
