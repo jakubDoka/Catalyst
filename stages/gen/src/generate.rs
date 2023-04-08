@@ -208,7 +208,6 @@ impl Generator<'_> {
     }
 
     fn drop(&mut self, drop: VRef<DropMir>, builder: &mut GenBuilder, dest_block: &mut ir::Block) {
-        // we use tuples so that we can easily wrap the iterator items
         enum DropFrame {
             Drop {
                 offset: u32,
@@ -305,7 +304,7 @@ impl Generator<'_> {
                 }
             };
 
-            if !type_creator!(self).may_need_drop(ty) {
+            if !ty.may_need_drop(self.types) {
                 continue;
             }
 
@@ -340,7 +339,7 @@ impl Generator<'_> {
                 for (cond, variant) in variants.keys().enumerate().rev() {
                     let ty = s.types[variant].ty;
                     let ty = type_creator!(s).instantiate(ty, params);
-                    if !type_creator!(s).may_need_drop(ty) {
+                    if !ty.may_need_drop(s.types) {
                         continue;
                     }
 

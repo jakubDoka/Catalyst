@@ -37,11 +37,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
             return;
         }
 
-        if self
-            .ext
-            .creator()
-            .is_copy(self.func.value_ty(dest), self.func.generics)
-        {
+        if !self.func.value_ty(dest).may_need_drop(self.ext.types) {
             return;
         }
 
@@ -78,11 +74,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
             return;
         }
 
-        if self
-            .ext
-            .creator()
-            .is_copy(self.func.value_ty(value), self.func.generics)
-        {
+        if !self.func.value_ty(value).may_need_drop(self.ext.types) {
             return;
         }
 
@@ -210,8 +202,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
 
         match self.func.value_ty(value) {
             Ty::Pointer(..) | Ty::Builtin(..) => (),
-            t if !self.ext.creator().may_need_drop(t) => (),
-            t if self.ext.creator().is_copy(t, self.func.generics) => (),
+            t if !t.may_need_drop(self.ext.types) => (),
             t if self
                 .ext
                 .creator()
@@ -255,7 +246,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
             .enumerate()
         {
             let ty = self.ext.creator().instantiate(field.ty, params);
-            if !self.ext.creator().may_need_drop(ty) {
+            if !ty.may_need_drop(self.ext.types) {
                 continue;
             }
             let field_value = self.create_value(ty);

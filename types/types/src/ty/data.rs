@@ -26,6 +26,7 @@ pub struct Struct {
     pub generics: Generics,
     pub fields: FragSlice<Field>,
     pub loc: Loc,
+    pub drop_spec: DropSpec,
 }
 
 impl Struct {
@@ -34,6 +35,15 @@ impl Struct {
             .iter()
             .enumerate()
             .find_map(|(i, &v)| (v.name == name).then_some((i, v.ty)))
+    }
+
+    pub fn compute_drop_spec(&self, types: &Types) -> DropSpec {
+        types[self.fields]
+            .iter()
+            .map(|f| f.ty.drop_spec(types))
+            .max()
+            .unwrap_or(DropSpec::Copy)
+            .max(self.drop_spec)
     }
 }
 
@@ -67,6 +77,7 @@ pub struct Enum {
     pub generics: Generics,
     pub variants: FragSlice<Variant>,
     pub loc: Loc,
+    pub drop_spec: DropSpec,
 }
 
 impl Enum {
@@ -75,6 +86,15 @@ impl Enum {
             .iter()
             .enumerate()
             .find_map(|(i, v)| (v.name == name).then_some((i, v.ty)))
+    }
+
+    pub fn compute_drop_spec(&self, types: &Types) -> DropSpec {
+        types[self.variants]
+            .iter()
+            .map(|v| v.ty.drop_spec(types))
+            .max()
+            .unwrap_or(DropSpec::Copy)
+            .max(self.drop_spec)
     }
 }
 
@@ -103,4 +123,13 @@ derive_relocated!(struct Array { item });
 pub struct Array {
     pub item: Ty,
     pub len: ArraySize,
+}
+
+#[derive(Clone, Copy, Default, Serialize, Deserialize, Archive, PartialEq, Eq, PartialOrd, Ord)]
+pub enum DropSpec {
+    ImplementsCopy,
+    #[default]
+    Copy,
+    Uncretain,
+    Drop,
 }

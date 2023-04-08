@@ -6,48 +6,6 @@ use types::*;
 pub mod display;
 
 impl<'ctx> TypeCreator<'ctx> {
-    pub fn may_need_drop(&mut self, ty: Ty) -> bool {
-        self.may_need_drop_low(ty, &[]).0
-    }
-
-    fn may_need_drop_low(&mut self, ty: Ty, params: &[Ty]) -> (bool, bool) {
-        let (is, param) = match ty.to_base_and_params(self.types) {
-            Ok((base, params)) => {
-                if let Some(is) = self.types.may_need_drop.get(&base.as_ty()) {
-                    return (*is, false);
-                }
-
-                let params = self.instantiate_slice(params, params);
-                let params = &params[..];
-                let types = match base {
-                    BaseTy::Struct(s) => self.instantiate_fields(s, params),
-                    BaseTy::Enum(e) => self.instantiate_variants(e, params),
-                };
-                types
-                    .into_iter()
-                    .map(|ty| self.may_need_drop_low(ty, params))
-                    .reduce(|(a, b), (c, d)| (a | c, b | d))
-                    .unwrap_or((false, false))
-            }
-            Err(NonBaseTy::Array(a)) if self.types[a].len != 0 => {
-                self.may_need_drop_low(self.types[a].item, params)
-            }
-            Err(NonBaseTy::Pointer(..) | NonBaseTy::Builtin(..) | NonBaseTy::Array(..)) => {
-                return (false, false);
-            }
-            Err(NonBaseTy::Param(i)) if let Some(ty) = params.get(i as usize) => {
-                self.may_need_drop_low(*ty, params)
-            }
-            Err(NonBaseTy::Param(..)) => return (true, true),
-        };
-
-        if !param {
-            self.types.may_need_drop.insert(ty, is);
-        }
-
-        (is, param)
-    }
-
     pub fn find_struct_field(
         &mut self,
         struct_id: FragRef<Struct>,
@@ -77,18 +35,12 @@ impl<'ctx> TypeCreator<'ctx> {
             return default();
         }
 
-        let res = self
-            .types
+        self.types
             .mapping
-            .lookup
+            .spec_sums
             .entry(id)
-            .or_insert_with(|| ComputedTypecItem::SpecSum(self.types.cache.spec_sums.extend(specs)))
-            .to_owned();
-
-        match res {
-            ComputedTypecItem::SpecSum(ss) => ss,
-            res => unreachable!("{res:?}"),
-        }
+            .or_insert_with(|| self.types.cache.spec_sums.extend(specs))
+            .to_owned()
     }
 
     pub fn contains_params(&self, ty: Ty) -> bool {
@@ -235,12 +187,11 @@ impl<'ctx> TypeCreator<'ctx> {
         let ty = self
             .types
             .mapping
-            .lookup
+            .types
             .entry(id)
-            .or_insert_with(|| ComputedTypecItem::Pointer(self.types.cache.args.push(base)))
+            .or_insert_with(|| self.types.cache.args.push(base))
             .to_owned();
 
-        let ComputedTypecItem::Pointer(ty) = ty else { unreachable!() };
         debug_assert_eq!(self.types[ty], base);
 
         Pointer::new(ty, mutability, depth)
@@ -250,48 +201,36 @@ impl<'ctx> TypeCreator<'ctx> {
         let id = self
             .interner
             .intern_with(|s, t| display_instance(self.types, s, base, args, t));
-        let item = self
-            .types
+        self.types
             .mapping
-            .lookup
+            .instances
             .entry(id)
             .or_insert_with(|| {
                 let instance = Instance {
                     base,
                     args: self.types.cache.args.extend(args.iter().cloned()),
                 };
-                let instance = self.types.cache.instances.push(instance);
-                ComputedTypecItem::Instance(instance)
+                self.types.cache.instances.push(instance)
             })
-            .to_owned();
-        match item {
-            ComputedTypecItem::Instance(instance) => instance,
-            _ => unreachable!(),
-        }
+            .to_owned()
     }
 
     pub fn spec_instance(&mut self, base: FragRef<SpecBase>, args: &[Ty]) -> FragRef<SpecInstance> {
         let id = self
             .interner
             .intern_with(|s, t| display_spec_instance(self.types, s, base, args, t));
-        let item = self
-            .types
+        self.types
             .mapping
-            .lookup
+            .spec_instances
             .entry(id)
             .or_insert_with(|| {
                 let instance = SpecInstance {
                     base,
                     args: self.types.cache.args.extend(args.iter().cloned()),
                 };
-                let instance = self.types.cache.spec_instances.push(instance);
-                ComputedTypecItem::SpecInstance(instance)
+                self.types.cache.spec_instances.push(instance)
             })
-            .to_owned();
-        match item {
-            ComputedTypecItem::SpecInstance(instance) => instance,
-            _ => unreachable!(),
-        }
+            .to_owned()
     }
 
     pub fn implements_sum(
@@ -349,16 +288,13 @@ impl<'ctx> TypeCreator<'ctx> {
             return Some(Some(result.to_owned()));
         }
 
-        let ty_base = match ty {
-            Ty::Instance(instance) => self.types[instance].base.as_ty(),
-            _ => ty,
-        };
+        let significant_ty = ty.significant(self.types);
         let spec_base = spec.base(self.types);
 
         let base_impls = self
             .types
             .impl_lookup
-            .get(&(spec_base, ty_base))
+            .get(&(spec_base, significant_ty))
             .map(|i| i.inner.to_owned())
             .into_iter()
             .flatten();
@@ -552,21 +488,12 @@ impl<'ctx> TypeCreator<'ctx> {
         let id = self
             .interner
             .intern_with(|s, t| display_array(self.types, s, item, len, t));
-        let item = self
-            .types
+        self.types
             .mapping
-            .lookup
+            .arrays
             .entry(id)
-            .or_insert_with(|| {
-                let array = self.types.cache.arrays.push(Array { item, len });
-                ComputedTypecItem::Array(array)
-            })
-            .to_owned();
-
-        match item {
-            ComputedTypecItem::Array(array) => array,
-            _ => unreachable!(),
-        }
+            .or_insert_with(|| self.types.cache.arrays.push(Array { item, len }))
+            .to_owned()
     }
 
     pub fn instantiate_spec(&mut self, spec: Spec, params: impl TypecCtxSlice<Ty>) -> Spec {
@@ -650,23 +577,6 @@ impl<'ctx> TypeCreator<'ctx> {
                 self.find_implementation(ty, Spec::Base(SpecBase::DROP), params, &mut None)
                     .flatten(),
             ),
-        }
-    }
-
-    pub fn is_copy(&mut self, ty: Ty, params: &[FragSlice<Spec>]) -> bool {
-        match ty {
-            Ty::Pointer(..) | Ty::Builtin(..) => true,
-            Ty::Array(a) => self
-                .find_implementation(
-                    self.types[a].item,
-                    Spec::Base(SpecBase::COPY),
-                    params,
-                    &mut None,
-                )
-                .is_some(),
-            Ty::Base(..) | Ty::Instance(..) | Ty::Param(..) => self
-                .find_implementation(ty, Spec::Base(SpecBase::COPY), params, &mut None)
-                .is_some(),
         }
     }
 

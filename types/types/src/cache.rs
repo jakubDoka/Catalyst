@@ -14,12 +14,6 @@ use resources::{Resources, Source};
 use rkyv::{Archive, Deserialize, Serialize};
 use storage::*;
 
-pub type TypecLookup = CMap<Ident, ComputedTypecItem>;
-pub type ImplLookup = CMap<(FragRef<SpecBase>, Ty), ImplList>;
-pub type Implemented = CMap<ImplKey, (FragRef<Impl>, FragSlice<Ty>)>;
-pub type Macros = CMap<Ty, MacroImpl>;
-pub type MayNeedDrop = CMap<Ty, bool>;
-
 #[derive(Clone, Archive, Serialize, Deserialize, Default)]
 
 pub struct ImplList {
@@ -28,18 +22,19 @@ pub struct ImplList {
 }
 
 derive_relocated!(struct ImplList { inner });
-
 #[derive(Default, Serialize, Deserialize, Archive)]
 pub struct Mapping {
-    pub lookup: TypecLookup,
-    pub impl_lookup: ImplLookup,
-    pub implemented: Implemented,
-    pub macros: Macros,
-    pub may_need_drop: MayNeedDrop,
+    pub types: CMap<Ident, FragRef<Ty>>,
+    pub instances: CMap<Ident, FragRef<Instance>>,
+    pub spec_instances: CMap<Ident, FragRef<SpecInstance>>,
+    pub spec_sums: CMap<Ident, FragSlice<Spec>>,
+    pub arrays: CMap<Ident, FragRef<Array>>,
+    pub impl_lookup: CMap<(FragRef<SpecBase>, Option<SignificantTy>), ImplList>,
+    pub implemented: CMap<ImplKey, (FragRef<Impl>, FragSlice<Ty>)>,
+    pub macros: CMap<Ty, MacroImpl>,
 }
 
-derive_relocated!(struct Mapping { lookup impl_lookup implemented macros may_need_drop });
-
+derive_relocated!(struct Mapping { types instances spec_instances spec_sums arrays impl_lookup implemented macros });
 #[derive(Serialize, Deserialize, Archive)]
 pub struct TypecBase {
     pub cache: TypecCacheBase,

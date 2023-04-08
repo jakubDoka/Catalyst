@@ -451,7 +451,8 @@ impl TypecCtx {
             self.ty_graph.new_node(ty).add_edges(iter);
         }
 
-        if let Err(cycle) = self.ty_graph.ordering(nodes, &mut bumpvec![]) {
+        let mut order = bumpvec![];
+        if let Err(cycle) = self.ty_graph.ordering(nodes, &mut order) {
             let cycle_chart = cycle
                 .iter()
                 .map(|&ty| type_creator::display(types, interner, ty.as_ty()))
@@ -473,6 +474,17 @@ impl TypecCtx {
 
             workspace.push(snippet);
         };
+
+        self.compute_drop_specs(&order, types);
+    }
+
+    fn compute_drop_specs(&mut self, order: &[BaseTy], types: &mut Types) {
+        for &ty in order.iter().rev() {
+            match ty {
+                BaseTy::Struct(s) => types[s].drop_spec = types[s].compute_drop_spec(types),
+                BaseTy::Enum(e) => types[e].drop_spec = types[e].compute_drop_spec(types),
+            }
+        }
     }
 
     pub(crate) fn first_unlabeled_loop(&self) -> Option<VRef<LoopHeaderTir>> {

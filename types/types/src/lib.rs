@@ -69,9 +69,8 @@ mod ty;
 pub use {
     cache::{
         lookup_water_drop, sorted_water_drops, ConstFolder, ConstFolderContext, FolderValue,
-        GuaranteedLoc, ImplList, ImplLookup, Implemented, Loc, MacroImpl, Macros, Mapping,
-        MayNeedDrop, ModuleItems, ParamPresence, SpecCmpError, TypeCache, TypecBase,
-        TypecCacheBase, TypecCtxSlice, TypecLookup, Types,
+        GuaranteedLoc, ImplList, Loc, MacroImpl, Mapping, ModuleItems, ParamPresence, SpecCmpError,
+        TypeCache, TypecBase, TypecCacheBase, TypecCtxSlice, Types,
     },
     func::{Func, FuncFlags, FuncSlices, FuncVisibility, Funcs, Signature},
     graphs::ProjectedCycleDetector,
@@ -86,10 +85,12 @@ pub use {
         VarHeaderTir,
     },
     ty::{
-        data::{Array, ArraySize, Const, Enum, Field, FieldFlags, Instance, Struct, Variant},
+        data::{
+            Array, ArraySize, Const, DropSpec, Enum, Field, FieldFlags, Instance, Struct, Variant,
+        },
         pointer::{Mutability, Pointer, RawMutability},
         spec::{Impl, ImplKey, SpecBase, SpecFunc, SpecInstance},
-        BaseTy, Builtin, ComputedTypecItem, Generics, Humid, NonBaseTy, ParamRepr, Spec, SpecSet,
-        Ty, TyFlags,
+        BaseTy, Builtin, Generics, Humid, NonBaseTy, ParamRepr, SignificantTy, Spec, SpecSet, Ty,
+        TyFlags,
     },
 };

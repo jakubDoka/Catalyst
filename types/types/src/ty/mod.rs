@@ -9,6 +9,8 @@ use span::*;
 use rkyv::{Archive, Deserialize, Serialize};
 use storage::*;
 
+use self::data::DropSpec;
+
 pub mod data;
 pub mod pointer;
 pub mod spec;
@@ -34,6 +36,7 @@ impl Spec {
         }
     }
 }
+
 wrapper_enum! {
     #[derive(
         Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Archive,
@@ -55,6 +58,13 @@ impl fmt::Display for BaseTy {
 }
 
 impl BaseTy {
+    pub fn drop_spec(self, types: &Types) -> DropSpec {
+        match self {
+            Self::Struct(s) => types[s].drop_spec,
+            Self::Enum(e) => types[e].drop_spec,
+        }
+    }
+
     pub fn as_ty(self) -> Ty {
         self.into()
     }
@@ -82,18 +92,33 @@ impl BaseTy {
     }
 }
 
-wrapper_enum! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Archive)]
-    enum ComputedTypecItem: relocated {
-        Pointer: FragRef<Ty>,
-        Instance: FragRef<Instance>,
-        SpecInstance: FragRef<SpecInstance>,
-        SpecSum: FragSlice<Spec>,
-        Array: FragRef<Array>,
-    }
+pub type ParamRepr = u16;
+
+pub struct Param {
+    pub repr: ParamRepr,
+    pub spec: OptFragRef<Asoc>,
 }
 
-pub type ParamRepr = u16;
+pub struct AsocUse {
+    pub spec: Spec,
+    pub asoc_def: Asoc,
+}
+
+pub enum Asoc {
+    Base(FragRef<AsocBase>),
+    Instance(FragRef<AsocInstance>),
+}
+
+pub struct AsocBase {
+    pub name: Ident,
+    pub generics: Generics,
+    pub loc: GuaranteedLoc,
+}
+
+pub struct AsocInstance {
+    pub base: FragRef<AsocBase>,
+    pub params: FragSlice<Ty>,
+}
 
 pub enum NonBaseTy {
     Pointer(Pointer),
@@ -155,7 +180,39 @@ impl Display for Ty {
     }
 }
 
+pub type SignificantTy = Result<BaseTy, Builtin>;
+
 impl Ty {
+    pub fn significant(self, types: &Types) -> Option<SignificantTy> {
+        match self {
+            Ty::Base(b) => Some(Ok(b)),
+            Ty::Instance(i) => Some(Ok(types[i].base)),
+            Ty::Pointer(p) => types[p.ty()].significant(types),
+            Ty::Array(a) => types[a].item.significant(types),
+            Ty::Param(..) => None,
+            Ty::Builtin(b) => Some(Err(b)),
+        }
+    }
+
+    pub fn drop_spec(self, types: &Types) -> DropSpec {
+        match self {
+            Ty::Base(b) => b.drop_spec(types),
+            Ty::Instance(i) => types[i].base.drop_spec(types),
+            Ty::Builtin(..) | Ty::Pointer(..) => DropSpec::ImplementsCopy,
+            Ty::Array(a) if types[a].len == 0 => DropSpec::ImplementsCopy,
+            Ty::Array(a) => types[a].item.drop_spec(types),
+            Ty::Param(..) => DropSpec::Uncretain,
+        }
+    }
+
+    pub fn is_copy(self, types: &Types) -> bool {
+        self.drop_spec(types) == DropSpec::ImplementsCopy
+    }
+
+    pub fn may_need_drop(self, types: &Types) -> bool {
+        matches!(self.drop_spec(types), DropSpec::Drop | DropSpec::Uncretain)
+    }
+
     pub fn is_aggregate(self) -> bool {
         matches!(self, Self::Base(..) | Self::Instance(..))
     }

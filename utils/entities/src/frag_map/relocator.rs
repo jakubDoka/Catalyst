@@ -535,6 +535,17 @@ macro_rules! derive_relocated {
     };
 }
 
+impl<T: Relocated, E: Send + Sync + 'static> Relocated for Result<T, E> {
+    fn mark(&self, marker: &mut FragRelocMarker) {
+        self.as_ref().ok().map(|t| t.mark(marker));
+    }
+
+    fn remap(&mut self, ctx: &FragMarks) -> Option<()> {
+        self.as_mut().ok().map(|t| t.remap(ctx))?;
+        Some(())
+    }
+}
+
 impl<T: 'static> Relocated for FragRef<T> {
     fn mark(&self, marker: &mut FragRelocMarker) {
         marker.mark(*self);

@@ -129,8 +129,16 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         let spec_base = spec.base(self.ext.types);
         let ty_base = ty.base(self.ext.types);
 
-        if SpecBase::DROP == spec_base {
-            self.ext.types.may_need_drop.insert(ty_base, true);
+        if SpecBase::DROP == spec_base && let Ty::Base(base) = ty_base {
+            match base {
+                BaseTy::Struct(s) => self.ext.types[s].drop_spec = DropSpec::Drop,
+                BaseTy::Enum(e) => self.ext.types[e].drop_spec = DropSpec::Drop,
+            }
+        } else if SpecBase::COPY == spec_base && let Ty::Base(base) = ty_base {
+            match base {
+                BaseTy::Struct(s) => self.ext.types[s].drop_spec = DropSpec::ImplementsCopy,
+                BaseTy::Enum(e) => self.ext.types[e].drop_spec = DropSpec::ImplementsCopy,
+            }
         }
 
         // check for collisions in implementations,
@@ -149,13 +157,6 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             .add(self.ext.workspace);
         }
 
-        if spec_base == SpecBase::DROP {
-            self.ext
-                .types
-                .may_need_drop
-                .insert(ty.base(self.ext.types), true);
-        }
-
         let methods =
             self.collect_spec_impl_methods(ty, ty_base, spec_base, explicit_methods, span)?;
 
@@ -171,10 +172,11 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             methods,
             loc,
         });
+        let significant_ty = ty_base.significant(self.ext.types);
         self.ext
             .types
             .impl_lookup
-            .entry((spec_base, ty_base))
+            .entry((spec_base, significant_ty))
             .or_default()
             .inner
             .push(impl_ent);
