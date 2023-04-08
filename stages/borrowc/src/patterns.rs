@@ -103,11 +103,11 @@ fn intersect_branches<'a>(
     for Branch { start, nodes, ord } in input {
         let mut holder = [Range::empty()];
         let ranges = match start {
-            Node::Scalar(range) => {
+            NodeRanges::Scalar(range) => {
                 holder[0] = range;
                 &holder[..]
             }
-            Node::Or(options) => options,
+            NodeRanges::Or(options) => options,
         };
 
         for overlap in ranges.iter().flat_map(|r| sorted.overlaps(r)) {
@@ -131,10 +131,10 @@ fn sorted_ranges<'a>(input: impl Iterator<Item = Branch<'a>>) -> SortedRanges {
     input
         .map(|branch| branch.start)
         .for_each(|node| match node {
-            Node::Or(options) => {
+            NodeRanges::Or(options) => {
                 ranges.extend(options.iter().flat_map(|&option| option.to_array()))
             }
-            Node::Scalar(option) => ranges.extend(option.to_array()),
+            NodeRanges::Scalar(option) => ranges.extend(option.to_array()),
         });
     SortedRanges::new(ranges)
 }
@@ -159,13 +159,13 @@ pub(crate) enum PatNodeChildren<'a> {
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct Branch<'a> {
-    pub(crate) start: Node<'a>,
-    pub(crate) nodes: &'a [Node<'a>],
+    pub(crate) start: NodeRanges<'a>,
+    pub(crate) nodes: &'a [NodeRanges<'a>],
     pub(crate) ord: usize,
 }
 
 #[derive(Copy, Clone, Debug)]
-pub(crate) enum Node<'a> {
+pub(crate) enum NodeRanges<'a> {
     Scalar(Range),
     #[allow(unused)]
     Or(&'a [Range]),
@@ -292,7 +292,7 @@ fn display_pat_low(
 
     use Builtin::*;
     match ty {
-        Ty::Base(BaseTy::Struct(s)) => {
+        Ty::Node(Node::Base(BaseTy::Struct(s))) => {
             let Struct { fields, .. } = ext.types[s];
             res.push_str("\\{ ");
             if let Some((&first, rest)) = ext.types[fields].split_first() {
@@ -306,7 +306,7 @@ fn display_pat_low(
             }
             res.push_str(" }");
         }
-        Ty::Instance(inst) => {
+        Ty::Node(Node::Instance(inst)) => {
             let Instance { args, base } = ext.types[inst];
             let params = &ext.types[args];
             display_pat_low(base.as_ty(), params, res, frontier, ext)?;
@@ -338,7 +338,7 @@ fn display_pat_low(
             }
             F32 | F64 => unreachable!(),
         },
-        Ty::Base(BaseTy::Enum(r#enum)) => {
+        Ty::Node(Node::Base(BaseTy::Enum(r#enum))) => {
             let Enum { variants, .. } = ext.types[r#enum];
             let variant = if ext.types.enum_flag_ty(r#enum) != Uint {
                 let flag = advance();
@@ -394,10 +394,13 @@ mod test {
         arena: &ProxyArena<'a>,
         repr: &[&[&[impl Into<Range> + Copy]]],
     ) -> &'a [Branch<'a>] {
-        fn alloc_node<'a>(arena: &ProxyArena<'a>, range: &[impl Into<Range> + Copy]) -> Node<'a> {
+        fn alloc_node<'a>(
+            arena: &ProxyArena<'a>,
+            range: &[impl Into<Range> + Copy],
+        ) -> NodeRanges<'a> {
             match range {
-                &[range] => Node::Scalar(range.into()),
-                _ => Node::Or(arena.alloc_iter(range.iter().map(|&r| r.into()))),
+                &[range] => NodeRanges::Scalar(range.into()),
+                _ => NodeRanges::Or(arena.alloc_iter(range.iter().map(|&r| r.into()))),
             }
         }
 

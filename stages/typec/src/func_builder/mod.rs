@@ -210,8 +210,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         let mut header = self.unit_expr(lhs, Inference::None)?;
 
         let deref = header.ty.ptr_base(self.ext.types);
-        let caller = deref.base(self.ext.types);
-        let res = self.dot_path(caller, rhs)?;
+        let res = self.dot_path(deref, rhs)?;
 
         self.balance_pointers(&mut header, deref)?;
 
@@ -238,7 +237,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                 })
             }
             PatAst::StructCtor(StructCtorPatAst { fields, .. }) => {
-                let (Ty::Base(BaseTy::Struct(struct_ty)), params) = ty.caller_with_params(self.ext.types) else {
+                let Ok((BaseTy::Struct(struct_ty), params)) = ty.to_base_and_params(self.ext.types) else {
                     UnexpectedPatternType {
                         loc: self.meta.loc(fields.span()),
                         ty: self.ext.creator().display(ty),
@@ -324,7 +323,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             }),
             PatAst::EnumCtor(ctor) => {
                 let ty_base = ty.ptr_base(self.ext.types);
-                let Ty::Base(BaseTy::Enum(enum_ty)) = ty_base.base(self.ext.types) else {
+                let Some(BaseTy::Enum(enum_ty)) = ty_base.base(self.ext.types) else {
                     UnexpectedPatternType {
                         loc: self.meta.loc(ctor.span()),
                         ty: self.ext.creator().display(ty),

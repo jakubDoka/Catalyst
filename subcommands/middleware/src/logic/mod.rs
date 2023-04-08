@@ -591,15 +591,16 @@ impl Middleware {
         tasks: Vec<PackageTask>,
         resources: &Resources,
         worker_count: u8,
-        cached_items: &mut Map<VRef<Source>, ModuleItems>,
+        cached_items: &mut ShadowMap<Source, ModuleItems>,
     ) -> Vec<Task> {
         let _t = QuickTimer::new("parsing, type checking, macro expansion");
         let mut module_items = ShadowMap::new();
 
         for (key, module) in resources.modules.iter() {
             let key = resources.modules[key].source;
-            if let Some(items) = cached_items.remove(&module.source) {
-                module_items[key] = items;
+            if let Some(items) = Some(&cached_items[module.source]).filter(|i| !i.items.is_empty())
+            {
+                module_items[key] = items.clone();
             }
         }
 
@@ -694,7 +695,7 @@ impl Middleware {
         }
 
         for (key, items) in module_items.iter_mut() {
-            cached_items.insert(key, mem::take(items));
+            cached_items[key] = mem::take(items);
         }
 
         res
@@ -704,7 +705,7 @@ impl Middleware {
         relocator: &mut FragRelocator,
         gen_relocator: &mut GenRelocator,
         task_base: &mut TaskBase,
-        module_items: &mut Map<VRef<Source>, ModuleItems>,
+        module_items: &mut ShadowMap<Source, ModuleItems>,
         removed: Vec<VRef<Source>>,
         thread_count: u8,
         mut builtin_functions: &mut [FragRef<Func>],
@@ -712,7 +713,7 @@ impl Middleware {
         let _t = QuickTimer::new("resource clear");
 
         for source in removed {
-            module_items.remove(&source);
+            module_items[source].items.clear();
         }
 
         let mut threads = iter::repeat_with(Vec::new)
@@ -1155,7 +1156,7 @@ impl PackageTask {
 struct Incremental {
     resources: Resources,
     task_base: TaskBase,
-    module_items: Map<VRef<Source>, ModuleItems>,
+    module_items: ShadowMap<Source, ModuleItems>,
     builtin_functions: Vec<FragRef<Func>>,
 }
 

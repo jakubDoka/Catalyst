@@ -85,12 +85,10 @@ pub use {
         VarHeaderTir,
     },
     ty::{
-        data::{
-            Array, ArraySize, Const, DropSpec, Enum, Field, FieldFlags, Instance, Struct, Variant,
-        },
+        data::{Array, ArraySize, Const, DropSpec, Enum, Field, FieldFlags, Struct, Variant},
         pointer::{Mutability, Pointer, RawMutability},
         spec::{Impl, ImplKey, SpecBase, SpecFunc, SpecInstance},
-        BaseTy, Builtin, Generics, Humid, NonBaseTy, ParamRepr, SignificantTy, Spec, SpecSet, Ty,
-        TyFlags,
+        BaseTy, Builtin, Generics, Humid, Instance, Node, NonBaseTy, ParamRepr, SignificantTy,
+        Spec, SpecSet, Ty, TyFlags,
     },
 };

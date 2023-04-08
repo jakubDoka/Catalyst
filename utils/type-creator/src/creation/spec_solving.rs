@@ -123,7 +123,7 @@ impl<'ctx, 'arena, 'outher_arena> SpecSolver<'ctx, 'arena, 'outher_arena> {
         where_clause: WhereClause,
     ) -> Ty<'arena> {
         match ty {
-            Ty::Base(b) => Ty::Base(b),
+            Ty::Node(Node::Instance(b)) => Ty::Node(Node::Instance(b)),
             Ty::Instance(ExpInstance { base, args }) => {
                 let args = args
                     .iter()

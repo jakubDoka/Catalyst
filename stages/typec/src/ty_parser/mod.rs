@@ -85,9 +85,9 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
                         .iter()
                         .map(|&p| self.ty(p))
                         .nsc_collect::<Option<BumpVec<_>>>()?;
-                    Some(Ty::Instance(
+                    Some(Ty::Node(Node::Instance(
                         self.ext.creator().instance(ty, args.as_slice()),
-                    ))
+                    )))
                 }
                 (TyPathResult::Spec(..), ..) => todo!(),
             },

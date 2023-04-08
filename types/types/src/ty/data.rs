@@ -12,13 +12,6 @@ pub struct Const {
     pub loc: Loc,
 }
 
-derive_relocated!(struct Instance { base args });
-#[derive(Clone, Copy, Serialize, Deserialize, Archive)]
-pub struct Instance {
-    pub base: BaseTy,
-    pub args: FragSlice<Ty>,
-}
-
 derive_relocated!(struct Struct { generics fields });
 #[derive(Clone, Copy, Default, Serialize, Deserialize, Archive)]
 pub struct Struct {
@@ -119,7 +112,7 @@ derive_relocated!(struct Array { item });
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Archive, Serialize,
 )]
-#[archive_attr(derive(PartialEq, Eq, Hash))]
+
 pub struct Array {
     pub item: Ty,
     pub len: ArraySize,

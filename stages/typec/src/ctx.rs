@@ -1,5 +1,7 @@
+use core::fmt;
 use std::{
     default::default,
+    fmt::Display,
     ops::{Index, IndexMut},
 };
 
@@ -585,11 +587,18 @@ impl TypecCtx {
         types: &Types,
         interner: &mut Interner,
     ) {
+        struct ParamDisp(usize);
+        impl fmt::Display for ParamDisp {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "param{}", self.0)
+            }
+        }
+
         let spec_base = generic.base(types);
         let functions = types[spec_base].methods;
 
         for (key, &func) in functions.keys().zip(&types[functions]) {
-            let id = interner.intern_scoped(Ty::Param(index as ParamRepr), func.name);
+            let id = interner.intern_scoped(ParamDisp(index), func.name);
             self.scope.push(id, key, func.span);
         }
     }

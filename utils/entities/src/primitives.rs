@@ -1,6 +1,5 @@
 use std::{
     fmt::Debug,
-    hash::Hash,
     marker::PhantomData,
     mem::{discriminant, transmute},
     ops::{Index, Range},
@@ -73,20 +72,6 @@ pub type VRefSlice<T> = VSlice<VRef<T>>;
 pub struct FragRef<T: ?Sized>(pub(crate) FragAddr, pub(crate) PhantomData<*const T>);
 gen_derives!(FragRef);
 
-impl<T: ?Sized> Hash for ArchivedFragRef<T> {
-    fn hash<H: ~const std::hash::Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
-    }
-}
-
-impl<T: ?Sized> PartialEq for ArchivedFragRef<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl<T: ?Sized> Eq for ArchivedFragRef<T> {}
-
 impl<T> FragRef<T> {
     pub const fn new(addr: FragAddr) -> Self {
         Self(addr, PhantomData)
@@ -112,20 +97,6 @@ impl<T> FragRef<T> {
 #[derive(Archive, Serialize, Deserialize)]
 pub struct FragSlice<T: ?Sized>(pub(crate) FragSliceAddr, pub(crate) PhantomData<*const T>);
 gen_derives!(FragSlice);
-
-impl<T: ?Sized> Hash for ArchivedFragSlice<T> {
-    fn hash<H: ~const std::hash::Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
-    }
-}
-
-impl<T: ?Sized> PartialEq for ArchivedFragSlice<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl<T: ?Sized> Eq for ArchivedFragSlice<T> {}
 
 impl<T> FragSlice<T> {
     pub const fn new(addr: FragSliceAddr) -> Self {
@@ -214,20 +185,6 @@ pub struct VRef<T: ?Sized>(NonMaxU32, PhantomData<*const T>);
 const _: () = {
     assert!(std::mem::size_of::<Option<VRef<()>>>() == std::mem::size_of::<u32>());
 };
-
-impl<T: ?Sized> Hash for ArchivedVRef<T> {
-    fn hash<H: ~const std::hash::Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
-    }
-}
-
-impl<T: ?Sized> PartialEq for ArchivedVRef<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl<T: ?Sized> Eq for ArchivedVRef<T> {}
 
 gen_derives!(VRef);
 

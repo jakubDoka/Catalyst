@@ -796,7 +796,6 @@ pub struct DashMapArchiver;
 
 impl<K, V, H> ArchiveWith<DashMap<K, V, H>> for DashMapArchiver
 where
-    K::Archived: Eq + Hash,
     K: Archive + Eq + Hash,
     V: Archive,
     H: BuildHasher + Clone,
@@ -820,7 +819,6 @@ where
 
 impl<K, V, S, H> SerializeWith<DashMap<K, V, H>, S> for DashMapArchiver
 where
-    K::Archived: Eq + Hash,
     K: Archive + Eq + Hash + Serialize<S>,
     V: Archive + Serialize<S>,
     S: ScratchSpace + Serializer + ?Sized,
@@ -878,7 +876,7 @@ impl<K, V, D, H>
     DeserializeWith<(ArchivedVec<K::Archived>, ArchivedVec<V::Archived>), DashMap<K, V, H>, D>
     for DashMapArchiver
 where
-    K::Archived: Eq + Hash + Deserialize<K, D>,
+    K::Archived: Deserialize<K, D>,
     K: Archive + Eq + Hash,
     V::Archived: Deserialize<V, D>,
     V: Archive,

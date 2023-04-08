@@ -212,7 +212,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         );
 
         let mut param_slots = bumpvec![None; self.ext.types[enum_ty].generics.len()];
-        if let Some(inference) = inference.ty() && let Ty::Instance(inst) = inference {
+        if let Some(inference) = inference.ty() && let Ty::Node(Node::Instance(inst)) = inference {
             param_slots.iter_mut().zip(&self.ext.types[self.ext.types[inst].args])
                 .for_each(|(slot, &arg)| *slot = Some(arg))
         }
@@ -251,7 +251,9 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         let ty = if params.is_empty() {
             enum_ty.into()
         } else {
-            Ty::Instance(self.ext.creator().instance(BaseTy::Enum(enum_ty), params))
+            Ty::Node(Node::Instance(
+                self.ext.creator().instance(BaseTy::Enum(enum_ty), params),
+            ))
         };
 
         let values = iter::once(variant_value)

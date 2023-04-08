@@ -43,20 +43,12 @@ impl<T> Pool<T> {
         self.get(T::default)
     }
 
-    /// Lock on pool will persist for the lifetime of the iterator.
     /// Iterator is infinite.
     pub fn iter<'a>(
         &'a self,
         mut f: impl FnMut() -> T + 'a,
     ) -> impl Iterator<Item = Pooled<T>> + 'a {
-        let mut lock = self.allocators.lock().unwrap();
-        iter::from_fn(move || {
-            let allocator = lock.pop().unwrap_or_else(&mut f);
-            Some(Pooled {
-                pool: Some(self.clone()),
-                inner: ManuallyDrop::new(allocator),
-            })
-        })
+        iter::repeat_with(move || self.get(&mut f))
     }
 
     pub fn iter_or_default<'a>(&'a self) -> impl Iterator<Item = Pooled<T>> + 'a

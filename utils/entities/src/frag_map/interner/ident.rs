@@ -3,7 +3,7 @@ use super::*;
 #[derive(
     Clone, Archive, Serialize, Deserialize, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash,
 )]
-#[archive_attr(derive(PartialEq, Eq, Hash))]
+
 pub struct Ident(pub(super) RawIdent);
 
 impl Ident {

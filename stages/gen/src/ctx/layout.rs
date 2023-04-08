@@ -25,11 +25,11 @@ impl GenLayouts {
 
         let cr = type_creator!(creator);
         let res = match ty {
-            Ty::Base(base) => self.base_layout(base, params, cr),
+            Ty::Node(Node::Base(base)) => self.base_layout(base, params, cr),
             Ty::Pointer(..) => Layout::from_type(self.ptr_ty),
             Ty::Builtin(bt) => self.builtin_layout(bt),
             Ty::Param(index) => self.ty_layout(params[index as usize], &[], cr),
-            Ty::Instance(inst) => self.instance_layout(inst, params, cr),
+            Ty::Node(Node::Instance(inst)) => self.instance_layout(inst, params, cr),
             Ty::Array(a) => self.array_layout(a, params, cr),
         };
 
@@ -93,7 +93,7 @@ impl GenLayouts {
 
     fn instance_layout(
         &mut self,
-        inst: FragRef<Instance>,
+        inst: FragRef<Instance<BaseTy>>,
         params: &[Ty],
         mut creator: TypeCreator,
     ) -> Layout {

@@ -84,7 +84,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
                         .creator()
                         .find_implementation(ty, inherit, generics, &mut None)
                         .is_none()
-                        .then(|| self.ext.creator().instantiate_spec(inherit, params))
+                        .then(|| self.ext.creator().instantiate_node(inherit, params))
                         .map(|instance| self.ext.creator().display(instance))
                 })
                 .intersperse_with(|| " + ".into())

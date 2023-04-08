@@ -1,5 +1,6 @@
 use core::fmt;
 use core::fmt::Write;
+use std::ops::Index;
 
 use storage::*;
 use types::*;
@@ -39,32 +40,11 @@ pub fn display_list<T: TypeDisplay>(
     Ok(())
 }
 
-impl TypeDisplay for Spec {
+impl TypeDisplay for FragRef<SpecBase> {
     fn display(self, types: &Types, interner: &Interner, out: &mut String) -> fmt::Result {
-        match self {
-            Spec::Base(base) => out.push_str(types[base].name.get(interner)),
-            Spec::Instance(instance) => types[instance].display(types, interner, out)?,
-        }
-
+        out.push_str(types[self].name.get(interner));
         Ok(())
     }
-}
-
-impl TypeDisplay for SpecInstance {
-    fn display(self, types: &Types, interner: &Interner, out: &mut String) -> fmt::Result {
-        display_spec_instance(types, interner, self.base, &types[self.args], out)
-    }
-}
-
-pub fn display_spec_instance(
-    types: &Types,
-    interner: &Interner,
-    base: FragRef<SpecBase>,
-    args: &[Ty],
-    to: &mut String,
-) -> fmt::Result {
-    to.push_str(types[base].name.get(interner));
-    display_list(types, interner, args.iter().copied(), to, ['[', ',', ']'])
 }
 
 pub fn display_spec_sum(
@@ -132,7 +112,10 @@ pub fn display_func_name(
     } = types[func];
     write!(to, "{}\\", loc.source().index()).unwrap();
     if let Some(owner) = owner {
-        owner.base(types).display(types, interner, to)?;
+        owner
+            .base(types)
+            .expect("todo")
+            .display(types, interner, to)?;
         write!(to, "\\").unwrap();
     }
     to.push_str(name.get(interner));
@@ -158,8 +141,7 @@ impl TypeDisplay for BaseTy {
 impl TypeDisplay for Ty {
     fn display(self, types: &Types, interner: &Interner, out: &mut String) -> fmt::Result {
         match self {
-            Ty::Base(base) => base.display(types, interner, out)?,
-            Ty::Instance(instance) => types[instance].display(types, interner, out)?,
+            Ty::Node(n) => n.display(types, interner, out)?,
             Ty::Pointer(ptr) => {
                 let base = types[ptr.ty()];
                 out.push('^');
@@ -190,20 +172,32 @@ pub fn display_array(
     Ok(())
 }
 
-impl TypeDisplay for Instance {
+impl<T: TypeDisplay> TypeDisplay for Instance<T> {
     fn display(self, types: &Types, interner: &Interner, out: &mut String) -> fmt::Result {
         display_instance(types, interner, self.base, &types[self.args], out)
     }
 }
 
-pub fn display_instance(
+impl<T: TypeDisplay + Copy> TypeDisplay for Node<T>
+where
+    Types: Index<storage::FragRef<types::Instance<T>>, Output = Instance<T>>,
+{
+    fn display(self, types: &Types, interner: &Interner, out: &mut String) -> fmt::Result {
+        match self {
+            Node::Base(base) => base.display(types, interner, out),
+            Node::Instance(instance) => types[instance].display(types, interner, out),
+        }
+    }
+}
+
+pub fn display_instance<T: TypeDisplay>(
     types: &Types,
     interner: &Interner,
-    base: BaseTy,
+    base: T,
     args: &[Ty],
     out: &mut String,
 ) -> fmt::Result {
-    base.as_ty().display(types, interner, out).unwrap();
+    base.display(types, interner, out).unwrap();
     display_list(types, interner, args.iter().copied(), out, ['[', ',', ']'])
 }
 
@@ -227,7 +221,7 @@ fn type_diff_recurse(
             write!(to, "{}", pattern.mutability.to_mutability()).unwrap();
             type_diff_recurse(types, interner, types[pattern.ty()], types[value.ty()], to)?;
         }
-        (Ty::Instance(pattern), Ty::Instance(value)) => {
+        (Ty::Node(Node::Instance(pattern)), Ty::Node(Node::Instance(value))) => {
             type_diff_recurse(
                 types,
                 interner,

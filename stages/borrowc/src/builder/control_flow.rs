@@ -444,7 +444,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
         }
     }
 
-    fn pattern_to_branch(&mut self, PatTir { kind, .. }: PatTir, nodes: &mut BumpVec<Node>) {
+    fn pattern_to_branch(&mut self, PatTir { kind, .. }: PatTir, nodes: &mut BumpVec<NodeRanges>) {
         match kind {
             PatKindTir::Unit(unit) => match unit {
                 UnitPatKindTir::Struct { fields } => {
@@ -462,17 +462,17 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
                             .unwrap(),
                         Err(lit) => lit as u128,
                     };
-                    nodes.push(Node::Scalar(Range::at(int)));
+                    nodes.push(NodeRanges::Scalar(Range::at(int)));
                 }
                 UnitPatKindTir::Binding(..) | UnitPatKindTir::Wildcard => {
-                    nodes.push(Node::Scalar(Range::full()))
+                    nodes.push(NodeRanges::Scalar(Range::full()))
                 }
                 UnitPatKindTir::Enum {
                     id,
                     ty: enum_ty,
                     value,
                 } => {
-                    nodes.push(Node::Scalar(
+                    nodes.push(NodeRanges::Scalar(
                         if id as usize == self.ext.types[enum_ty].variants.len() - 1 {
                             Range {
                                 start: id as u128,

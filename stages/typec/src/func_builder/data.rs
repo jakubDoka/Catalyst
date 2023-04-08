@@ -12,33 +12,41 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     ) -> ExprRes<'arena> {
         let (ty, params) = if let Some(path @ PathAst { slash: None, .. }) = path {
             let (ty, params) = self.parser().ty_path(path)?;
-            (
-                match ty {
-                    TyPathResult::Ty(ty) => ty,
-                    _ => todo!(),
-                },
-                params.and_then(|params| {
-                    Some((
-                        params.span(),
-                        params
-                            .iter()
-                            .map(|&param| self.parser().ty(param))
-                            .nsc_collect::<Option<BumpVec<_>>>()?,
-                    ))
-                }),
-            )
-        } else {
-            let Some(ty) = inference.ty() else {
-                CannotInferExpression {
-                    help: "add struct path before the slash",
-                    loc: self.meta.loc(ctor.span()),
-                }.add(self.ext.workspace)?;
+            let ty = match ty {
+                TyPathResult::Ty(ty) => ty.base(self.ext.types),
+                TyPathResult::Spec(..) => None,
             };
-            let (ty, params) = ty.base_with_params(self.ext.types);
-            (ty, Some((default(), self.ext.types[params].to_bumpvec())))
+            let params = match params {
+                Some(p) => Some((
+                    p.span(),
+                    p.iter()
+                        .map(|&param| self.parser().ty(param))
+                        .nsc_collect::<Option<BumpVec<_>>>()?,
+                )),
+                None => None,
+            };
+            (ty, params)
+        } else {
+            match inference
+                .ty()
+                .map(|ty| ty.to_base_and_params(self.ext.types))
+            {
+                Some(Ok((ty, params))) => (
+                    Some(ty),
+                    Some((default(), self.ext.types[params].to_bumpvec())),
+                ),
+                _ => (None, None),
+            }
         };
 
-        let Ty::Base(BaseTy::Struct(struct_ty)) = ty else {
+        let Some(ty) = ty else {
+            CannotInferExpression {
+                help: "add struct path before the slash",
+                loc: self.meta.loc(ctor.span()),
+            }.add(self.ext.workspace)?;
+        };
+
+        let BaseTy::Struct(struct_ty) = ty else {
             UnexpectedType {
                 expected: "struct",
                 found: self.ext.creator().display(ty),
@@ -129,11 +137,11 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         let final_ty = if params.is_empty() {
             struct_ty.into()
         } else {
-            Ty::Instance(
+            Ty::Node(Node::Instance(
                 self.ext
                     .creator()
                     .instance(BaseTy::Struct(struct_ty), params),
-            )
+            ))
         };
 
         Some(TirNode::new(
@@ -203,7 +211,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     pub(super) fn int(&mut self, span: Span, inference: Inference) -> ExprRes<'arena> {
         let span_str = self.span_str(span);
         let (ty, postfix_len) =
-            Self::infer_constant_type(span_str, inference, &Ty::INTEGERS, Ty::UINT);
+            Self::infer_constant_type(span_str, inference, &Builtin::INTEGERS, Builtin::UINT);
         Some(TirNode::new(
             ty,
             TirKind::Int(None),
@@ -214,7 +222,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     pub(super) fn float(&mut self, span: Span, inference: Inference) -> ExprRes<'arena> {
         let span_str = self.span_str(span);
         let (ty, postfix_len) =
-            Self::infer_constant_type(span_str, inference, &Ty::FLOATS, Ty::F32);
+            Self::infer_constant_type(span_str, inference, &Builtin::FLOATS, Builtin::F32);
         Some(TirNode::new(
             ty,
             TirKind::Float(None),
@@ -229,28 +237,25 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     fn infer_constant_type(
         value: &str,
         inference: Inference,
-        group: &[Ty],
-        default: Ty,
+        group: &[Builtin],
+        default: Builtin,
     ) -> (Ty, usize) {
-        group
+        let (b, i) = group
             .iter()
-            .map(|&ty| {
-                (
-                    ty,
-                    match ty {
-                        Ty::Builtin(b) => b.name(),
-                        _ => unreachable!(),
-                    },
-                )
-            })
+            .map(|&ty| (ty, ty.name()))
             .find_map(|(ty, str)| value.ends_with(str).then_some((ty, str.len())))
             .or_else(|| {
                 inference
                     .ty()
+                    .and_then(|ty| match ty {
+                        Ty::Builtin(builtin) => Some(builtin),
+                        _ => None,
+                    })
                     .filter(|ty| group.contains(ty))
                     .map(|ty| (ty, 0))
             })
-            .unwrap_or((default, 0))
+            .unwrap_or((default, 0));
+        (Ty::Builtin(b), i)
     }
 
     pub(super) fn char(&mut self, span: Span) -> ExprRes<'arena> {

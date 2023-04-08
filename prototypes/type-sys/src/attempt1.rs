@@ -64,7 +64,7 @@ impl From<TyDef> for BaseTy {
 
 impl From<TyDef> for Ty {
     fn from(def: TyDef) -> Self {
-        Ty::Base(def)
+        Ty::Node(Node::Instance(def))
     }
 }
 
@@ -164,8 +164,8 @@ impl Param {
 impl Ty {
     fn base(&self) -> Option<&TyDef> {
         Some(match self {
-            Ty::Instance(inst) => &inst.def,
-            Ty::Base(def) => def,
+            Ty::Node(Node::Instance(inst)) => &inst.def,
+            Ty::Node(Node::Instance(def)) => def,
             Ty::Param(..) => return None,
         })
     }
@@ -179,7 +179,7 @@ impl Ty {
                     true
                 }
             },
-            (Ty::Instance(inst), Ty::Instance(q_inst)) => inst.infer_params(q_inst, params),
+            (Ty::Node(Node::Instance(inst)), Ty::Instance(q_inst)) => inst.infer_params(q_inst, params),
             (a, b) => a == b,
         }
     }
@@ -187,15 +187,15 @@ impl Ty {
     fn instantiate(&self, params: &[Ty], origin: &Fact, program: &Program) -> Option<Ty> {
         match self {
             Ty::Param(param) => param.instantiate(params, origin, program),
-            Ty::Instance(inst) => inst.instantiate(params, origin, program).map(Ty::Instance),
-            Ty::Base(def) => Some(Ty::Base(def.clone())),
+            Ty::Node(Node::Instance(inst)) => inst.instantiate(params, origin, program).map(Ty::Instance),
+            Ty::Node(Node::Instance(def)) => Some(Ty::Base(def.clone())),
         }
     }
 }
 
 impl TyDef {
     fn implications(&self, q: &Ty, origin: &Fact, program: &Program) -> Option<Vec<(Spec, Ty)>> {
-        let Ty::Instance(inst) = q else {
+        let Ty::Node(Node::Instance(inst)) = q else {
             assert_eq!(&Ty::Base(self.clone()), q);
             return Some(vec![]);
         };
@@ -207,7 +207,7 @@ impl TyDef {
 
 impl AsocTy {
     fn implications(&self, q: &Ty, origin: &Fact, program: &Program) -> Option<Vec<(Spec, Ty)>> {
-        let Ty::Instance(inst) = q else {
+        let Ty::Node(Node::Instance(inst)) = q else {
         assert!(matches!(q, Ty::Param(Param { asoc: Some(asoc), .. }) if asoc == self));
         return Some(vec![]);
     };
@@ -226,14 +226,14 @@ impl AsocTy {
 
     fn infer_params(&self, q: &AsocTy, params: &mut [Option<Ty>]) -> bool {
         match (self, q) {
-            (AsocTy::Instance(inst), AsocTy::Instance(q_inst)) => inst.infer_params(q_inst, params),
+            (AsocTy::Node(Node::Instance(inst)), AsocTy::Instance(q_inst)) => inst.infer_params(q_inst, params),
             (a, b) => a == b,
         }
     }
 
     fn instantiate(&self, params: &[Ty], origin: &Fact, program: &Program) -> Option<AsocTy> {
         Some(match self {
-            AsocTy::Instance(inst) => AsocTy::Instance(inst.instantiate(params, origin, program)?),
+            AsocTy::Node(Node::Instance(inst)) => AsocTy::Instance(inst.instantiate(params, origin, program)?),
             AsocTy::Def(def) => AsocTy::Def(def.clone()),
         })
     }

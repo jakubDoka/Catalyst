@@ -55,7 +55,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                 }.add(self.ext.workspace)?;
             };
 
-            let Ty::Base(BaseTy::Enum(enum_ty)) = expected.base(self.ext.types) else {
+            let Some(BaseTy::Enum(enum_ty)) = expected.base(self.ext.types) else {
                 UnexpectedInferenceType {
                     expected: "enum",
                     found: self.ext.creator().display(expected),
@@ -85,7 +85,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         };
 
         let module = match self.lookup(name.ident, name.span, "module or enum")? {
-            ScopeItem::Ty(Ty::Base(BaseTy::Enum(enum_ty))) => {
+            ScopeItem::Ty(Ty::Node(Node::Base(BaseTy::Enum(enum_ty)))) => {
                 return resolve(self, enum_ty, path.segments, name.span);
             }
             ScopeItem::Module(module) => module,
@@ -104,7 +104,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             .interner
             .intern_scoped(module.index(), r#enum.ident);
         let enum_ty = match self.lookup(id, r#enum.span, "enum")? {
-            ScopeItem::Ty(Ty::Base(BaseTy::Enum(enum_ty))) => enum_ty,
+            ScopeItem::Ty(Ty::Node(Node::Base(BaseTy::Enum(enum_ty)))) => enum_ty,
             item => self.invalid_symbol_type(item, r#enum.span, "enum")?,
         };
 
@@ -116,7 +116,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         ty: Ty,
         path @ PathAst { slash, start, .. }: PathAst,
     ) -> Option<DotPathResult> {
-        let (Ty::Base(BaseTy::Struct(struct_ty)), params) = ty.base_with_params(self.ext.types) else {
+        let (Ty::Node(Node::Base(BaseTy::Struct(struct_ty))), params) = ty.base_with_params(self.ext.types) else {
             FieldAccessOnNonStruct {
                 found: self.ext.creator().display(ty),
                 loc: self.meta.loc(path.span()),
@@ -176,7 +176,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                             .nsc_collect::<Option<BumpVec<_>>>()?;
                         (
                             ast_params.span(),
-                            Ty::Instance(self.ext.creator().instance(ty, &params)),
+                            Ty::Node(Node::Instance(self.ext.creator().instance(ty, &params))),
                             segments,
                         )
                     }
@@ -228,7 +228,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
                         .map(|&p| self.parser().ty(p))
                         .nsc_collect::<Option<BumpVec<_>>>()?;
                     (
-                        Ty::Instance(self.ext.creator().instance(ty, &params)),
+                        Ty::Node(Node::Instance(self.ext.creator().instance(ty, &params))),
                         segments,
                     )
                 }
@@ -268,7 +268,8 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     )> {
         self.assert_no_slash(slash)?;
 
-        let lty = ty.caller(self.ext.types);
+        let ptr_base = ty.ptr_base(self.ext.types);
+        let lty = ptr_base.significant(self.ext.types);
         let PathSegmentAst::Name(ident) = start else {
             InvalidPathSegment {
                 loc: self.meta.loc(start.span()),
@@ -301,13 +302,13 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         let spec_base = match spec_base_or_method {
             Ok(spec) => spec,
             Err(method) => {
-                let local_id = self.ext.interner.intern_scoped(lty, method.ident);
+                let local_id = self.ext.interner.intern_opt_scoped(lty, method.ident);
                 let id = module.map_or(local_id, |m| {
                     self.ext.interner.intern_scoped(m.index(), local_id)
                 });
                 let func = match self.lookup(id, method.span, "method")? {
                     ScopeItem::Func(func) => FuncLookupResult::Func(func),
-                    ScopeItem::SpecFunc(func) => FuncLookupResult::SpecFunc(func, lty),
+                    ScopeItem::SpecFunc(func) => FuncLookupResult::SpecFunc(func, ptr_base),
                     item => self.invalid_symbol_type(item, path.span(), "method")?,
                 };
                 return Some((
@@ -395,7 +396,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         }
 
         Some((
-            FuncLookupResult::SpecFunc(method, lty),
+            FuncLookupResult::SpecFunc(method, ptr_base),
             Some(ty),
             self.grab_trailing_params(segments, method_ident.span.as_end()),
         ))
@@ -430,15 +431,10 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             };
 
             match inferred.base(self.ext.types) {
-                Ty::Base(BaseTy::Enum(..)) => {
+                Some(BaseTy::Enum(..)) => {
                     return self.enum_ctor(EnumCtorAst { path, value: None }, inference)
                 }
-                Ty::Base(..)
-                | Ty::Array(..)
-                | Ty::Instance(..)
-                | Ty::Pointer(..)
-                | Ty::Param(..)
-                | Ty::Builtin(..) => UnexpectedType {
+                Some(BaseTy::Struct(..)) | None => UnexpectedType {
                     expected: "enum",
                     found: self.ext.creator().display(inferred),
                     loc: self.meta.loc(path.span()),
@@ -472,16 +468,11 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         };
 
         Some(match item {
-            ScopeItem::Ty(ty) => match ty {
-                Ty::Base(BaseTy::Enum(..)) => {
+            ScopeItem::Ty(ty) => match ty.base(self.ext.types) {
+                Some(BaseTy::Enum(..)) => {
                     return self.enum_ctor(EnumCtorAst { path, value: None }, inference);
                 }
-                Ty::Base(..)
-                | Ty::Instance(..)
-                | Ty::Pointer(..)
-                | Ty::Param(..)
-                | Ty::Array(..)
-                | Ty::Builtin(..) => UnexpectedInferenceType {
+                Some(BaseTy::Struct(..)) | None => UnexpectedInferenceType {
                     expected: "enum",
                     found: self.ext.creator().display(ty),
                     loc: self.meta.loc(path.span()),

@@ -9,7 +9,7 @@ use super::ParamRepr;
 #[derive(
     Clone, Serialize, Deserialize, Archive, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug,
 )]
-#[archive_attr(derive(PartialEq, Eq, Hash))]
+
 pub struct Pointer {
     index: u32,
     thread: u8,
@@ -82,7 +82,7 @@ impl fmt::Display for Mutability {
 #[derive(
     Clone, Deserialize, Archive, Serialize, Copy, Debug, PartialEq, Eq, Ord, PartialOrd, Hash,
 )]
-#[archive_attr(derive(PartialEq, Eq, Hash))]
+
 pub struct RawMutability(ParamRepr);
 
 impl RawMutability {

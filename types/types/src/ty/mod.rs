@@ -1,6 +1,7 @@
 use std::{
     default::default,
     fmt::{self, Display},
+    ops::Index,
 };
 
 use crate::*;
@@ -17,31 +18,13 @@ pub mod spec;
 
 pub type Generics = FragSlice<FragSlice<Spec>>;
 
-wrapper_enum! {
-    #[derive(
-        Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord, Deserialize, Archive, Serialize,
-    )]
-    #[archive_attr(derive(PartialEq, Eq, Hash))]
-    enum Spec: relocated {
-        Base: FragRef<SpecBase>,
-        Instance: FragRef<SpecInstance>,
-    }
-}
-
-impl Spec {
-    pub fn base(self, types: &Types) -> FragRef<SpecBase> {
-        match self {
-            Spec::Base(base) => base,
-            Spec::Instance(instance) => types[instance].base,
-        }
-    }
-}
+pub type Spec = Node<FragRef<SpecBase>>;
 
 wrapper_enum! {
     #[derive(
         Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Archive,
     )]
-    #[archive_attr(derive(PartialEq, Eq, Hash))]
+
     enum BaseTy: relocated {
         Struct: FragRef<Struct>,
         Enum: FragRef<Enum>,
@@ -85,8 +68,7 @@ impl BaseTy {
 
     pub fn from_ty(ty: Ty, types: &Types) -> Option<Self> {
         match ty {
-            Ty::Base(b) => Some(b),
-            Ty::Instance(i) => Some(types[i].base),
+            Ty::Node(n) => Some(n.base(types)),
             Ty::Pointer(..) | Ty::Array(..) | Ty::Param(..) | Ty::Builtin(..) => None,
         }
     }
@@ -104,22 +86,87 @@ pub struct AsocUse {
     pub asoc_def: Asoc,
 }
 
-pub enum Asoc {
-    Base(FragRef<AsocBase>),
-    Instance(FragRef<AsocInstance>),
-}
-
 pub struct AsocBase {
     pub name: Ident,
     pub generics: Generics,
     pub loc: GuaranteedLoc,
 }
 
-pub struct AsocInstance {
-    pub base: FragRef<AsocBase>,
-    pub params: FragSlice<Ty>,
+type Asoc = Node<FragRef<AsocBase>>;
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Archive,
+)]
+pub enum Node<T> {
+    Instance(FragRef<Instance<T>>),
+    Base(T),
 }
 
+impl<T: Copy> Node<T> {
+    pub fn base(self, types: &Types) -> T
+    where
+        Types: Index<FragRef<Instance<T>>, Output = Instance<T>>,
+    {
+        match self {
+            Node::Base(base) => base,
+            Node::Instance(instance) => types[instance].base,
+        }
+    }
+
+    pub fn base_and_args(self, types: &Types) -> (T, FragSlice<Ty>)
+    where
+        Types: Index<FragRef<Instance<T>>, Output = Instance<T>>,
+    {
+        match self {
+            Node::Base(base) => (base, default()),
+            Node::Instance(instance) => {
+                let instance = &types[instance];
+                (instance.base, instance.args)
+            }
+        }
+    }
+}
+
+impl<T> Relocated for Node<T>
+where
+    T: Relocated + 'static,
+{
+    fn mark(&self, marker: &mut FragRelocMarker) {
+        match self {
+            Node::Instance(i) => i.mark(marker),
+            Node::Base(b) => b.mark(marker),
+        }
+    }
+
+    fn remap(&mut self, ctx: &FragMarks) -> Option<()> {
+        match self {
+            Node::Instance(i) => i.remap(ctx)?,
+            Node::Base(b) => b.remap(ctx)?,
+        }
+        Some(())
+    }
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize, Archive)]
+pub struct Instance<T> {
+    pub base: T,
+    pub args: FragSlice<Ty>,
+}
+
+impl<T: Relocated> Relocated for Instance<T> {
+    fn mark(&self, marker: &mut FragRelocMarker) {
+        self.base.mark(marker);
+        self.args.mark(marker);
+    }
+
+    fn remap(&mut self, ctx: &FragMarks) -> Option<()> {
+        self.base.remap(ctx)?;
+        self.args.remap(ctx)?;
+        Some(())
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
 pub enum NonBaseTy {
     Pointer(Pointer),
     Array(FragRef<Array>),
@@ -131,10 +178,8 @@ wrapper_enum! {
     #[derive(
         Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Archive,
     )]
-    #[archive_attr(derive(PartialEq, Eq, Hash))]
     enum Ty: {
-        Base: BaseTy,
-        Instance: FragRef<Instance>,
+        Node: Node<BaseTy>,
         Pointer: Pointer,
         Array: FragRef<Array>,
         Param: ParamRepr,
@@ -144,20 +189,25 @@ wrapper_enum! {
 
 impl From<FragRef<Struct>> for Ty {
     fn from(ty: FragRef<Struct>) -> Self {
-        Self::Base(ty.into())
+        Self::Node(Node::Base(ty.into()))
     }
 }
 
 impl From<FragRef<Enum>> for Ty {
     fn from(ty: FragRef<Enum>) -> Self {
-        Self::Base(ty.into())
+        Self::Node(Node::Base(ty.into()))
+    }
+}
+
+impl From<BaseTy> for Ty {
+    fn from(ty: BaseTy) -> Self {
+        Self::Node(Node::Base(ty))
     }
 }
 
 derive_relocated! {
     enum Ty {
-        Base(b) => b,
-        Instance(i) => i,
+        Node(n) => n,
         Pointer(p) => p,
         Array(a) => a,
         Param(..) =>,
@@ -165,39 +215,41 @@ derive_relocated! {
     }
 }
 
-impl Display for Ty {
+derive_relocated!(enum SignificantTy {
+    Base(b) => b,
+    Builtin(..) =>,
+});
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Archive,
+)]
+pub enum SignificantTy {
+    Base(BaseTy),
+    Builtin(Builtin),
+}
+
+impl fmt::Display for SignificantTy {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Ty::Base(b) => write!(f, "{b}"),
-            Ty::Instance(i) => write!(f, "inst{:x}", i.bits()),
-            Ty::Pointer(p) => {
-                write!(f, "{} ptr{:x}", p.mutability.to_mutability(), p.ty().bits())
-            }
-            Ty::Param(i) => write!(f, "param{i}"),
-            Ty::Builtin(b) => write!(f, "{}", b.name()),
-            Ty::Array(a) => write!(f, "array{:x}", a.bits()),
+            Self::Base(b) => write!(f, "{}", b),
+            Self::Builtin(b) => write!(f, "{}", b.name()),
         }
     }
 }
 
-pub type SignificantTy = Result<BaseTy, Builtin>;
-
 impl Ty {
     pub fn significant(self, types: &Types) -> Option<SignificantTy> {
         match self {
-            Ty::Base(b) => Some(Ok(b)),
-            Ty::Instance(i) => Some(Ok(types[i].base)),
+            Ty::Node(b) => Some(SignificantTy::Base(b.base(types))),
             Ty::Pointer(p) => types[p.ty()].significant(types),
             Ty::Array(a) => types[a].item.significant(types),
             Ty::Param(..) => None,
-            Ty::Builtin(b) => Some(Err(b)),
+            Ty::Builtin(b) => Some(SignificantTy::Builtin(b)),
         }
     }
 
     pub fn drop_spec(self, types: &Types) -> DropSpec {
         match self {
-            Ty::Base(b) => b.drop_spec(types),
-            Ty::Instance(i) => types[i].base.drop_spec(types),
+            Ty::Node(b) => b.base(types).drop_spec(types),
             Ty::Builtin(..) | Ty::Pointer(..) => DropSpec::ImplementsCopy,
             Ty::Array(a) if types[a].len == 0 => DropSpec::ImplementsCopy,
             Ty::Array(a) => types[a].item.drop_spec(types),
@@ -214,7 +266,7 @@ impl Ty {
     }
 
     pub fn is_aggregate(self) -> bool {
-        matches!(self, Self::Base(..) | Self::Instance(..))
+        matches!(self, Ty::Node(..))
     }
 
     pub fn int_eq(self) -> Option<FragRef<Func>> {
@@ -233,8 +285,7 @@ impl Ty {
 
     pub fn to_base_and_params(self, types: &Types) -> Result<(BaseTy, FragSlice<Ty>), NonBaseTy> {
         Err(match self {
-            Ty::Base(b) => return Ok((b, FragSlice::empty())),
-            Ty::Instance(i) => return Ok((types[i].base, types[i].args)),
+            Ty::Node(n) => return Ok(n.base_and_args(types)),
             Ty::Pointer(p) => NonBaseTy::Pointer(p),
             Ty::Array(a) => NonBaseTy::Array(a),
             Ty::Param(p) => NonBaseTy::Param(p),
@@ -262,20 +313,25 @@ impl Ty {
 
     pub fn as_generic(self) -> Option<BaseTy> {
         match self {
-            Self::Base(b) => Some(b),
+            Self::Node(Node::Base(b)) => Some(b),
             _ => None,
         }
     }
 
     pub fn base_with_params(self, types: &Types) -> (Self, FragSlice<Ty>) {
         match self {
-            Self::Instance(i) => (types[i].base.as_ty(), types[i].args),
+            Self::Node(Node::Instance(i)) => (types[i].base.as_ty(), types[i].args),
             _ => (self, default()),
         }
     }
 
-    pub fn base(self, types: &Types) -> Self {
-        self.base_with_params(types).0
+    pub fn base(self, types: &Types) -> Option<BaseTy> {
+        match self {
+            Ty::Node(n) => Some(n.base(types)),
+            Ty::Pointer(p) => types[p.ty()].base(types),
+            Ty::Array(a) => types[a].item.base(types),
+            Ty::Param(..) | Ty::Builtin(..) => None,
+        }
     }
 
     pub fn caller_with_params(self, types: &Types) -> (Self, FragSlice<Ty>) {
@@ -315,15 +371,24 @@ impl Ty {
     }
 
     pub fn is_signed(self) -> bool {
-        Ty::SIGNED_INTEGERS.contains(&self)
+        match self {
+            Ty::Builtin(b) => b.is_signed(),
+            _ => false,
+        }
     }
 
     pub fn is_unsigned(self) -> bool {
-        Ty::INTEGERS.contains(&self)
+        match self {
+            Ty::Builtin(b) => b.is_unsigned(),
+            _ => false,
+        }
     }
 
     pub fn is_float(self) -> bool {
-        Ty::FLOATS.contains(&self)
+        match self {
+            Ty::Builtin(b) => b.is_float(),
+            _ => false,
+        }
     }
 
     pub fn span(self, types: &Types) -> Option<Span> {
@@ -349,23 +414,10 @@ macro_rules! gen_builtin {
                 pub const $name: Self = Self::Builtin(Builtin::$builtin);
             )*
 
-            pub const ALL: [Self; [$(Self::$name),*].len()] = [
-                $(
-                    Self::$name,
-                )*
-            ];
-
-            $(
-                pub const $group_name: [Self; [$(Self::$group_elem),*].len()] = [
-                    $(
-                        Self::$group_elem,
-                    )*
-                ];
-            )*
         }
 
         #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord, Serialize, Deserialize, Archive)]
-        #[archive_attr(derive(PartialEq, Eq, Hash))]
+
         pub enum Builtin {
             $($builtin),*
         }
@@ -376,6 +428,18 @@ macro_rules! gen_builtin {
                     Self::$builtin,
                 )*
             ];
+
+            $(
+                pub const $name: Self = Builtin::$builtin;
+            )*
+
+            $(
+                pub const $group_name: [Self; [$(Self::$group_elem),*].len()] = [
+                    $(
+                        Self::$group_elem,
+                    )*
+                ];
+            )*
 
             pub fn name(self) -> &'static str {
                 match self {
@@ -420,6 +484,14 @@ gen_builtin!(
 impl Builtin {
     pub fn is_signed(self) -> bool {
         false
+    }
+
+    pub fn is_unsigned(self) -> bool {
+        Self::INTEGERS.contains(&self)
+    }
+
+    pub fn is_float(self) -> bool {
+        Self::FLOATS.contains(&self)
     }
 }
 

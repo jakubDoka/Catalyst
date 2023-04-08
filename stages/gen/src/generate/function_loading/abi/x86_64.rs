@@ -44,8 +44,10 @@ fn classify_arg_low(
             F32 | F64 => Class::Sse,
             Unit | Terminal | Mutable | Immutable => return Ok(()),
         },
-        Ty::Base(b) => return classify_base_ty_arg(generator, b, params, layout, classes, offset),
-        Ty::Instance(i) => {
+        Ty::Node(Node::Base(b)) => {
+            return classify_base_ty_arg(generator, b, params, layout, classes, offset)
+        }
+        Ty::Node(Node::Instance(i)) => {
             return classify_instance_arg(generator, i, params, layout, classes, offset)
         }
         Ty::Pointer(..) => Class::Int,
@@ -118,7 +120,7 @@ fn classify_struct_arg(
 
 fn classify_instance_arg(
     generator: &mut Generator,
-    instance: FragRef<Instance>,
+    instance: FragRef<Instance<BaseTy>>,
     params: &[Ty],
     layout: Layout,
     classes: &mut [Option<Class>],

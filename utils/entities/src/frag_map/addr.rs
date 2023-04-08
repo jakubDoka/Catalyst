@@ -8,7 +8,7 @@ macro_rules! gen_non_max {
             #[repr(transparent)]
             #[rustc_layout_scalar_valid_range_end($max)]
             #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Archive, Serialize)]
-            #[archive_attr(derive(PartialEq, Eq, Hash))]
+
             pub struct $name($ty);
 
             impl Default for $name {
@@ -78,7 +78,7 @@ pub struct NonMaxError;
 #[derive(
     Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Debug, Archive, Serialize, Deserialize,
 )]
-#[archive_attr(derive(PartialEq, Eq, Hash))]
+
 pub struct FragAddr {
     pub index: u32,
     pub thread: u8,
@@ -125,7 +125,7 @@ impl FragAddr {
     Serialize,
     Deserialize,
 )]
-#[archive_attr(derive(PartialEq, Eq, Hash))]
+
 pub struct FragSliceAddr {
     pub index: u32,
     pub thread: u8,

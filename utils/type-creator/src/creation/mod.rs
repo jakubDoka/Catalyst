@@ -1,5 +1,5 @@
 use crate::*;
-use std::{default::default, fmt::Write, iter};
+use std::{default::default, fmt::Write, iter, ops::Index};
 use storage::*;
 use types::*;
 
@@ -50,7 +50,7 @@ impl<'ctx> TypeCreator<'ctx> {
     pub fn contains_params_low(&self, ty: Ty) -> ParamPresence {
         use ParamPresence::*;
         match ty {
-            Ty::Instance(instance) => self.types[self.types[instance].args]
+            Ty::Node(Node::Instance(instance)) => self.types[self.types[instance].args]
                 .iter()
                 .map(|&ty| self.contains_params_low(ty))
                 .fold(Absent, ParamPresence::combine),
@@ -60,7 +60,7 @@ impl<'ctx> TypeCreator<'ctx> {
                 .put_behind_pointer(),
             Ty::Array(array) => self.contains_params_low(self.types[array].item),
             Ty::Param(..) => Present,
-            Ty::Base(..) | Ty::Builtin(..) => Absent,
+            Ty::Node(..) | Ty::Builtin(..) => Absent,
         }
     }
 
@@ -99,14 +99,14 @@ impl<'ctx> TypeCreator<'ctx> {
 
         let mut create_bin_op = |op, a, b, r| {
             let op = self.interner.intern(op);
-            let id = self
-                .interner
-                .intern_with(|s, t| display_bin_op(self.types, s, op, a, b, t));
+            let id = self.interner.intern_with(|s, t| {
+                display_bin_op(self.types, s, op, Ty::Builtin(a), Ty::Builtin(b), t)
+            });
 
             let signature = Signature {
                 cc: default(),
-                args: self.types.cache.args.extend([a, b]),
-                ret: r,
+                args: self.types.cache.args.extend([a, b].map(Ty::Builtin)),
+                ret: Ty::Builtin(r),
             };
 
             let func = Func {
@@ -125,8 +125,8 @@ impl<'ctx> TypeCreator<'ctx> {
 
         fn op_to_ty(
             op: &'static str,
-            ty: impl IntoIterator<Item = Ty> + Clone,
-            mut mapper: impl FnMut(&'static str, Ty),
+            ty: impl IntoIterator<Item = Builtin> + Clone,
+            mut mapper: impl FnMut(&'static str, Builtin),
         ) {
             for op in op.split_whitespace() {
                 for ty in ty.clone() {
@@ -135,28 +135,30 @@ impl<'ctx> TypeCreator<'ctx> {
             }
         }
 
-        op_to_ty("+ - / * %", Ty::INTEGERS, |op, ty| {
+        op_to_ty("+ - / * %", Builtin::INTEGERS, |op, ty| {
             create_bin_op(op, ty, ty, ty)
         });
-        op_to_ty("+ - / *", Ty::FLOATS, |op, ty| {
+        op_to_ty("+ - / *", Builtin::FLOATS, |op, ty| {
             create_bin_op(op, ty, ty, ty)
         });
-        op_to_ty("== != < > <= >=", Ty::SCALARS, |op, ty| {
-            create_bin_op(op, ty, ty, Ty::BOOL)
+        op_to_ty("== != < > <= >=", Builtin::SCALARS, |op, ty| {
+            create_bin_op(op, ty, ty, Builtin::BOOL)
         });
-        op_to_ty("| & ^", Ty::BINARY, |op, ty| create_bin_op(op, ty, ty, ty));
-        op_to_ty(">> <<", Ty::INTEGERS, |op, ty| {
+        op_to_ty("| & ^", Builtin::BINARY, |op, ty| {
+            create_bin_op(op, ty, ty, ty)
+        });
+        op_to_ty(">> <<", Builtin::INTEGERS, |op, ty| {
             create_bin_op(op, ty, ty, ty)
         });
 
-        let create_conv = |(from, to): (Ty, Ty)| {
-            let name = self.interner.intern_with(|_, t| write!(t, "{to}"));
-            let id = self.interner.intern_scoped(from, name);
+        let create_conv = |(from, to): (Builtin, Builtin)| {
+            let name = self.interner.intern(to.name());
+            let id = self.interner.intern_scoped(from.name(), name);
 
             let signature = Signature {
                 cc: default(),
-                args: self.types.cache.args.extend(iter::once(from)),
-                ret: to,
+                args: self.types.cache.args.extend(iter::once(Ty::Builtin(from))),
+                ret: Ty::Builtin(to),
             };
 
             let func = Func {
@@ -171,10 +173,12 @@ impl<'ctx> TypeCreator<'ctx> {
             builtin_functions.push(func);
         };
 
-        Ty::SCALARS
+        Builtin::SCALARS
             .into_iter()
-            .flat_map(|from| Ty::SCALARS.map(|to| (from, to)))
-            .filter(|(from, to)| from != to && (!Ty::FLOATS.contains(from) || *to != Ty::BOOL))
+            .flat_map(|from| Builtin::SCALARS.map(|to| (from, to)))
+            .filter(|(from, to)| {
+                from != to && (!Builtin::FLOATS.contains(from) || *to != Builtin::BOOL)
+            })
             .for_each(create_conv)
     }
 
@@ -197,20 +201,22 @@ impl<'ctx> TypeCreator<'ctx> {
         Pointer::new(ty, mutability, depth)
     }
 
-    pub fn instance(&mut self, base: BaseTy, args: &[Ty]) -> FragRef<Instance> {
+    pub fn instance<T: TypeDisplay + InstanceBase + Copy>(
+        &mut self,
+        base: T,
+        args: &[Ty],
+    ) -> FragRef<Instance<T>> {
         let id = self
             .interner
             .intern_with(|s, t| display_instance(self.types, s, base, args, t));
-        self.types
-            .mapping
-            .instances
+        T::map(&self.types.mapping)
             .entry(id)
             .or_insert_with(|| {
                 let instance = Instance {
                     base,
                     args: self.types.cache.args.extend(args.iter().cloned()),
                 };
-                self.types.cache.instances.push(instance)
+                T::cache(&mut self.types.cache).push(instance)
             })
             .to_owned()
     }
@@ -218,7 +224,7 @@ impl<'ctx> TypeCreator<'ctx> {
     pub fn spec_instance(&mut self, base: FragRef<SpecBase>, args: &[Ty]) -> FragRef<SpecInstance> {
         let id = self
             .interner
-            .intern_with(|s, t| display_spec_instance(self.types, s, base, args, t));
+            .intern_with(|s, t| display_instance(self.types, s, base, args, t));
         self.types
             .mapping
             .spec_instances
@@ -242,7 +248,7 @@ impl<'ctx> TypeCreator<'ctx> {
         missing_keys: &mut Option<&mut BumpVec<ImplKey>>,
     ) -> bool {
         self.types[sum].to_bumpvec().into_iter().all(|spec| {
-            let spec = self.instantiate_spec(spec, inferred);
+            let spec = self.instantiate_node(spec, inferred);
             self.find_implementation(ty, spec, params, missing_keys)
                 .is_some()
         })
@@ -275,7 +281,7 @@ impl<'ctx> TypeCreator<'ctx> {
                 };
 
                 for inherit in self.types[other_spec.base(self.types)].inherits.keys() {
-                    let inherit = self.instantiate_spec(self.types[inherit], params);
+                    let inherit = self.instantiate_node(self.types[inherit], params);
                     frontier.push(inherit);
                 }
             }
@@ -288,13 +294,13 @@ impl<'ctx> TypeCreator<'ctx> {
             return Some(Some(result.to_owned()));
         }
 
-        let significant_ty = ty.significant(self.types);
+        let base_ty = ty.significant(self.types);
         let spec_base = spec.base(self.types);
 
         let base_impls = self
             .types
             .impl_lookup
-            .get(&(spec_base, significant_ty))
+            .get(&(spec_base, base_ty))
             .map(|i| i.inner.to_owned())
             .into_iter()
             .flatten();
@@ -434,17 +440,13 @@ impl<'ctx> TypeCreator<'ctx> {
     }
 
     pub fn instantiate(&mut self, ty: Ty, params: impl TypecCtxSlice<Ty>) -> Ty {
+        if params.is_empty() {
+            return ty;
+        }
+
         match ty {
-            Ty::Base(..) | Ty::Builtin(..) => ty,
-            ty if params.is_empty() => ty,
-            Ty::Instance(instance) => {
-                let Instance { base, args } = self.types[instance];
-                let args = args
-                    .keys()
-                    .map(|arg| self.instantiate(self.types[arg], params))
-                    .collect::<BumpVec<_>>();
-                Ty::Instance(self.instance(base, args.as_slice()))
-            }
+            Ty::Builtin(..) => ty,
+            Ty::Node(instance) => Ty::Node(self.instantiate_node(instance, params)),
             Ty::Pointer(pointer) => {
                 let base = self.types[pointer.ty()];
                 let base = self.instantiate(base, params);
@@ -461,14 +463,13 @@ impl<'ctx> TypeCreator<'ctx> {
     }
 
     pub fn try_instantiate(&mut self, ty: Ty, params: &[Option<Ty>]) -> Option<Ty> {
+        if params.is_empty() {
+            return Some(ty);
+        }
+
         Some(match ty {
-            Ty::Base(..) | Ty::Builtin(..) => ty,
-            ty if params.is_empty() => ty,
-            Ty::Instance(instance) => {
-                let Instance { base, args } = self.types[instance];
-                let args = self.try_instantiate_slice(args, params)?;
-                Ty::Instance(self.instance(base, args.as_slice()))
-            }
+            Ty::Builtin(b) => Ty::Builtin(b),
+            Ty::Node(n) => Ty::Node(self.try_instantiate_node(n, params)?),
             Ty::Pointer(pointer) => {
                 let base = self.types[pointer.ty()];
                 let base = self.try_instantiate(base, params)?;
@@ -484,6 +485,50 @@ impl<'ctx> TypeCreator<'ctx> {
         })
     }
 
+    pub fn instantiate_node<T>(&mut self, node: Node<T>, params: impl TypecCtxSlice<Ty>) -> Node<T>
+    where
+        Types: Index<FragRef<Instance<T>>, Output = Instance<T>>,
+        T: TypeDisplay + InstanceBase + Copy,
+    {
+        match node {
+            Node::Instance(i) => {
+                let Instance { base, args } = self.types[i];
+                let args = args
+                    .keys()
+                    .map(|arg| self.instantiate(self.types.cache.args[arg], params))
+                    .collect::<BumpVec<_>>();
+                Node::Instance(self.instance(base, args.as_slice()))
+            }
+            Node::Base(b) => Node::Base(b),
+        }
+    }
+
+    pub fn try_instantiate_node<T>(
+        &mut self,
+        node: Node<T>,
+        params: &[Option<Ty>],
+    ) -> Option<Node<T>>
+    where
+        Types: Index<FragRef<Instance<T>>, Output = Instance<T>>,
+        T: TypeDisplay + InstanceBase + Copy,
+    {
+        if params.is_empty() {
+            return Some(node);
+        }
+
+        Some(match node {
+            Node::Instance(i) => {
+                let Instance { base, args } = self.types[i];
+                let args = args
+                    .keys()
+                    .map(|arg| self.try_instantiate(self.types.cache.args[arg], params))
+                    .collect::<Option<BumpVec<_>>>()?;
+                Node::Instance(self.instance(base, args.as_slice()))
+            }
+            Node::Base(b) => Node::Base(b),
+        })
+    }
+
     pub fn array_of(&mut self, item: Ty, len: ArraySize) -> FragRef<Array> {
         let id = self
             .interner
@@ -496,30 +541,6 @@ impl<'ctx> TypeCreator<'ctx> {
             .to_owned()
     }
 
-    pub fn instantiate_spec(&mut self, spec: Spec, params: impl TypecCtxSlice<Ty>) -> Spec {
-        match spec {
-            Spec::Base(..) => spec,
-            spec if params.is_empty() => spec,
-            Spec::Instance(instance) => {
-                let SpecInstance { base, args } = self.types[instance];
-                let args = self.instantiate_slice(args, params);
-                Spec::Instance(self.spec_instance(base, args.as_slice()))
-            }
-        }
-    }
-
-    pub fn try_instantiate_spec(&mut self, spec: Spec, params: &[Option<Ty>]) -> Option<Spec> {
-        Some(match spec {
-            Spec::Base(..) => spec,
-            spec if params.is_empty() => spec,
-            Spec::Instance(instance) => {
-                let SpecInstance { base, args } = self.types[instance];
-                let args = self.try_instantiate_slice(args, params)?;
-                Spec::Instance(self.spec_instance(base, args.as_slice()))
-            }
-        })
-    }
-
     pub fn component_ty(&mut self, ty: Ty, index: usize) -> Option<Ty> {
         let Self { types, .. } = self;
         let getter = |ty| match ty {
@@ -527,12 +548,7 @@ impl<'ctx> TypeCreator<'ctx> {
             BaseTy::Enum(e) => types[types[e].variants][index].ty,
         };
         Some(match ty {
-            Ty::Base(base) => getter(base),
-            Ty::Instance(i) => {
-                let Instance { base, args } = types[i];
-                let ty = getter(base);
-                self.instantiate(ty, args)
-            }
+            Ty::Node(n) => getter(n.base(types)),
             _ => return None,
         })
     }
@@ -544,12 +560,7 @@ impl<'ctx> TypeCreator<'ctx> {
             BaseTy::Enum(e) => Enum::find_variant(e, name, types),
         };
         match ty {
-            Ty::Base(base) => finder(base),
-            Ty::Instance(i) => {
-                let Instance { base, args } = types[i];
-                let (index, ty) = finder(base)?;
-                Some((index, self.instantiate(ty, args)))
-            }
+            Ty::Node(n) => finder(n.base(types)),
             _ => None,
         }
     }
@@ -573,7 +584,7 @@ impl<'ctx> TypeCreator<'ctx> {
                 params,
                 &mut None,
             ),
-            Ty::Base(..) | Ty::Instance(..) => Some(
+            Ty::Node(..) => Some(
                 self.find_implementation(ty, Spec::Base(SpecBase::DROP), params, &mut None)
                     .flatten(),
             ),
@@ -586,5 +597,30 @@ impl<'ctx> TypeCreator<'ctx> {
 
     pub fn type_diff(&self, a: Ty, b: Ty) -> String {
         type_diff(self.types, self.interner, a, b)
+    }
+}
+
+pub trait InstanceBase: Sized {
+    fn map(mapping: &Mapping) -> &CMap<Ident, FragRef<Instance<Self>>>;
+    fn cache(cache: &mut TypeCache) -> &mut SyncFragMap<Instance<Self>>;
+}
+
+impl InstanceBase for BaseTy {
+    fn map(mapping: &Mapping) -> &CMap<Ident, FragRef<Instance<Self>>> {
+        &mapping.instances
+    }
+
+    fn cache(cache: &mut TypeCache) -> &mut SyncFragMap<Instance<Self>> {
+        &mut cache.instances
+    }
+}
+
+impl InstanceBase for FragRef<SpecBase> {
+    fn map(mapping: &Mapping) -> &CMap<Ident, FragRef<Instance<Self>>> {
+        &mapping.spec_instances
+    }
+
+    fn cache(cache: &mut TypeCache) -> &mut SyncFragMap<Instance<Self>> {
+        &mut cache.spec_instances
     }
 }

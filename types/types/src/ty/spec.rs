@@ -3,6 +3,8 @@ use rkyv::{Archive, Deserialize, Serialize};
 use span::*;
 use storage::*;
 
+pub type SpecInstance = Instance<FragRef<SpecBase>>;
+
 derive_relocated!(struct Impl { generics key methods });
 #[derive(Clone, Copy, Serialize, Deserialize, Archive)]
 pub struct Impl {
@@ -16,7 +18,7 @@ derive_relocated!(struct ImplKey { ty spec });
 #[derive(
     Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord, Serialize, Deserialize, Archive,
 )]
-#[archive_attr(derive(PartialEq, Eq, Hash))]
+
 pub struct ImplKey {
     pub ty: Ty,
     pub spec: Spec,
@@ -43,13 +45,6 @@ gen_water_drops! {
     base_specs
     DROP => "Drop",
     COPY => "Copy",
-}
-
-derive_relocated!(struct SpecInstance { base args });
-#[derive(Clone, Copy, Deserialize, Archive, Serialize)]
-pub struct SpecInstance {
-    pub base: FragRef<SpecBase>,
-    pub args: FragSlice<Ty>,
 }
 
 derive_relocated!(struct SpecFunc { generics signature parent });

@@ -141,6 +141,13 @@ impl Interner {
         self.intern_with(|s, t| write!(t, "{}\\{}", scope, name.get(s)))
     }
 
+    pub fn intern_opt_scoped(&mut self, scope: Option<impl Display>, name: Ident) -> Ident {
+        match scope {
+            Some(scope) => self.intern_scoped(scope, name),
+            None => name,
+        }
+    }
+
     pub fn intern_with<T>(
         &mut self,
         mut builder: impl FnMut(&mut Self, &mut String) -> T,

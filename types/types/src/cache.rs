@@ -25,8 +25,8 @@ derive_relocated!(struct ImplList { inner });
 #[derive(Default, Serialize, Deserialize, Archive)]
 pub struct Mapping {
     pub types: CMap<Ident, FragRef<Ty>>,
-    pub instances: CMap<Ident, FragRef<Instance>>,
-    pub spec_instances: CMap<Ident, FragRef<SpecInstance>>,
+    pub instances: CMap<Ident, FragRef<Instance<BaseTy>>>,
+    pub spec_instances: CMap<Ident, FragRef<Instance<FragRef<SpecBase>>>>,
     pub spec_sums: CMap<Ident, FragSlice<Spec>>,
     pub arrays: CMap<Ident, FragRef<Array>>,
     pub impl_lookup: CMap<(FragRef<SpecBase>, Option<SignificantTy>), ImplList>,
@@ -273,7 +273,7 @@ gen_cache! {
     pointers: Pointer,
     spec_sums: Spec,
     spec_instances: SpecInstance,
-    instances: Instance,
+    instances: Instance<BaseTy>,
     args: Ty,
     arrays: crate::Array,
 }
@@ -303,7 +303,7 @@ impl Types {
     ) {
         match ty {
             Ty::Param(index) => spec_set.extend(index as u32, self[generic].iter().copied()),
-            Ty::Instance(i) => {
+            Ty::Node(Node::Instance(i)) => {
                 let Instance { base, args } = self[i];
                 let params = match base {
                     BaseTy::Struct(s) => self[s].generics,
@@ -319,7 +319,7 @@ impl Types {
                 self.register_ty_generics_low(self[p.ty()], generic, spec_set)
             }
             Ty::Array(a) => self.register_ty_generics_low(self[a].item, generic, spec_set),
-            Ty::Base(..) | Ty::Builtin(..) => (),
+            Ty::Node(..) | Ty::Builtin(..) => (),
         }
     }
 
@@ -352,7 +352,7 @@ impl Types {
     pub fn contains_params_low(&self, ty: Ty) -> ParamPresence {
         use ParamPresence::*;
         match ty {
-            Ty::Instance(instance) => self[self[instance].args]
+            Ty::Node(Node::Instance(instance)) => self[self[instance].args]
                 .iter()
                 .map(|&ty| self.contains_params_low(ty))
                 .fold(Absent, ParamPresence::combine),
@@ -362,7 +362,7 @@ impl Types {
                 .put_behind_pointer(),
             Ty::Array(array) => self.contains_params_low(self[array].item),
             Ty::Param(..) => Present,
-            Ty::Base(..) | Ty::Builtin(..) => Absent,
+            Ty::Node(..) | Ty::Builtin(..) => Absent,
         }
     }
 
@@ -411,29 +411,11 @@ impl Types {
         reference: Spec,
         template: Spec,
     ) -> Result<(), SpecCmpError> {
-        match (reference, template) {
-            _ if reference == template => Ok(()),
-            (Spec::Instance(reference), Spec::Instance(template)) => {
-                let reference = self[reference];
-                let template = self[template];
-
-                if reference.base != template.base {
-                    return Err(SpecCmpError::Specs(
-                        Spec::Base(reference.base),
-                        Spec::Base(template.base),
-                    ));
-                }
-
-                self[reference.args]
-                    .iter()
-                    .zip(&self[template.args])
-                    .fold(Ok(()), |acc, (&reference, &template)| {
-                        acc.and(self.compatible(params, reference, template))
-                    })
-                    .map_err(|(a, b)| SpecCmpError::Args(a, b))
-            }
-            _ => Err(SpecCmpError::Specs(reference, template)),
-        }
+        let mut stack = bumpvec![];
+        self.compatible_nodes(reference, template, &mut stack)
+            .map_err(|(a, b)| SpecCmpError::Specs(a, b))?;
+        self.compatible_types(params, &mut stack)
+            .map_err(|(a, b)| SpecCmpError::Args(a, b))
     }
 
     pub fn infer_ty_params(&self, param_count: usize, reference: Ty, template: Ty) -> BumpVec<Ty> {
@@ -452,9 +434,14 @@ impl Types {
         template: Ty,
     ) -> Result<(), (Ty, Ty)> {
         let mut stack = bumpvec![(reference, template)];
+        self.compatible_types(params, &mut stack)
+    }
 
-        let check = |a, b| Ty::compatible(a, b).then_some(()).ok_or((a, b));
-
+    pub fn compatible_types(
+        &self,
+        params: &mut [Option<Ty>],
+        stack: &mut BumpVec<(Ty, Ty)>,
+    ) -> Result<(), (Ty, Ty)> {
         while let Some((reference, template)) = stack.pop() {
             if reference == template && !self.contains_params(template) {
                 continue;
@@ -469,14 +456,8 @@ impl Types {
                     }
                     stack.push((self[reference_p.ty()], self[template_p.ty()]));
                 }
-                (Ty::Instance(reference), Ty::Instance(template)) => {
-                    check(self[reference].base.as_ty(), self[template].base.as_ty())?;
-                    stack.extend(
-                        self[self[reference].args]
-                            .iter()
-                            .copied()
-                            .zip(self[self[template].args].iter().copied()),
-                    );
+                (Ty::Node(reference), Ty::Node(template)) => {
+                    self.compatible_nodes(reference, template, stack).map_err(|(a, b)| (a.into(), b.into()))?;
                 }
                 (_, Ty::Param(index)) if let Some(inferred) = params[index as usize] => {
                     check(reference, inferred)?;
@@ -488,6 +469,41 @@ impl Types {
 
         Ok(())
     }
+
+    pub fn compatible_nodes<T>(
+        &self,
+        reference: Node<T>,
+        template: Node<T>,
+        stack: &mut BumpVec<(Ty, Ty)>,
+    ) -> Result<(), (Node<T>, Node<T>)>
+    where
+        T: Eq + Copy,
+        Self: Index<FragRef<Instance<T>>, Output = Instance<T>>,
+    {
+        match (reference, template) {
+            (Node::Instance(reference_inst), Node::Instance(template_inst)) => {
+                let (reference_inst, template_inst) = (self[reference_inst], self[template_inst]);
+                if reference_inst.base != template_inst.base {
+                    return Err((reference, template));
+                }
+
+                stack.extend(
+                    self.cache.args[reference_inst.args]
+                        .iter()
+                        .copied()
+                        .zip(self.cache.args[template_inst.args].iter().copied()),
+                );
+            }
+            _ if reference == template => {}
+            _ => return Err((reference, template)),
+        }
+
+        Ok(())
+    }
+}
+
+fn check(a: Ty, b: Ty) -> Result<(), (Ty, Ty)> {
+    Ty::compatible(a, b).then_some(()).ok_or((a, b))
 }
 
 #[derive(Debug)]

@@ -69,7 +69,7 @@ pub enum ExpandedFlag {
 #[derive(
     Clone, Copy, Serialize, Deserialize, Archive, Hash, PartialEq, Eq, PartialOrd, Ord, Debug,
 )]
-#[archive_attr(derive(PartialEq, Eq, Hash))]
+
 pub struct CompactBaseTy {
     is_enum: bool,
     thread: u8,
@@ -118,7 +118,6 @@ impl CompactBaseTy {
 #[derive(
     Clone, Copy, Serialize, Deserialize, Archive, Hash, PartialEq, Eq, PartialOrd, Ord, Debug,
 )]
-#[archive_attr(derive(PartialEq, Eq, Hash))]
 #[repr(transparent)]
 pub struct CompactTy {
     repr: NonMaxU64,
@@ -158,8 +157,8 @@ impl CompactTy {
                 }
             }
             ExpandedTy::Pointer { .. } => DropSpec::Copy,
-            ExpandedTy::Base(b) => b.drop_spec(types),
-            ExpandedTy::Instance(i) => types[i].base.expanded().drop_spec(types),
+            ExpandedTy::Node(Node::Instance(b)) => b.drop_spec(types),
+            ExpandedTy::Node(Node::Instance(i)) => types[i].base.expanded().drop_spec(types),
             ExpandedTy::Param { param, asoc } => DropSpec::Hibrid,
         }
     }
@@ -230,7 +229,7 @@ impl Relocated for ExpandedTy {
 #[derive(
     Clone, Copy, Serialize, Deserialize, Archive, Hash, PartialEq, Eq, PartialOrd, Ord, Debug,
 )]
-#[archive_attr(derive(PartialEq, Eq, Hash))]
+
 pub struct CompactSpec {
     is_instance: bool,
     thread: u8,
@@ -337,7 +336,7 @@ impl CompactTyRepr {
             ExpandedTy::Base(BaseTy::Enum(r#enum)) => Self {
                 frag_ref: CompactFragRef::new(ExpandedFlag::Enum, r#enum),
             },
-            ExpandedTy::Instance(instance) => Self {
+            ExpandedTy::Node(Node::Instance(instance)) => Self {
                 frag_ref: CompactFragRef::new(ExpandedFlag::Instance, instance),
             },
             ExpandedTy::Param { param, asoc } => Self {

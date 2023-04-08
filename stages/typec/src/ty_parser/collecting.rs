@@ -127,18 +127,25 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         explicit_methods: BumpVec<(FragRef<Func>, Span)>,
     ) -> OptFragRef<Impl> {
         let spec_base = spec.base(self.ext.types);
-        let ty_base = ty.base(self.ext.types);
+        let ty_base = ty.significant(self.ext.types);
 
-        if SpecBase::DROP == spec_base && let Ty::Base(base) = ty_base {
-            match base {
-                BaseTy::Struct(s) => self.ext.types[s].drop_spec = DropSpec::Drop,
-                BaseTy::Enum(e) => self.ext.types[e].drop_spec = DropSpec::Drop,
+        // rewrite as ifs
+        let drop_spec = if spec_base == SpecBase::DROP {
+            Some(DropSpec::Drop)
+        } else if spec_base == SpecBase::COPY {
+            Some(DropSpec::ImplementsCopy)
+        } else {
+            None
+        };
+
+        match (drop_spec, ty_base) {
+            (Some(drop_spec), Some(SignificantTy::Base(BaseTy::Struct(struct_id)))) => {
+                self.ext.types[struct_id].drop_spec = drop_spec;
             }
-        } else if SpecBase::COPY == spec_base && let Ty::Base(base) = ty_base {
-            match base {
-                BaseTy::Struct(s) => self.ext.types[s].drop_spec = DropSpec::ImplementsCopy,
-                BaseTy::Enum(e) => self.ext.types[e].drop_spec = DropSpec::ImplementsCopy,
+            (Some(drop_spec), Some(SignificantTy::Base(BaseTy::Enum(enum_id)))) => {
+                self.ext.types[enum_id].drop_spec = drop_spec;
             }
+            _ => {}
         }
 
         // check for collisions in implementations,
@@ -172,11 +179,10 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             methods,
             loc,
         });
-        let significant_ty = ty_base.significant(self.ext.types);
         self.ext
             .types
             .impl_lookup
-            .entry((spec_base, significant_ty))
+            .entry((spec_base, ty_base))
             .or_default()
             .inner
             .push(impl_ent);
@@ -186,7 +192,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
     fn collect_spec_impl_methods(
         &mut self,
         ty: Ty,
-        ty_base: Ty,
+        ty_base: Option<SignificantTy>,
         spec_base: FragRef<SpecBase>,
         explicit_methods: BumpVec<(FragRef<Func>, Span)>,
         span: Span,
@@ -196,10 +202,10 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         for (method, span) in explicit_methods {
             let method_name = self.ext.types[method].name;
             let Some((i, &spec_method)) = self.ext.types[spec_methods]
-                    .iter()
-                    .enumerate()
-                    .find(|(_, m)| m.name == method_name)
-                    else {continue};
+                .iter()
+                .enumerate()
+                .find(|(_, m)| m.name == method_name)
+                else {continue};
 
             if let Err(err) = self.ext.check_impl_signature(ty, spec_method, method, true) {
                 let spec_source_loc = self.ext.types[spec_base].loc.source_loc(self.ext.types);
@@ -222,11 +228,11 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             .filter(|(slot, ..)| slot.is_none());
         for (slot, i) in iter {
             let spec_func = self.ext.types[i];
-            let id = self.ext.interner.intern_scoped(ty_base, spec_func.name);
+            let id = self.ext.interner.intern_opt_scoped(ty_base, spec_func.name);
 
             let Ok(ScopeItem::Func(id)) = self.ctx.try_lookup(id) else {
-                        continue;
-                    };
+                continue;
+            };
 
             if self
                 .ext
@@ -240,18 +246,18 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         }
 
         let Some(methods) = slots.iter().copied().collect::<Option<BumpVec<_>>>() else {
-                let missing = self.ext.types[spec_methods]
-                    .iter()
-                    .zip(slots.as_slice())
-                    .filter_map(|(f, m)| m.is_none().then_some(&f.name))
-                    .map(|name| name.get(self.ext.interner))
-                    .intersperse(", ")
-                    .collect::<String>();
-                MissingImplMethods {
-                    loc: self.meta.loc(span),
-                    missing,
-                }.add(self.ext.workspace)?;
-            };
+            let missing = self.ext.types[spec_methods]
+                .iter()
+                .zip(slots.as_slice())
+                .filter_map(|(f, m)| m.is_none().then_some(&f.name))
+                .map(|name| name.get(self.ext.interner))
+                .intersperse(", ")
+                .collect::<String>();
+            MissingImplMethods {
+                loc: self.meta.loc(span),
+                missing,
+            }.add(self.ext.workspace)?;
+        };
 
         Some(self.ext.types.cache.func_slices.extend(methods))
     }
@@ -337,11 +343,11 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             (Loc::new(self.meta.source(), None), None)
         } else {
             let meta = self.next_humid_item_id::<Func>(name, attributes);
-            let local_id = owner.map_or(name.ident, |owner| {
-                self.ext
-                    .interner
-                    .intern_scoped(owner.caller(self.ext.types), name.ident)
-            });
+            let local_id = owner
+                .and_then(|o| o.base(self.ext.types))
+                .map_or(name.ident, |owner| {
+                    self.ext.interner.intern_scoped(owner, name.ident)
+                });
             let item = ModuleItem::new(
                 local_id,
                 meta.id,
