@@ -182,8 +182,6 @@ impl<T: NoInteriorMutability> Index<FragSlice<T>> for SyncFragMap<T> {
     }
 }
 
-#[derive(Archive, Deserialize, Serialize)]
-
 pub struct SyncFragBase<T> {
     pub(crate) views: Arc<[SyncFragView<T>]>,
 }
@@ -198,16 +196,16 @@ impl<T> Clone for SyncFragBase<T> {
     }
 }
 
-impl<T> SyncFragBase<T> {
-    pub fn new(thread_count: u8) -> Self {
+impl<T> Default for SyncFragBase<T> {
+    fn default() -> Self {
         Self {
-            views: (0..thread_count)
-                .map(|thread| SyncFragView::new(thread))
-                .collect(),
+            views: Arc::new([]),
         }
     }
+}
 
-    pub fn expand(&mut self, thread_count: u8) {
+impl<T> SyncFragBase<T> {
+    pub fn adjust(&mut self, thread_count: u8) {
         let new = (self.views.len() as u8..thread_count).map(|thread| SyncFragView::new(thread));
         let current = mem::replace(&mut self.views, Arc::new([]));
         unsafe {
@@ -275,10 +273,7 @@ impl<T: Relocated + 'static> DynFragMap for SyncFragBase<T> {
     }
 }
 
-#[derive(Archive, Deserialize, Serialize)]
-
 pub struct SyncFragView<T> {
-    #[with(ArcSwapArchiver)]
     pub(crate) inner: ArcSwapAny<ArcVec<T>>,
     pub(crate) thread: u8,
     pub(crate) len: AtomicUsize,
@@ -465,7 +460,8 @@ mod test {
         const THREAD_COUNT: usize = 4;
         let dash = &DashMap::<usize, FragRef<Tested>>::default();
         let run = &AtomicBool::new(true);
-        let mut shared = SyncFragBase::new(THREAD_COUNT as u8);
+        let mut shared = SyncFragBase::default();
+        shared.adjust(THREAD_COUNT as u8);
         let counter = &AtomicUsize::new(0);
 
         thread::scope(|s| {

@@ -216,28 +216,18 @@ use chunk::Chunk;
 
 #[cfg(not(miri))]
 mod chunk {
-    use std::{default::default, ops::Range, ptr, slice};
-
-    use rkyv::{
-        out_field,
-        ser::{ScratchSpace, Serializer},
-        vec::{ArchivedVec, VecResolver},
-        with::DeserializeWith,
-        Archive, Archived, Deserialize, Fallible, Serialize,
-    };
-
-    transmute_arkive!(ArchivedProtection(region::Protection => u64));
+    use std::ops::Range;
 
     pub struct Chunk {
         data: region::Allocation,
-        protection: region::Protection,
+        _protection: region::Protection,
     }
 
     impl Chunk {
         pub fn new(cap: usize, protection: region::Protection) -> Self {
             Chunk {
                 data: region::alloc(cap, protection).expect("Failed to allocate memory"),
-                protection,
+                _protection: protection,
             }
         }
 
@@ -251,49 +241,6 @@ mod chunk {
 
         pub fn range(&self) -> Range<*const u8> {
             self.data.as_ptr_range()
-        }
-    }
-
-    pub struct ArchivedChunk {
-        data: ArchivedVec<u8>,
-        protection: Archived<u64>,
-    }
-
-    impl Archive for Chunk {
-        type Archived = ArchivedChunk;
-
-        type Resolver = VecResolver;
-
-        unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
-            let (o, f) = out_field!(out.data);
-            ArchivedVec::<u8>::resolve_from_len(self.len(), pos + o, resolver, f);
-            let (o, f) = out_field!(out.protection);
-            <Archived<u64>>::resolve(&(self.protection.bits() as u64), pos + o, default(), f);
-        }
-    }
-
-    impl<S: Serializer + ScratchSpace> Serialize<S> for Chunk
-    where
-        u8: Serialize<S>,
-    {
-        fn serialize(
-            &self,
-            serializer: &mut S,
-        ) -> Result<Self::Resolver, <S as rkyv::Fallible>::Error> {
-            let slice = unsafe { slice::from_ptr_range(self.data.as_ptr_range::<u8>()) };
-            ArchivedVec::<u8>::serialize_from_slice(slice, serializer)
-        }
-    }
-
-    impl<D: Fallible> Deserialize<Chunk, D> for ArchivedChunk {
-        fn deserialize(&self, deserializer: &mut D) -> Result<Chunk, <D as Fallible>::Error> {
-            let slice = self.data.as_ptr() as *const u8;
-            let mut region = Chunk::new(
-                self.data.len(),
-                ArchivedProtection::deserialize_with(&self.protection, deserializer)?,
-            );
-            unsafe { ptr::copy_nonoverlapping(slice, region.data.as_mut_ptr(), self.data.len()) }
-            Ok(region)
         }
     }
 

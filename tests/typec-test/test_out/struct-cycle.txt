@@ -1,13 +1,13 @@
-error: infinitely sized type detected between defined types
+error: infinitly sized type detected
  --> struct-cycle/root.ctl:5:8
   |
 1 | struct A {
-  |        - info: this type is part of the cycle
+  |        ^ this type is part of the cycle
 2 |     b: B
 3 | }
 4 | 
 5 | struct B {
-  |        - info: this type is part of the cycle
+  |        ^ this type is part of the cycle
   |
-  = info: cycle: 6\A -> 6\B -> 6\A
+  = info: the cycle: 6\A -> 6\B -> 6\A
 

@@ -1,14 +1,11 @@
 use std::{default::default, marker::PhantomData, mem, sync::Arc};
 
-use rkyv::{Archive, Deserialize, Serialize};
-
 use crate::{
     field, frag_map::ArcVecInner, DynFragMap, FragMap, FragRef, NoInteriorMutability, Relocated,
 };
 
 use super::ArcVec;
 
-#[derive(Serialize, Deserialize, Archive)]
 pub struct ShadowFragMap<K, T> {
     base: ShadowFragBase<K, T>,
     local: ShadowFragView<T>,
@@ -57,7 +54,6 @@ impl<K, T> ShadowFragMap<K, T> {
     }
 }
 
-#[derive(Serialize, Deserialize, Archive)]
 pub struct ShadowFragBase<K, T> {
     threads: Box<[ShadowFragView<T>]>,
     default: Arc<T>,
@@ -152,7 +148,6 @@ impl<K, T> Clone for ShadowFragBase<K, T> {
     }
 }
 
-#[derive(Serialize, Deserialize, Archive)]
 pub struct ShadowFragView<T> {
     data: ArcVec<T>,
     thread: u8,

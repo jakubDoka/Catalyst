@@ -5,11 +5,9 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use rkyv::{Archive, Deserialize, Serialize};
-
 use crate::VRef;
 
-#[derive(Debug, Archive, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct ShadowMap<T, V> {
     data: Vec<V>,
     default: V,

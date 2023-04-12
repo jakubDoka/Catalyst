@@ -2,7 +2,6 @@ use {
     super::*,
     crate::*,
     core::slice,
-    rkyv::string::ArchivedString,
     std::{
         alloc::{Allocator as Alloc, Global, Layout},
         default::default,
@@ -12,107 +11,24 @@ use {
     },
 };
 
+pub mod generic;
 pub mod ident;
 
+#[derive(Default)]
 pub struct InternerBase {
     index: Arc<CMap<&'static str, Ident>>,
     storage: SyncFragBase<&'static str>,
     cluster: Cluster<Allocator>,
 }
 
-#[repr(transparent)]
-pub struct ArchivedInterner {
-    indices: ArchivedVec<(ArchivedString, ArchivedVec<Archived<usize>>)>,
-}
-
-impl Archive for InternerBase {
-    type Archived = ArchivedInterner;
-
-    type Resolver = VecResolver;
-
-    unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
-        ArchivedVec::resolve_from_len(
-            self.storage.views.len(),
-            pos,
-            resolver,
-            out_field!(out.indices).1,
-        )
-    }
-}
-
-impl<S: ScratchSpace + Serializer + ?Sized> Serialize<S> for InternerBase {
-    fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, <S as Fallible>::Error> {
-        ArchivedVec::<(ArchivedString, ArchivedVec<Archived<u32>>)>::serialize_from_iter(
-            self.storage.views.iter().map(|view| {
-                let mut len = 0;
-                let lens = unsafe { ArcVecInner::full_data(view.inner.load().0) }
-                    .iter()
-                    .inspect(|str| len += str.len())
-                    .map(|str| str.len() as u32)
-                    .collect::<Vec<_>>();
-                let mut string = String::with_capacity(len);
-                unsafe { ArcVecInner::full_data(view.inner.load().0) }
-                    .iter()
-                    .copied()
-                    .collect_into(&mut string);
-
-                (string, lens)
-            }),
-            serializer,
-        )
-    }
-}
-
-impl<D: Fallible + ?Sized> Deserialize<InternerBase, D> for ArchivedInterner {
-    fn deserialize(&self, _deserializer: &mut D) -> Result<InternerBase, <D as Fallible>::Error> {
-        let cluster = Cluster::<Allocator>::new(self.indices.len() as u8);
-        let mut storage = SyncFragBase::new(self.indices.len() as u8);
-        let index = CMap::default();
-
-        for (((string, lens), mut cluster), mut storage) in self
-            .indices
-            .iter()
-            .zip(cluster.split())
-            .zip(storage.split())
-        {
-            let (str, ..) = unsafe { cluster.alloc(string) };
-            for (start, end) in lens.iter().scan(0, |s, i| {
-                let res = (*s, *s + *i as usize);
-                *s += *i as usize;
-                Some(res)
-            }) {
-                let sub_str = unsafe { str.get_unchecked(start..end) };
-                let id = storage.push(sub_str);
-                index.insert(sub_str, Ident::from_ref(id));
-            }
-        }
-
-        Ok(InternerBase {
-            index: index.into(),
-            storage,
-            cluster,
-        })
-    }
-}
-
 impl InternerBase {
-    pub fn new(thread_count: u8) -> Self {
-        let mut s = Self {
-            index: default(),
-            storage: SyncFragBase::new(thread_count),
-            cluster: Cluster::new(thread_count),
-        };
-
-        if let Some(mut s) = s.split().next() {
-            s.init()
+    pub fn adjust(&mut self, thread_count: u8) {
+        let needs_init = self.storage.views.is_empty();
+        self.storage.adjust(thread_count);
+        self.cluster.adjust(thread_count);
+        if needs_init && let Some(mut interner) = self.split().next() {
+            interner.init();
         }
-
-        s
-    }
-
-    pub fn expand(&mut self, thread_count: u8) {
-        self.storage.expand(thread_count);
-        self.cluster.expand(thread_count);
     }
 
     pub fn split(&mut self) -> impl Iterator<Item = Interner> + '_ {
@@ -206,7 +122,11 @@ impl Interner {
 
 impl Default for Interner {
     fn default() -> Self {
-        InternerBase::new(1).split().next().unwrap()
+        let mut s = InternerBase::default();
+        s.adjust(1);
+        let shard = s.split().next().unwrap();
+        drop(s);
+        shard
     }
 }
 

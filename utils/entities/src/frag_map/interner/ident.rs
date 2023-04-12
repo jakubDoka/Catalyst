@@ -1,8 +1,6 @@
 use super::*;
 
-#[derive(
-    Clone, Archive, Serialize, Deserialize, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash,
-)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 
 pub struct Ident(pub(super) RawIdent);
 
@@ -99,36 +97,6 @@ impl RawIdent {
                 pad2: [0; 8],
             },
         }
-    }
-}
-
-#[derive(PartialEq, Eq, Hash)]
-pub struct ArchivedRawIdent(Archived<[u8; 16]>);
-
-impl Archive for RawIdent {
-    type Archived = ArchivedRawIdent;
-
-    type Resolver = Resolver<[u8; 16]>;
-
-    unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
-        let (o, f) = out_field!(out.0);
-        self.archived.resolve(pos + o, resolver, f);
-    }
-}
-
-impl<S: Serializer + ?Sized> Serialize<S> for RawIdent {
-    fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, <S as Fallible>::Error> {
-        unsafe { self.archived.serialize(serializer) }
-    }
-}
-
-impl<D: Fallible + ?Sized> Deserialize<RawIdent, D> for ArchivedRawIdent
-where
-    Archived<[u8; 16]>: Deserialize<[u8; 16], D>,
-{
-    fn deserialize(&self, deserializer: &mut D) -> Result<RawIdent, <D as Fallible>::Error> {
-        let archived = self.0.deserialize(deserializer)?;
-        Ok(RawIdent { archived })
     }
 }
 

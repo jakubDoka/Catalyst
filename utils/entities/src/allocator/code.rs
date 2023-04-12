@@ -1,6 +1,5 @@
 use std::{
     default::default,
-    mem::ManuallyDrop,
     ops::Range,
     ptr::{self, NonNull},
     slice,
@@ -10,10 +9,6 @@ use std::{
 use super::chunk::Chunk;
 use crate::{frag_map::relocator::Unified, Allocator};
 use region::Protection;
-use rkyv::{
-    ser::{ScratchSpace, Serializer},
-    Archive, Deserialize, Fallible, Serialize,
-};
 
 /// Contains reusable resources used to prerform relocation on `CodeAllocator`.
 #[derive(Default)]
@@ -149,7 +144,7 @@ impl Unified for Relocation {
 }
 
 /// Opaque reference to compiled code.
-#[derive(Clone, Copy, Archive, Serialize, Deserialize)]
+#[derive(Clone, Copy)]
 pub struct Code {
     chunk: u32,
     start: u32,
@@ -195,12 +190,6 @@ impl Code {
     pub fn align(&self) -> Align {
         self.align
     }
-}
-
-#[derive(Archive, Serialize, Deserialize)]
-pub struct ArchivableCodeAllocator {
-    chunks: ManuallyDrop<Vec<Chunk>>,
-    progress: usize,
 }
 
 /// Used for allocating executable memory, serializing compiled code and
@@ -331,13 +320,6 @@ impl CodeAllocator {
         Chunk::new(size, Self::PROTECTION)
     }
 
-    unsafe fn as_archivable(&self) -> ArchivableCodeAllocator {
-        ArchivableCodeAllocator {
-            chunks: ManuallyDrop::new(ptr::read(&self.chunks)),
-            progress: self.cursor as usize - self.base as usize,
-        }
-    }
-
     fn reset(&self, code: &Code) {
         unsafe {
             (self.data_ptr(&code) as *mut u8 as *mut CodeLock).write(CodeLock::new(false));
@@ -431,55 +413,7 @@ impl CodeLock {
     }
 }
 
-impl Archive for CodeAllocator {
-    type Archived = ArchivedArchivableCodeAllocator;
-
-    type Resolver = ArchivableCodeAllocatorResolver;
-
-    unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
-        self.as_archivable().resolve(pos, resolver, out)
-    }
-}
-
-impl<S: Serializer + ScratchSpace> Serialize<S> for CodeAllocator {
-    fn serialize(
-        &self,
-        serializer: &mut S,
-    ) -> Result<Self::Resolver, <S as rkyv::Fallible>::Error> {
-        unsafe { self.as_archivable() }.serialize(serializer)
-    }
-}
-
-impl<D: Fallible> Deserialize<CodeAllocator, D> for ArchivedArchivableCodeAllocator
-where
-    Self: Deserialize<ArchivableCodeAllocator, D>,
-{
-    fn deserialize(&self, deserializer: &mut D) -> Result<CodeAllocator, <D as Fallible>::Error> {
-        let mut arch = Deserialize::<ArchivableCodeAllocator, D>::deserialize(self, deserializer)?;
-        let (base, cursor, end) = match arch.chunks.last_mut() {
-            Some(c) => {
-                let range = c.range_mut();
-                (
-                    range.start,
-                    unsafe { range.start.add(arch.progress) },
-                    range.end,
-                )
-            }
-            None => {
-                let dang = NonNull::<u8>::dangling().as_ptr();
-                (dang, dang, dang)
-            }
-        };
-        Ok(CodeAllocator {
-            chunks: ManuallyDrop::into_inner(arch.chunks),
-            base,
-            cursor,
-            end,
-        })
-    }
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize, Archive)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Align {
     power: u8,
 }

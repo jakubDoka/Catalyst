@@ -12,4 +12,4 @@ region = "3.0.0"
 dashmap = "5.4.0"
 smallvec = { version = "1.10.0", features = ["union"] }
 arc-swap = { version = "1.5.1" }
-rkyv = { version = "0.7.39", features = ["copy"] }
+incremental = { path = "../incremental" }

@@ -695,7 +695,8 @@ mod test {
     #[test]
     fn reloc_stress_test() {
         const THREAD_COUNT: u8 = 4;
-        let mut storage = SyncFragBase::new(THREAD_COUNT);
+        let mut storage = SyncFragBase::default();
+        storage.adjust(THREAD_COUNT);
         let mut relocator = FragRelocator::default();
 
         for mut thread in storage.split() {

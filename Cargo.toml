@@ -8,10 +8,8 @@ edition = "2021"
 [workspace]
 members = [
     "stages/*",
-    "tests/*",
     "types/*",
     "utils/*",
-    "subcommands/*",
     "scripts/*",
 ]
 exclude = [
@@ -27,7 +25,4 @@ panic = "abort"
 # strip = true
 
 [dependencies]
-lsp = { version = "0.1.0", path = "subcommands/lsp" }
-fmt = { version = "0.1.0", path = "subcommands/fmt" }
-cc = { version = "0.1.0", path = "subcommands/cc" }
 cli = { version = "0.1.0", path = "utils/cli" }

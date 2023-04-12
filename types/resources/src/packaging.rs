@@ -1,7 +1,3 @@
-use rkyv::{
-    with::{AsString, Skip, UnixTimestamp},
-    Archive, Deserialize, Serialize,
-};
 use span::*;
 
 use std::{default::default, io, path::*, time::SystemTime};
@@ -13,19 +9,12 @@ pub type PackageGraph = graphs::CycleDetector;
 
 const BUILTIN_PACKAGE_SOURCE: &str = include_str!("water_drops.ctl");
 
-#[derive(Serialize, Deserialize, Archive)]
-
 pub struct Resources {
     pub sources: PoolMap<Source>,
-    #[with(Skip)]
     pub packages: PushMap<Package>,
-    #[with(Skip)]
     pub modules: PushMap<Module>,
-    #[with(Skip)]
     pub package_deps: PushMap<Dep<Package>>,
-    #[with(Skip)]
     pub module_deps: PushMap<Dep<Module>>,
-    #[with(Skip)]
     pub module_order: Vec<VRef<Module>>,
 }
 
@@ -126,20 +115,15 @@ impl Resources {
     }
 }
 
-#[derive(Archive, Serialize, Deserialize, Debug)]
+#[derive(Debug)]
 
 pub struct Source {
-    #[with(AsString)]
     pub path: PathBuf,
-    #[with(UnixTimestamp)]
     pub last_modified: SystemTime,
-    #[with(Skip)]
     pub content: String,
-    #[with(Skip)]
     pub line_mapping: LineMapping,
     pub changed: bool,
     pub dead: bool,
-    #[with(Skip)]
     pub loaded: bool,
     pub builtin: bool,
     pub package: VRef<Package>,
@@ -188,17 +172,17 @@ pub struct Module {
     pub source: VRef<Source>,
 }
 
-pub struct Dep<T: ?Sized> {
+pub struct Dep<T> {
     pub vis: Option<Vis>,
     pub name_span: Span,
     pub name: Ident,
     pub ptr: VRef<T>,
 }
 
-impl<T: ?Sized> Clone for Dep<T> {
+impl<T> Clone for Dep<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T: ?Sized> Copy for Dep<T> {}
+impl<T> Copy for Dep<T> {}

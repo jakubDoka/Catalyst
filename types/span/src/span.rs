@@ -1,23 +1,8 @@
 use std::ops::{Bound, Range, RangeBounds};
 
-use rkyv::{Archive, Deserialize, Serialize};
-
 /// Identical to [`std::ops::Range`]<[`u32`]> but a lot more ergonomic
 /// since it is defined here.
-#[derive(
-    Default,
-    Archive,
-    Deserialize,
-    Serialize,
-    Clone,
-    Copy,
-    Debug,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(C)]
 pub struct Span {
     pub start: u32,

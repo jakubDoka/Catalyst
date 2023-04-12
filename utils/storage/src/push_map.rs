@@ -8,8 +8,6 @@ use std::{
 
 use entities::*;
 
-use rkyv::{Archive, Deserialize, Serialize};
-
 use crate::VRef;
 
 #[repr(transparent)]
@@ -152,7 +150,7 @@ impl<'a, T> IndexMut<VSlice<T>> for PushMapCheck<'a, T> {
     }
 }
 
-#[derive(Archive, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub struct PushMap<T> {
     data: Vec<T>,
 }

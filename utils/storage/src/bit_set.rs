@@ -1,5 +1,3 @@
-use rkyv::{Archive, Deserialize, Serialize};
-
 const WIDTH: usize = std::mem::size_of::<usize>() * 8;
 const WIDTH_POW: usize = WIDTH.ilog2() as usize;
 
@@ -7,7 +5,7 @@ const WIDTH_POW: usize = WIDTH.ilog2() as usize;
 /// compared to '[`Vec`]<[`bool`]>'. It also offers same speed (vector element is of [`usize`])
 /// as cpu would have to perform bit-shift to retrieve boolean value anyway.
 
-#[derive(Archive, Serialize, Deserialize, Default, Clone)]
+#[derive(Default, Clone)]
 
 pub struct BitSet {
     data: Vec<usize>,

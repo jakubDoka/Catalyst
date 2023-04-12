@@ -1,8 +1,6 @@
 use std::fmt;
 
-use rkyv::{Archive, Deserialize, Serialize};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Archive, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 
 pub enum Vis {
     Pub,

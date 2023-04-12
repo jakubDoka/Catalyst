@@ -3,13 +3,10 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use rkyv::{Archive, Deserialize, Serialize};
-
 use crate::VRef;
 
 /// Supports reusable storage via stack base allocator. It performs extra
 /// checks for debug builds but is unsafe on release.
-#[derive(Deserialize, Serialize, Archive)]
 
 pub struct PoolMap<K, T = K> {
     free: Vec<VRef<K>>,

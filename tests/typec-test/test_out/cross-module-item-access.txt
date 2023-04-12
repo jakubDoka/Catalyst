@@ -1,17 +1,17 @@
 info: tir repr of functions:
-fn [: ] pass(param0:0) -> param0:0 return var0
+fn [: ] pass(param0) -> param0 return var0
 
 fn [] pass(uint) -> uint return var0
 
 fn [] pass(uint) -> uint return var0
 
-fn [: ] pass(param0:0) -> param0:0 return var0
+fn [: ] pass(param0) -> param0 return var0
 
 fn [] pass(uint) -> uint return var0
 
-fn [: ] pass_other(uint,param0:0) -> param0:0 return var1
+fn [: ] pass_other(uint,param0) -> param0 return var1
 
-fn [: ] pass(param0:0) -> param0:0 return var0
+fn [: ] pass(param0) -> param0 return var0
 
 fn [] main() -> uint return pass[uint](pass(pass(pass(0))))
 

@@ -1,9 +1,6 @@
 use std::{iter::once, ops::Range};
 
-use rkyv::{Archive, Deserialize, Serialize};
-
-#[derive(Archive, Serialize, Deserialize, Debug)]
-
+#[derive(Debug)]
 pub struct LineMapping {
     indices: Vec<u32>,
 }

@@ -1,11 +1,11 @@
-error: 'param0:0' does not implement 'A'
+error: 'param0' does not implement 'A'
   --> simple-spec-inheritance/root.ctl:23:30
    |
 23 | fn [T: C] sum() -> uint => T\A\a() + T\B\a()
    |                              ^^^ here
    |
 
-error: 'param0:0' does not implement 'B'
+error: 'param0' does not implement 'B'
   --> simple-spec-inheritance/root.ctl:23:40
    |
 23 | fn [T: C] sum() -> uint => T\A\a() + T\B\a()

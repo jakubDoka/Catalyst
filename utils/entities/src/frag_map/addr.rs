@@ -1,13 +1,11 @@
 use std::{mem, ops::Range};
 
-use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize};
-
 macro_rules! gen_non_max {
     ($($name:ident($ty:ty, $max:literal);)*) => {
         $(
             #[repr(transparent)]
             #[rustc_layout_scalar_valid_range_end($max)]
-            #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Archive, Serialize)]
+            #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 
             pub struct $name($ty);
 
@@ -47,21 +45,7 @@ macro_rules! gen_non_max {
 
             const _: () = assert!($name::new(<$ty>::MAX).is_none());
             const _: () = assert!(mem::size_of::<Option<$name>>() == mem::size_of::<$name>());
-
-
-            impl<D: Fallible> Deserialize<$name, D> for Archived<$name>
-            where
-                D::Error: From<NonMaxError>,
-            {
-                fn deserialize(&self, _deserializer: &mut D) -> Result<$name, <D as Fallible>::Error> {
-                    $name::new(self.0)
-                        .ok_or(NonMaxError)
-                        .map_err(Into::into)
-                }
-            }
         )*
-
-
     };
 }
 
@@ -75,9 +59,7 @@ gen_non_max!(
 #[derive(Debug)]
 pub struct NonMaxError;
 
-#[derive(
-    Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Debug, Archive, Serialize, Deserialize,
-)]
+#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Debug)]
 
 pub struct FragAddr {
     pub index: u32,
@@ -111,21 +93,7 @@ impl FragAddr {
     }
 }
 
-#[derive(
-    Copy,
-    Clone,
-    PartialOrd,
-    Ord,
-    PartialEq,
-    Eq,
-    Hash,
-    Debug,
-    Default,
-    Archive,
-    Serialize,
-    Deserialize,
-)]
-
+#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Debug, Default)]
 pub struct FragSliceAddr {
     pub index: u32,
     pub thread: u8,

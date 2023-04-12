@@ -6,9 +6,8 @@ use std::{
     sync::Arc,
 };
 
-use crate::{DashMapArchiver, FragMarks, Relocated};
+use crate::{FragMarks, Relocated};
 use dashmap::{DashMap, DashSet};
-use rkyv::{Archive, Deserialize, Serialize};
 
 pub type Map<K, V> = HashMap<K, V, FvnBuildHasher>;
 pub type Set<T> = HashSet<T, FvnBuildHasher>;
@@ -16,9 +15,8 @@ pub type CSet<K> = Arc<DashSet<K, FvnBuildHasher>>;
 
 /// Wrapper around DashMap that implements `rkyv` traits.
 #[repr(transparent)]
-#[derive(Archive, Serialize, Deserialize)]
+
 pub struct CMap<K, V> {
-    #[with(DashMapArchiver)]
     inner: DashMap<K, V, FvnBuildHasher>,
 }
 
