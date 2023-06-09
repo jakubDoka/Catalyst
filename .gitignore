@@ -1,4 +1,4 @@
-/target
+**/target
 /wasmtime
 **/state_gen.rs
 Cargo.lock

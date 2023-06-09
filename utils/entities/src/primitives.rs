@@ -74,7 +74,7 @@ pub struct FragRef<T: ?Sized>(pub(crate) FragAddr, pub(crate) PhantomData<*const
 gen_derives!(FragRef);
 
 impl<T: ?Sized> Hash for ArchivedFragRef<T> {
-    fn hash<H: ~const std::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.0.hash(state);
     }
 }
@@ -114,7 +114,7 @@ pub struct FragSlice<T: ?Sized>(pub(crate) FragSliceAddr, pub(crate) PhantomData
 gen_derives!(FragSlice);
 
 impl<T: ?Sized> Hash for ArchivedFragSlice<T> {
-    fn hash<H: ~const std::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.0.hash(state);
     }
 }
@@ -205,7 +205,7 @@ impl<T> From<CtlOption<T>> for Option<T> {
 pub struct VRef<T: ?Sized>(NonMaxU32, PhantomData<*const T>);
 
 impl<T: ?Sized> Hash for ArchivedVRef<T> {
-    fn hash<H: ~const std::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.0.hash(state);
     }
 }

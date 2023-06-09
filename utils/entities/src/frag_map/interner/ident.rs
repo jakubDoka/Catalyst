@@ -76,7 +76,8 @@ impl RawIdent {
 
         let mut array = [0; 15];
         let mut i = 0;
-        while let Some(&b) = str.as_bytes().get(i) {
+        while i < str.len() {
+            let b = str.as_bytes()[i];
             array[i] = b;
             i += 1;
         }
@@ -159,7 +160,7 @@ impl std::fmt::Debug for RawIdent {
 }
 
 impl Hash for RawIdent {
-    fn hash<H: ~const std::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         unsafe { self.archived.hash(state) }
     }
 }

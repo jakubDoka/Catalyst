@@ -7,8 +7,7 @@
     decl_macro,
     trivial_bounds,
     closure_lifetime_binder,
-    array_zip,
-    is_some_and
+    array_zip
 )]
 
 mod logic;

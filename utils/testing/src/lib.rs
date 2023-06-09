@@ -1,7 +1,7 @@
 #![feature(closure_lifetime_binder)]
 #![feature(iter_intersperse)]
 #![feature(let_chains)]
-#![feature(once_cell)]
+#![feature(lazy_cell)]
 #![feature(internal_output_capture)]
 
 #[macro_export]

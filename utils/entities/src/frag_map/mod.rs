@@ -1056,3 +1056,61 @@ mod tests {
         assert_eq!(COUNTER.load(atomic::Ordering::Relaxed), 0);
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn concurrent_pushes() {
+        use std::thread;
+
+        let threads: usize = 4;
+        let iters = if cfg!(miri) { 1 << 10 } else { 1 << 27 };
+        let push_ratio = if cfg!(miri) { 1 } else { 1 << 7 };
+        let div = iters / push_ratio;
+        let mut base = FragBase::new(threads as u8);
+
+        let mut lanes = base.split().collect::<Vec<_>>();
+
+        thread::scope(|tc| {
+            for lane in &mut lanes {
+                tc.spawn(|| {
+                    let now = std::time::Instant::now();
+                    for i in 0..iters {
+                        if i & (push_ratio - 1) == 0 {
+                            lane.push(i);
+                        }
+                    }
+                    println!("lane: {:?}", now.elapsed());
+                });
+            }
+        });
+
+        for lane in &mut lanes {
+            lane.commit(&mut base);
+        }
+
+        for lane in &mut lanes {
+            lane.pull(&base);
+        }
+
+        thread::scope(|tc| {
+            for lane in &mut lanes {
+                tc.spawn(|| {
+                    let now = std::time::Instant::now();
+                    for i in 0..iters {
+                        let pr = FragRef::new(FragAddr::new(
+                            (i & (div - 1)) as u32,
+                            (i & (threads - 1)) as u8,
+                        ));
+                        let val = lane[pr];
+                        if i & (push_ratio - 1) == 0 {
+                            lane.push(val);
+                        }
+                    }
+                    println!("lane: {:?}", now.elapsed());
+                });
+            }
+        });
+    }
+}

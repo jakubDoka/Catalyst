@@ -409,7 +409,7 @@ impl<T> FragSliceKey<T> {
 }
 
 impl<T: Hash> Hash for FragSliceKey<T> {
-    fn hash<H: ~const std::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         unsafe {
             self.inner_slice().hash(state);
         }

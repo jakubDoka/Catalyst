@@ -1,7 +1,6 @@
 #![feature(default_free_fn)]
 #![allow(incomplete_features)]
 #![feature(specialization)]
-#![feature(option_result_contains)]
 #![feature(iter_intersperse)]
 #![feature(result_flattening)]
 #![feature(if_let_guard)]
