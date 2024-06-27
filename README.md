@@ -2,7 +2,7 @@
 
 General purpose Programming language, focused on metaprogramming (not quite
 threre yet). Language is designed with simple syntax that does not face any
-parsing edge cases. Catalist tries to offer similar to same features as
+parsing edge cases. Catalyst tries to offer similar to same features as
 [Rust](https://www.rust-lang.org/) and [Nim](https://nim-lang.org/)
 combined. Language is low level, powered by
 [Cranelift](https://github.com/bytecodealliance/wasmtime/tree/main/cranelift)
@@ -57,9 +57,9 @@ you would do to be produdctive yet.
 
 ## Why should I contribute to Catalyst?
 
-If you tryed the language, and feel like some feature is missing or you are
+If you tried the language, and feel like some feature is missing or you are
 annoyed by some bug, and waiting for me to fix it is boring, you can take things
 into your own hands and make a pull request. Note though that pull request needs
-issue first.
+an issue first.
 
 Typos are categorized under bugs you can fix. (I do a lot of them :])
